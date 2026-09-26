@@ -24,7 +24,7 @@ type ProjectContext = {
   status: string;
   client_name: string;
   project_kind: string;
-  disciplines: string;
+  disciplines: string[];
   description: string;
   buildings: Array<{ id: number; title: string }>;
 };
