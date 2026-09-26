@@ -42,10 +42,10 @@ Recommended settings:
 ```text
 Node.js version: 22
 Build command: npm run build
-Start command: npm start
+Entrypoint: apps/api/dist/startup.js
 ```
 
-Hostinger installs dependencies as part of the deployment flow. The start command deliberately performs:
+Hostinger installs dependencies as part of the deployment flow. The Hostinger entrypoint deliberately performs:
 
 ```text
 runtime preflight -> idempotent MySQL migration -> start Node application
