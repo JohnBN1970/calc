@@ -95,6 +95,8 @@ function App() {
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
+  const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
+  const [priceSearch, setPriceSearch] = useState("");
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
@@ -260,10 +262,24 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
-          <button className="command commandSecondary" type="button" title="Prijzen en prijsbronnen"><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
         </div>
+
+        {priceWorkspaceOpen && <div className="priceWorkspace">
+          <div className="priceWorkspaceHead">
+            <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
+            <button className="panelClose" type="button" onClick={() => setPriceWorkspaceOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="priceActions">
+            <label className="priceSearch"><span>Zoeken in artikelen en prijzen</span><input value={priceSearch} onChange={event => setPriceSearch(event.target.value)} placeholder="Artikelnummer, omschrijving, leverancier…" /></label>
+            <button type="button" className="sourceAction" onClick={() => setStatus("Artikelzoekfunctie wacht op Office artikel-API")}><strong>Artikel zoeken</strong><span>Gebruik een beheerde Office-prijs als calculatiebron.</span></button>
+            <button type="button" className="sourceAction" onClick={() => setStatus("Import wacht op Office document-import API")}><strong>Prijslijst importeren</strong><span>XML, Excel, PDF, Word of andere bron via Office laten herkennen.</span></button>
+            <button type="button" className="sourceAction" onClick={() => setStatus("Offerte-inleesflow wacht op Office document-import API")}><strong>Offerte inlezen</strong><span>Herken de inkoopprijs en koppel de offerte als prijsbron aan een regel.</span></button>
+          </div>
+          <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
+        </div>}
 
         <div className="grid">
           <div className="row head"><b>Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
