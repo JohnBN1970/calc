@@ -25,6 +25,18 @@ type Line = {
   sourcePriceDate: string | null;
   sourceDocumentId: string | null;
 };
+type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
+type QuoteProposal = {
+  status: string;
+  target: { description: string; quantity: number | null; unit: string };
+  candidates: QuoteCandidate[];
+  suggested: QuoteCandidate | null;
+  fileId: number;
+  filename: string;
+};
+
+type CostCarrier = "labour" | "material" | "equipment" | "subcontracting" | "other";
+
 type ArticleSearchItem = {
   article_id: number;
   supplier_article_id: number;
@@ -117,6 +129,8 @@ function App() {
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
+  const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
+  const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
@@ -270,7 +284,10 @@ function App() {
         headers: {
           "Content-Type": file.type || "application/octet-stream",
           "X-BREBO-Line-Ref": String(targetLineId),
-          "X-BREBO-Filename": file.name
+          "X-BREBO-Filename": file.name,
+          "X-BREBO-Line-Description": selected.description,
+          "X-BREBO-Line-Quantity": String(selected.quantity),
+          "X-BREBO-Line-Unit": selected.unit
         },
         body: file
       });
@@ -278,6 +295,19 @@ function App() {
       if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
+      const candidates = Array.isArray(data.proposal?.candidates) ? data.proposal.candidates as QuoteCandidate[] : [];
+      setQuoteProposal({
+        status: String(data.proposal?.status ?? "unknown"),
+        target: {
+          description: String(data.proposal?.target?.description ?? selected.description),
+          quantity: data.proposal?.target?.quantity == null ? null : Number(data.proposal.target.quantity),
+          unit: String(data.proposal?.target?.unit ?? selected.unit)
+        },
+        candidates,
+        suggested: data.proposal?.suggested ? data.proposal.suggested as QuoteCandidate : null,
+        fileId,
+        filename: file.name
+      });
       patchLine(targetLineId, {
         priceSourceType: "supplier_quote",
         officeSourceId: fileId > 0 ? String(fileId) : null,
@@ -292,6 +322,24 @@ function App() {
     } finally {
       if (quoteFileRef.current) quoteFileRef.current.value = "";
     }
+  };
+
+  const applyQuoteCandidate = (candidate: QuoteCandidate) => {
+    if (selectedLineId == null || !quoteProposal) return;
+    const patch: Partial<Line> = {
+      priceSourceType: "supplier_quote",
+      officeSourceId: String(quoteProposal.fileId),
+      sourceReference: quoteProposal.filename,
+      sourceUnitPrice: candidate.value,
+      sourceDocumentId: String(quoteProposal.fileId)
+    };
+    if (quoteCarrier === "labour") patch.labour = candidate.value;
+    if (quoteCarrier === "material") patch.material = candidate.value;
+    if (quoteCarrier === "equipment") patch.equipment = candidate.value;
+    if (quoteCarrier === "subcontracting") patch.subcontracting = candidate.value;
+    if (quoteCarrier === "other") patch.other = candidate.value;
+    patchLine(selectedLineId, patch);
+    setQuoteStatus(`${money.format(candidate.value)} overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier} voor regel #${selectedLineId}. Nog opslaan.`);
   };
 
   const save = async () => {
@@ -398,6 +446,24 @@ function App() {
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
           <div className="quoteStatus">{quoteStatus}</div>
+          {quoteProposal && <div className="quoteReview">
+            <div className="quoteReviewHead">
+              <div><small>HERKENDE OFFERTEPRIJS</small><strong>{quoteProposal.filename}</strong><span>Controleer het voorstel vóór overnemen.</span></div>
+              <label><span>Kostendrager</span><select value={quoteCarrier} onChange={event => setQuoteCarrier(event.target.value as CostCarrier)}>
+                <option value="material">Materiaal</option>
+                <option value="subcontracting">OA</option>
+                <option value="equipment">Materieel</option>
+                <option value="labour">Arbeid</option>
+                <option value="other">Overig</option>
+              </select></label>
+            </div>
+            {quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
+              <div className="quoteCandidates">{quoteProposal.candidates.map((candidate, index) =>
+                <div className={"quoteCandidate" + (index === 0 ? " is-suggested" : "")} key={`${candidate.line_no}-${candidate.value}`}>
+                  <div><small>{index === 0 ? "Voorstel" : `Kandidaat ${index + 1}`} · bronregel {candidate.line_no}</small><strong>{money.format(candidate.value)}</strong><span>{candidate.text}</span></div>
+                  <button type="button" onClick={() => applyQuoteCandidate(candidate)}>Overnemen</button>
+                </div>)}</div>}
+          </div>}
           {articleResults.length > 0 && <div className="articleResults">
             {articleResults.map(article => <div className="articleResult" key={`${article.supplier_article_id}-${article.price_id}`}>
               <div className="articleIdentity"><small>{article.code}{article.product_group ? ` · ${article.product_group}` : ""}</small><strong>{article.description}</strong><span>{article.supplier} · art. {article.supplier_article_no}</span></div>
