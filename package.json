@@ -1,0 +1,13 @@
+{
+  "name": "brebo-calculatie",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace=@brebo/calc-web",
+    "dev:api": "npm run dev --workspace=@brebo/calc-api",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": { "node": ">=22" }
+}
