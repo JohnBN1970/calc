@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
@@ -372,6 +374,13 @@ app.put("/api/workbench/current", async (req, res) => {
   } finally {
     connection.release();
   }
+});
+
+const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
+const webDist = path.resolve(apiDirectory, "../../web/dist");
+app.use(express.static(webDist, { index: false, maxAge: process.env.NODE_ENV === "production" ? "1h" : 0 }));
+app.get(/^(?!\/api\/).*/, (_req, res) => {
+  res.sendFile(path.join(webDist, "index.html"));
 });
 
 app.use((error: unknown, _req: Request, res: Response, _next: express.NextFunction) => {
