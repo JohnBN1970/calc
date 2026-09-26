@@ -123,7 +123,9 @@ function App() {
   };
 
   const addLine = (lineType: LineType) => {
-    const parent = [...lines].reverse().find(line => line.lineType === "paragraph") ?? [...lines].reverse().find(line => line.lineType === "chapter");
+    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+    const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
     const id = nextId;
     setNextId(id - 1);
     setLines(current => [...current, {
