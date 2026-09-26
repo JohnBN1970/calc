@@ -33,26 +33,25 @@ CORS_ORIGIN=https://calculatie.brebobv.nl
 `BREBO_CALC_SHARED_SECRET` is shared only between Office and Calc.
 `CALC_SESSION_SECRET` belongs only to Calc and must be different.
 
-## Build and start
+## Hostinger deployment
 
-Install and build:
+Use Hostinger's **Deploy Web App / Node.js** flow and point it at the public GitHub repository `JohnBN1970/calc`.
 
-```text
-npm ci
-npm run build
-```
-
-Initialize/update the database:
+Recommended settings:
 
 ```text
-npm run migrate
+Node.js version: 22
+Build command: npm run build
+Start command: npm start
 ```
 
-Start the application:
+Hostinger installs dependencies as part of the deployment flow. The start command deliberately performs:
 
 ```text
-npm start
+runtime preflight -> idempotent MySQL migration -> start Node application
 ```
+
+No manual SSH npm step is required. The migration only uses `CREATE TABLE IF NOT EXISTS`, so restarting the application does not recreate or delete existing calculation data.
 
 The Node process serves both the API and the built React application.
 
