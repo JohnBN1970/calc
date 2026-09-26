@@ -109,10 +109,19 @@ export async function uploadSupplierQuoteToOffice(input: {
   filename: string;
   mimeType: string;
   bytes: Buffer;
+  lineDescription?: string;
+  lineQuantity?: number;
+  lineUnit?: string;
 }): Promise<{
   contract: string;
   source: { file_id: number; calculation_id: number; line_ref: string; filename: string; mime_type: string };
   extraction: { status: string; text: string; confidence: number; extractor: string };
+  proposal: {
+    status: string;
+    target: { description: string; quantity: number | null; unit: string };
+    candidates: Array<{ value: number; score: number; line_no: number; text: string }>;
+    suggested: { value: number; score: number; line_no: number; text: string } | null;
+  };
 }> {
   const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes`;
   const headers = signedHeaders("POST", path, input.bytes);
@@ -120,6 +129,9 @@ export async function uploadSupplierQuoteToOffice(input: {
   headers["X-BREBO-Calculation-Id"] = String(input.calculationId);
   headers["X-BREBO-Line-Ref"] = input.lineRef;
   headers["X-BREBO-Filename"] = input.filename;
+  headers["X-BREBO-Line-Description"] = (input.lineDescription ?? "").slice(0, 500);
+  headers["X-BREBO-Line-Quantity"] = input.lineQuantity == null ? "" : String(input.lineQuantity);
+  headers["X-BREBO-Line-Unit"] = (input.lineUnit ?? "").slice(0, 32);
   const response = await fetch(config.office.baseUrl + path, {
     method: "POST",
     headers,
