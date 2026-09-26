@@ -25,6 +25,22 @@ type Line = {
   sourcePriceDate: string | null;
   sourceDocumentId: string | null;
 };
+type ArticleSearchItem = {
+  article_id: number;
+  supplier_article_id: number;
+  price_id: number;
+  catalog_import_id: number;
+  code: string;
+  description: string;
+  cost_category: string;
+  supplier: string;
+  supplier_article_no: string;
+  product_group: string | null;
+  unit: string;
+  net_price: number;
+  price_date: string;
+};
+
 type ProjectContext = {
   id: number;
   code: string;
@@ -95,6 +111,10 @@ function App() {
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
+  const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
+  const [priceSearch, setPriceSearch] = useState("");
+  const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
+  const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
@@ -173,6 +193,53 @@ function App() {
       sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
     }]);
     setStatus("Concept — niet opgeslagen");
+  };
+
+  const searchArticles = async () => {
+    setArticleSearchStatus("Zoeken in Office…");
+    try {
+      const params = new URLSearchParams({ q: priceSearch, limit: "40" });
+      const response = await fetch(`/api/articles/search?${params.toString()}`, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error("Artikelzoekopdracht mislukt");
+      const data = await response.json();
+      const items = Array.isArray(data.items) ? data.items as ArticleSearchItem[] : [];
+      setArticleResults(items);
+      setArticleSearchStatus(`${items.length} resultaten uit BREBO Office`);
+    } catch {
+      setArticleResults([]);
+      setArticleSearchStatus("Artikeldata kon niet uit BREBO Office worden opgehaald.");
+    }
+  };
+
+  const addArticleLine = (article: ArticleSearchItem) => {
+    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+    const parent = latestParagraph ?? latestChapter;
+    const id = nextId;
+    setNextId(id - 1);
+    setLines(current => [...current, {
+      id,
+      parentId: parent?.id ?? null,
+      lineType: "item",
+      code: article.code,
+      description: article.description,
+      unit: article.unit,
+      quantity: 1,
+      labour: 0,
+      material: Number(article.net_price ?? 0),
+      equipment: 0,
+      subcontracting: 0,
+      other: 0,
+      priceSourceType: "article",
+      officeSourceId: String(article.article_id),
+      sourceReference: article.supplier_article_no,
+      sourceSupplier: article.supplier,
+      sourceUnitPrice: Number(article.net_price ?? 0),
+      sourcePriceDate: article.price_date,
+      sourceDocumentId: String(article.catalog_import_id)
+    }]);
+    setStatus("Concept — niet opgeslagen");
+    setPriceWorkspaceOpen(false);
   };
 
   const save = async () => {
@@ -260,10 +327,33 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
-          <button className="command commandSecondary" type="button" title="Prijzen en prijsbronnen"><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
         </div>
+
+        {priceWorkspaceOpen && <div className="priceWorkspace">
+          <div className="priceWorkspaceHead">
+            <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
+            <button className="panelClose" type="button" onClick={() => setPriceWorkspaceOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="priceActions">
+            <label className="priceSearch"><span>Zoeken in artikelen en prijzen</span><input value={priceSearch} onChange={event => setPriceSearch(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void searchArticles(); }} placeholder="Artikelnummer, omschrijving, leverancier…" /></label>
+            <button type="button" className="sourceAction" onClick={() => void searchArticles()}><strong>Artikel zoeken</strong><span>Zoek direct in de beheerde Office-artikelstam.</span></button>
+            <button type="button" className="sourceAction" onClick={() => setStatus("Import wordt gekoppeld aan Office document-import")}><strong>Prijslijst importeren</strong><span>XML, Excel, PDF, Word of andere bron via Office laten herkennen.</span></button>
+            <button type="button" className="sourceAction" onClick={() => setStatus("Offerte-inleesflow wordt gekoppeld aan Office document-import")}><strong>Offerte inlezen</strong><span>Herken de inkoopprijs en koppel de offerte als prijsbron aan een regel.</span></button>
+          </div>
+          <div className="articleSearchStatus">{articleSearchStatus}</div>
+          {articleResults.length > 0 && <div className="articleResults">
+            {articleResults.map(article => <div className="articleResult" key={`${article.supplier_article_id}-${article.price_id}`}>
+              <div className="articleIdentity"><small>{article.code}{article.product_group ? ` · ${article.product_group}` : ""}</small><strong>{article.description}</strong><span>{article.supplier} · art. {article.supplier_article_no}</span></div>
+              <div><small>Eenheid</small><strong>{article.unit}</strong></div>
+              <div><small>Netto</small><strong>{money.format(article.net_price)}</strong><span>{article.price_date}</span></div>
+              <button type="button" onClick={() => addArticleLine(article)}>Kiezen</button>
+            </div>)}
+          </div>}
+          <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
+        </div>}
 
         <div className="grid">
           <div className="row head"><b>Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
