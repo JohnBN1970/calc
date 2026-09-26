@@ -271,11 +271,6 @@ function App() {
       if (quoteFileRef.current) quoteFileRef.current.value = "";
       return;
     }
-    if (selected.id < 0) {
-      setQuoteStatus("Sla de geselecteerde nieuwe calculatieregel eerst op voordat je de offerte koppelt.");
-      if (quoteFileRef.current) quoteFileRef.current.value = "";
-      return;
-    }
     const targetLineId = selected.id;
     setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
     try {
@@ -292,7 +287,7 @@ function App() {
         body: file
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
+      if (!response.ok) throw new Error(`${String(data.error ?? "Offerte kon niet worden verwerkt.")} (HTTP ${response.status})`);
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
       const candidates = Array.isArray(data.proposal?.candidates) ? data.proposal.candidates as QuoteCandidate[] : [];
@@ -445,7 +440,7 @@ function App() {
             <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
-          <div className="quoteStatus">{quoteStatus}</div>
+          <div className="quoteStatus" role="status" aria-live="polite"><strong>Status offerte:</strong> {quoteStatus}</div>
           {quoteProposal && <div className="quoteReview">
             <div className="quotePreviewPane">
               <div className="quotePreviewTitle"><strong>Originele offerte</strong><span>{quoteProposal.filename}</span></div>
