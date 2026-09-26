@@ -246,27 +246,30 @@ function App() {
   };
 
   const openQuoteUpload = () => {
-    const selected = lines.find(line => line.id === selectedLineId && isCostLine(line));
-    if (!selected) {
-      setQuoteStatus("Selecteer eerst de calculatieregel waarvoor de offerte geldt.");
-      return;
-    }
-    if (selected.id < 0) {
-      setQuoteStatus("Sla de nieuwe calculatieregel eerst op voordat je een offerte koppelt.");
-      return;
-    }
     quoteFileRef.current?.click();
   };
 
   const uploadQuote = async (file: File | undefined) => {
-    if (!file || selectedLineId == null) return;
+    if (!file) return;
+    const selected = lines.find(line => line.id === selectedLineId && isCostLine(line));
+    if (!selected) {
+      setQuoteStatus(`${file.name} gekozen. Klik nu de calculatieregel aan waarvoor deze offerte geldt en kies daarna opnieuw Offerte inlezen.`);
+      if (quoteFileRef.current) quoteFileRef.current.value = "";
+      return;
+    }
+    if (selected.id < 0) {
+      setQuoteStatus("Sla de geselecteerde nieuwe calculatieregel eerst op voordat je de offerte koppelt.");
+      if (quoteFileRef.current) quoteFileRef.current.value = "";
+      return;
+    }
+    const targetLineId = selected.id;
     setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
     try {
       const response = await fetch("/api/quotes/upload", {
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
-          "X-BREBO-Line-Ref": String(selectedLineId),
+          "X-BREBO-Line-Ref": String(targetLineId),
           "X-BREBO-Filename": file.name
         },
         body: file
@@ -275,14 +278,14 @@ function App() {
       if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
-      patchLine(selectedLineId, {
+      patchLine(targetLineId, {
         priceSourceType: "supplier_quote",
         officeSourceId: fileId > 0 ? String(fileId) : null,
         sourceReference: file.name,
         sourceDocumentId: fileId > 0 ? String(fileId) : null
       });
       setQuoteStatus(extractionStatus === "extracted"
-        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${selectedLineId} gekoppeld.`
+        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`
         : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
     } catch (error) {
       setQuoteStatus(error instanceof Error ? error.message : "Offerte kon niet worden verwerkt.");
@@ -390,7 +393,7 @@ function App() {
             <label className="priceSearch"><span>Zoeken in artikelen en prijzen</span><input value={priceSearch} onChange={event => setPriceSearch(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void searchArticles(); }} placeholder="Artikelnummer, omschrijving, leverancier…" /></label>
             <button type="button" className="sourceAction" onClick={() => void searchArticles()}><strong>Artikel zoeken</strong><span>Zoek direct in de beheerde Office-artikelstam.</span></button>
             <button type="button" className="sourceAction" onClick={() => setStatus("Import wordt gekoppeld aan Office document-import")}><strong>Prijslijst importeren</strong><span>XML, Excel, PDF, Word of andere bron via Office laten herkennen.</span></button>
-            <button type="button" className="sourceAction" onClick={openQuoteUpload}><strong>Offerte inlezen</strong><span>{selectedLineId == null ? "Selecteer eerst een calculatieregel." : `Voor geselecteerde regel #${selectedLineId}`}</span></button>
+            <button type="button" className="sourceAction" onClick={openQuoteUpload}><strong>Offerte inlezen</strong><span>{selectedLineId == null ? "Kies een offertebestand; koppel daarna aan een regel." : `Inlezen voor geselecteerde regel #${selectedLineId}`}</span></button>
             <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
