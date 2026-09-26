@@ -19,5 +19,6 @@ export const config = {
     baseUrl: required("OFFICE_API_BASE_URL").replace(/\\/$/, ""),
     sharedSecret: required("BREBO_CALC_SHARED_SECRET")
   },
-  corsOrigin: process.env.CORS_ORIGIN ?? "https://calculatie.brebobv.nl"
+  corsOrigin: process.env.CORS_ORIGIN ?? "https://calculatie.brebobv.nl",
+  sessionSecret: required("CALC_SESSION_SECRET")
 };
