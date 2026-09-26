@@ -123,7 +123,7 @@ export async function uploadSupplierQuoteToOffice(input: {
   const response = await fetch(config.office.baseUrl + path, {
     method: "POST",
     headers,
-    body: input.bytes,
+    body: new Uint8Array(input.bytes),
     redirect: "error",
     signal: AbortSignal.timeout(35000)
   });
