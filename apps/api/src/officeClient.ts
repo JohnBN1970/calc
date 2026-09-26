@@ -17,7 +17,7 @@ export type OfficeProjectContext = {
   };
 };
 
-function signedHeaders(method: string, path: string, body = ""): Record<string, string> {
+function signedHeaders(method: string, path: string, body: string | Buffer = ""): Record<string, string> {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const requestId = randomUUID();
   const bodyHash = createHash("sha256").update(body).digest("hex");
@@ -100,4 +100,33 @@ export async function searchOfficeArticles(params: {
     throw new Error(`Office article search failed with status ${response.status}.`);
   }
   return await response.json() as { query: string; count: number; items: OfficeArticleSearchItem[] };
+}
+
+
+export async function uploadSupplierQuoteToOffice(input: {
+  calculationId: number;
+  lineRef: string;
+  filename: string;
+  mimeType: string;
+  bytes: Buffer;
+}): Promise<{
+  contract: string;
+  source: { file_id: number; calculation_id: number; line_ref: string; filename: string; mime_type: string };
+  extraction: { status: string; text: string; confidence: number; extractor: string };
+}> {
+  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes`;
+  const headers = signedHeaders("POST", path, input.bytes);
+  headers["Content-Type"] = input.mimeType;
+  headers["X-BREBO-Calculation-Id"] = String(input.calculationId);
+  headers["X-BREBO-Line-Ref"] = input.lineRef;
+  headers["X-BREBO-Filename"] = input.filename;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "POST",
+    headers,
+    body: new Uint8Array(input.bytes),
+    redirect: "error",
+    signal: AbortSignal.timeout(35000)
+  });
+  if (!response.ok) throw new Error(`Office quote upload failed with status ${response.status}.`);
+  return await response.json() as any;
 }

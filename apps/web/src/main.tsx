@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -115,6 +115,9 @@ function App() {
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
+  const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
+  const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
@@ -242,6 +245,52 @@ function App() {
     setPriceWorkspaceOpen(false);
   };
 
+  const openQuoteUpload = () => {
+    const selected = lines.find(line => line.id === selectedLineId && isCostLine(line));
+    if (!selected) {
+      setQuoteStatus("Selecteer eerst de calculatieregel waarvoor de offerte geldt.");
+      return;
+    }
+    if (selected.id < 0) {
+      setQuoteStatus("Sla de nieuwe calculatieregel eerst op voordat je een offerte koppelt.");
+      return;
+    }
+    quoteFileRef.current?.click();
+  };
+
+  const uploadQuote = async (file: File | undefined) => {
+    if (!file || selectedLineId == null) return;
+    setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
+    try {
+      const response = await fetch("/api/quotes/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-BREBO-Line-Ref": String(selectedLineId),
+          "X-BREBO-Filename": file.name
+        },
+        body: file
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
+      const fileId = Number(data.source?.file_id ?? 0);
+      const extractionStatus = String(data.extraction?.status ?? "unknown");
+      patchLine(selectedLineId, {
+        priceSourceType: "supplier_quote",
+        officeSourceId: fileId > 0 ? String(fileId) : null,
+        sourceReference: file.name,
+        sourceDocumentId: fileId > 0 ? String(fileId) : null
+      });
+      setQuoteStatus(extractionStatus === "extracted"
+        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${selectedLineId} gekoppeld.`
+        : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
+    } catch (error) {
+      setQuoteStatus(error instanceof Error ? error.message : "Offerte kon niet worden verwerkt.");
+    } finally {
+      if (quoteFileRef.current) quoteFileRef.current.value = "";
+    }
+  };
+
   const save = async () => {
     setStatus("Opslaan…");
     try {
@@ -341,9 +390,11 @@ function App() {
             <label className="priceSearch"><span>Zoeken in artikelen en prijzen</span><input value={priceSearch} onChange={event => setPriceSearch(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void searchArticles(); }} placeholder="Artikelnummer, omschrijving, leverancier…" /></label>
             <button type="button" className="sourceAction" onClick={() => void searchArticles()}><strong>Artikel zoeken</strong><span>Zoek direct in de beheerde Office-artikelstam.</span></button>
             <button type="button" className="sourceAction" onClick={() => setStatus("Import wordt gekoppeld aan Office document-import")}><strong>Prijslijst importeren</strong><span>XML, Excel, PDF, Word of andere bron via Office laten herkennen.</span></button>
-            <button type="button" className="sourceAction" onClick={() => setStatus("Offerte-inleesflow wordt gekoppeld aan Office document-import")}><strong>Offerte inlezen</strong><span>Herken de inkoopprijs en koppel de offerte als prijsbron aan een regel.</span></button>
+            <button type="button" className="sourceAction" onClick={openQuoteUpload}><strong>Offerte inlezen</strong><span>{selectedLineId == null ? "Selecteer eerst een calculatieregel." : `Voor geselecteerde regel #${selectedLineId}`}</span></button>
+            <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
+          <div className="quoteStatus">{quoteStatus}</div>
           {articleResults.length > 0 && <div className="articleResults">
             {articleResults.map(article => <div className="articleResult" key={`${article.supplier_article_id}-${article.price_id}`}>
               <div className="articleIdentity"><small>{article.code}{article.product_group ? ` · ${article.product_group}` : ""}</small><strong>{article.description}</strong><span>{article.supplier} · art. {article.supplier_article_no}</span></div>
@@ -365,7 +416,7 @@ function App() {
                 <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
               </div>;
             }
-            return <div className={`row data type-${line.lineType}`} key={line.id}>
+            return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
               <input className="cell" value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
               <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>

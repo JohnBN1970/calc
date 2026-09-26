@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, searchOfficeArticles } from "./officeClient.js";
+import { fetchOfficeProjectContext, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -247,6 +247,31 @@ app.post("/api/launch/consume", async (req, res) => {
     throw error;
   } finally {
     connection.release();
+  }
+});
+
+app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"], limit: "20mb" }), async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const lineRef = String(req.headers["x-brebo-line-ref"] ?? "").trim();
+  const filename = String(req.headers["x-brebo-filename"] ?? "offerte").trim();
+  const mimeType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+  if (!lineRef || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+    res.status(400).json({ error: "Selecteer een calculatieregel en offertebestand." });
+    return;
+  }
+  try {
+    const result = await uploadSupplierQuoteToOffice({
+      calculationId: session.officeCalculationId,
+      lineRef,
+      filename,
+      mimeType,
+      bytes: req.body
+    });
+    res.setHeader("Cache-Control", "no-store, private");
+    res.status(201).json(result);
+  } catch {
+    res.status(502).json({ error: "Offerte kon niet door BREBO Office worden verwerkt." });
   }
 });
 
