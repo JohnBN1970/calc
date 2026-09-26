@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
+type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
 type Line = {
   id: number;
   parentId: number | null;
@@ -16,6 +17,13 @@ type Line = {
   equipment: number;
   subcontracting: number;
   other: number;
+  priceSourceType: PriceSourceType;
+  officeSourceId: string | null;
+  sourceReference: string | null;
+  sourceSupplier: string | null;
+  sourceUnitPrice: number | null;
+  sourcePriceDate: string | null;
+  sourceDocumentId: string | null;
 };
 type ProjectContext = {
   id: number;
@@ -68,7 +76,14 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     material: Number(raw.material_unit_cost ?? 0),
     equipment: Number(raw.equipment_unit_cost ?? 0),
     subcontracting: Number(raw.subcontracting_unit_cost ?? 0),
-    other: Number(raw.other_unit_cost ?? 0)
+    other: Number(raw.other_unit_cost ?? 0),
+    priceSourceType: String(raw.price_source_type ?? "manual") as PriceSourceType,
+    officeSourceId: raw.office_source_id == null ? null : String(raw.office_source_id),
+    sourceReference: raw.source_reference == null ? null : String(raw.source_reference),
+    sourceSupplier: raw.source_supplier == null ? null : String(raw.source_supplier),
+    sourceUnitPrice: raw.source_unit_price == null ? null : Number(raw.source_unit_price),
+    sourcePriceDate: raw.source_price_date == null ? null : String(raw.source_price_date),
+    sourceDocumentId: raw.source_document_id == null ? null : String(raw.source_document_id)
   };
 }
 
@@ -153,7 +168,9 @@ function App() {
       description: lineType === "chapter" ? "Nieuw hoofdstuk" : lineType === "paragraph" ? "Nieuwe paragraaf" : "",
       unit: lineType === "item" ? "st" : "",
       quantity: lineType === "item" ? 1 : 0,
-      labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0
+      labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+      priceSourceType: "manual", officeSourceId: null, sourceReference: null,
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -179,7 +196,14 @@ function App() {
             materialUnitCost: line.material,
             equipmentUnitCost: line.equipment,
             subcontractingUnitCost: line.subcontracting,
-            otherUnitCost: line.other
+            otherUnitCost: line.other,
+            priceSourceType: line.priceSourceType,
+            officeSourceId: line.officeSourceId,
+            sourceReference: line.sourceReference,
+            sourceSupplier: line.sourceSupplier,
+            sourceUnitPrice: line.sourceUnitPrice,
+            sourcePriceDate: line.sourcePriceDate,
+            sourceDocumentId: line.sourceDocumentId
           }))
         })
       });
