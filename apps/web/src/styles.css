@@ -40,3 +40,10 @@
 .quoteReviewHead label{min-width:150px}.quoteReviewHead select{width:100%;margin-top:4px;padding:7px;border:1px solid #ccd3d9;border-radius:5px;background:#fff}
 .quoteCandidates{max-height:300px;overflow:auto}.quoteCandidate{display:grid;grid-template-columns:1fr 110px;gap:14px;align-items:center;padding:10px 14px;border-bottom:1px solid #edf0f2}
 .quoteCandidate:last-child{border-bottom:0}.quoteCandidate.is-suggested{background:#fafbf7}.quoteCandidate small,.quoteCandidate span{display:block;color:#707b84;font-size:11px}.quoteCandidate strong{display:block;font-size:16px;margin:2px 0}.quoteCandidate button{justify-self:end}
+
+.quoteReview{display:grid;grid-template-columns:minmax(360px,1.05fr) minmax(380px,.95fr);min-height:520px}
+.quotePreviewPane{display:flex;flex-direction:column;min-width:0;border-right:1px solid #e5e9ec;background:#eef1f3}
+.quotePreviewTitle{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;background:#fff;border-bottom:1px solid #e5e9ec;font-size:12px}.quotePreviewTitle span{color:#707b84;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quotePreviewPane iframe{border:0;width:100%;flex:1;min-height:470px;background:#fff}
+.quoteReviewContent{min-width:0}
+@media(max-width:1050px){.quoteReview{grid-template-columns:1fr}.quotePreviewPane{border-right:0;border-bottom:1px solid #e5e9ec}.quotePreviewPane iframe{min-height:400px}}

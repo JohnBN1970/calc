@@ -447,6 +447,11 @@ function App() {
           <div className="articleSearchStatus">{articleSearchStatus}</div>
           <div className="quoteStatus">{quoteStatus}</div>
           {quoteProposal && <div className="quoteReview">
+            <div className="quotePreviewPane">
+              <div className="quotePreviewTitle"><strong>Originele offerte</strong><span>{quoteProposal.filename}</span></div>
+              <iframe title="Originele leveranciersofferte" src={`/api/quotes/${quoteProposal.fileId}/preview`} />
+            </div>
+            <div className="quoteReviewContent">
             <div className="quoteReviewHead">
               <div><small>HERKENDE OFFERTEPRIJS</small><strong>{quoteProposal.filename}</strong><span>Controleer het voorstel vóór overnemen.</span></div>
               <label><span>Kostendrager</span><select value={quoteCarrier} onChange={event => setQuoteCarrier(event.target.value as CostCarrier)}>
@@ -463,6 +468,7 @@ function App() {
                   <div><small>{index === 0 ? "Voorstel" : `Kandidaat ${index + 1}`} · bronregel {candidate.line_no}</small><strong>{money.format(candidate.value)}</strong><span>{candidate.text}</span></div>
                   <button type="button" onClick={() => applyQuoteCandidate(candidate)}>Overnemen</button>
                 </div>)}</div>}
+            </div>
           </div>}
           {articleResults.length > 0 && <div className="articleResults">
             {articleResults.map(article => <div className="articleResult" key={`${article.supplier_article_id}-${article.price_id}`}>
