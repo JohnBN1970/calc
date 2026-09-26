@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { fetchOfficeProjectContext } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
+type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
 type LineInput = {
   id?: number;
   parentId?: number | null;
@@ -22,6 +23,13 @@ type LineInput = {
   equipmentUnitCost?: number;
   subcontractingUnitCost?: number;
   otherUnitCost?: number;
+  priceSourceType?: PriceSourceType;
+  officeSourceId?: string | null;
+  sourceReference?: string | null;
+  sourceSupplier?: string | null;
+  sourceUnitPrice?: number | null;
+  sourcePriceDate?: string | null;
+  sourceDocumentId?: string | null;
 };
 
 type LaunchPayload = {
@@ -274,7 +282,9 @@ app.get("/api/workbench/current", async (req, res) => {
   const [lines] = await db.execute<RowDataPacket[]>(
     `SELECT id, parent_id, sort_order, line_type, code, description, unit, quantity,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
-            subcontracting_unit_cost, other_unit_cost
+            subcontracting_unit_cost, other_unit_cost, price_source_type,
+            office_source_id, source_reference, source_supplier, source_unit_price,
+            source_price_date, source_document_id
        FROM calculation_lines
       WHERE version_id = ?
       ORDER BY sort_order, id`,
@@ -346,6 +356,10 @@ app.put("/api/workbench/current", async (req, res) => {
       const equipment = numeric(line.equipmentUnitCost);
       const subcontracting = numeric(line.subcontractingUnitCost);
       const other = numeric(line.otherUnitCost);
+      const priceSourceType = line.priceSourceType ?? "manual";
+      if (!["manual", "article", "recipe", "supplier_quote"].includes(priceSourceType)) {
+        throw new Error("Unknown price source type.");
+      }
       if (!["chapter", "paragraph", "note", "option"].includes(line.lineType)) {
         directCost += quantity * (labour + material + equipment + subcontracting + other);
       }
@@ -353,12 +367,21 @@ app.put("/api/workbench/current", async (req, res) => {
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO calculation_lines
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
-           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
+           price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
+           source_price_date, source_document_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
-          line.quantity ?? null, labour, material, equipment, subcontracting, other
+          line.quantity ?? null, labour, material, equipment, subcontracting, other,
+          priceSourceType,
+          line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
+          line.sourceReference ? String(line.sourceReference).slice(0, 255) : null,
+          line.sourceSupplier ? String(line.sourceSupplier).slice(0, 255) : null,
+          line.sourceUnitPrice == null ? null : numeric(line.sourceUnitPrice),
+          line.sourcePriceDate ? String(line.sourcePriceDate).slice(0, 10) : null,
+          line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);
