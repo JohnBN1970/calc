@@ -262,13 +262,14 @@ function App() {
       if (quoteFileRef.current) quoteFileRef.current.value = "";
       return;
     }
+    const targetLineId = selected.id;
     setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
     try {
       const response = await fetch("/api/quotes/upload", {
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
-          "X-BREBO-Line-Ref": String(selectedLineId),
+          "X-BREBO-Line-Ref": String(targetLineId),
           "X-BREBO-Filename": file.name
         },
         body: file
@@ -277,14 +278,14 @@ function App() {
       if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
-      patchLine(selectedLineId, {
+      patchLine(targetLineId, {
         priceSourceType: "supplier_quote",
         officeSourceId: fileId > 0 ? String(fileId) : null,
         sourceReference: file.name,
         sourceDocumentId: fileId > 0 ? String(fileId) : null
       });
       setQuoteStatus(extractionStatus === "extracted"
-        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${selectedLineId} gekoppeld.`
+        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`
         : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
     } catch (error) {
       setQuoteStatus(error instanceof Error ? error.message : "Offerte kon niet worden verwerkt.");
