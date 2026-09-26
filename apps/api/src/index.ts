@@ -276,8 +276,10 @@ app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jp
     });
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json(result);
-  } catch {
-    res.status(502).json({ error: "Offerte kon niet door BREBO Office worden verwerkt." });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc supplier quote upload failed:", detail);
+    res.status(502).json({ error: `Offerte kon niet door BREBO Office worden verwerkt: ${detail}` });
   }
 });
 
