@@ -303,7 +303,11 @@ app.put("/api/workbench/current", async (req, res) => {
   if (!session) return;
 
   const markupPct = Number(req.body?.markupPct ?? 0);
-  const lines = Array.isArray(req.body?.lines) ? req.body.lines as LineInput[] : [];
+  if (!Array.isArray(req.body?.lines)) {
+    res.status(400).json({ error: "Calculatieregels ontbreken of hebben een ongeldig formaat." });
+    return;
+  }
+  const lines = req.body.lines as LineInput[];
   if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
@@ -365,6 +369,10 @@ app.put("/api/workbench/current", async (req, res) => {
     await connection.execute(
       "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
       [directCost, markupAmount, salesPrice, version.id]
+    );
+    await connection.execute(
+      "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
+      [session.calculationId]
     );
     await connection.commit();
     res.json({ directCost, markupAmount, salesPrice });
