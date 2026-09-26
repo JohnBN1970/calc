@@ -51,3 +51,53 @@ export async function fetchOfficeProjectContext(projectId: number): Promise<Offi
   }
   return payload;
 }
+
+
+export type OfficeArticleSearchItem = {
+  article_id: number;
+  supplier_article_id: number;
+  price_id: number;
+  catalog_import_id: number;
+  code: string;
+  description: string;
+  cost_category: string;
+  supplier: string;
+  supplier_article_no: string;
+  gtin: string | null;
+  product_group: string | null;
+  nlsfb_code: string | null;
+  unit: string;
+  order_unit: string | null;
+  conversion_factor: number;
+  minimum_order: number;
+  net_price: number;
+  gross_price: number | null;
+  currency: string;
+  price_date: string;
+  quantity_from: number;
+  product_url: string | null;
+};
+
+export async function searchOfficeArticles(params: {
+  q?: string;
+  supplier?: string;
+  category?: string;
+  limit?: number;
+}): Promise<{ query: string; count: number; items: OfficeArticleSearchItem[] }> {
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.supplier) search.set("supplier", params.supplier);
+  if (params.category) search.set("category", params.category);
+  search.set("limit", String(Math.max(10, Math.min(100, params.limit ?? 40))));
+  const path = `/api/workbench/v1/articles?${search.toString()}`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(5000)
+  });
+  if (!response.ok) {
+    throw new Error(`Office article search failed with status ${response.status}.`);
+  }
+  return await response.json() as { query: string; count: number; items: OfficeArticleSearchItem[] };
+}
