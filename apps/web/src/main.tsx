@@ -33,6 +33,23 @@ const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
 
+
+type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices";
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    office: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></>,
+    save: <><path d="M5 3h12l4 4v14H3V3h2Z"/><path d="M7 3v6h9V3"/><path d="M7 21v-8h10v8"/></>,
+    chapter: <><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/><path d="M8 3v4"/><path d="M8 10v4"/><path d="M8 17v4"/></>,
+    paragraph: <><path d="M5 5h14"/><path d="M8 10h11"/><path d="M8 15h11"/><path d="M8 20h7"/><path d="M4 9v7"/></>,
+    line: <><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="M18 16v6"/><path d="M15 19h6"/></>,
+    recipe: <><path d="M6 3h12v18H6z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></>,
+    prices: <><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.8-1.8-1.2-3-1.2-1.7 0-3 1-3 2.3 0 3.2 6 1.8 6 5 0 1.4-1.3 2.4-3 2.4-1.3 0-2.5-.4-3.4-1.3"/><path d="M12 5v14"/></>
+  };
+  return <svg className="commandIcon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+}
+
+
 function NumberCell({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   return <input className="cell number" type="number" step="0.01" value={Number.isFinite(value) ? value : 0}
     onChange={event => onChange(Number(event.target.value))} />;
@@ -200,7 +217,7 @@ function App() {
           <p>{project?.title ?? "Projectcontext laden…"} · {status}</p>
           {project?.client_name && <p className="projectMeta">Opdrachtgever: {project.client_name}{project.project_kind ? ` · ${project.project_kind}` : ""}</p>}
         </div>
-        <div className="contextActions"><button className="secondary" onClick={() => window.history.back()}>← Office</button><button onClick={save}>Opslaan</button></div>
+        <div className="contextActions"><span className="saveState">{status}</span></div>
       </div>
 
       <section className="kpis">
@@ -211,13 +228,17 @@ function App() {
       </section>
 
       <section className="workbench">
-        <div className="toolbar">
-          <button onClick={() => addLine("chapter")}>+ Hoofdstuk</button>
-          <button onClick={() => addLine("paragraph")}>+ Paragraaf</button>
-          <button onClick={() => addLine("item")}>+ Regel</button>
-          <span />
-          <button className="secondary">Recept</button>
-          <button className="secondary">Prijzen</button>
+        <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
+          <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
+          <div className="commandDivider" />
+          <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
+          <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
+          <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
+          <div className="commandDivider" />
+          <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
+          <button className="command commandSecondary" type="button" title="Prijzen en prijsbronnen"><Icon name="prices" /><span>Prijzen</span></button>
+          <span className="commandSpacer" />
+          <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
         </div>
 
         <div className="grid">
