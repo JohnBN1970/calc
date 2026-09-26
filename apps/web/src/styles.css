@@ -22,3 +22,10 @@
 .sourceAction{text-align:left;background:#fff;color:#293139;border:1px solid #dfe4e8;border-radius:7px;padding:10px 12px}.sourceAction:hover{background:#f2f5f7}.sourceAction strong,.sourceAction span{display:block}.sourceAction strong{font-size:13px;margin-bottom:4px}.sourceAction span{font-size:11px;line-height:1.35;color:#707b84;font-weight:400}
 .sourcePrinciple{display:flex;gap:7px;margin-top:10px;font-size:11px;color:#707b84}.sourcePrinciple strong{color:#3e4850}
 @media(max-width:1100px){.priceActions{grid-template-columns:1fr 1fr}.priceSearch{grid-column:1/-1}}
+
+.articleSearchStatus{margin-top:10px;font-size:12px;color:#68737c}
+.articleResults{margin-top:8px;border:1px solid #dfe4e8;border-radius:7px;background:#fff;overflow:hidden;max-height:360px;overflow-y:auto}
+.articleResult{display:grid;grid-template-columns:minmax(300px,2fr) 100px 140px 80px;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid #edf0f2}
+.articleResult:last-child{border-bottom:0}.articleResult small,.articleResult span{display:block;color:#707b84;font-size:11px}.articleResult strong{display:block;font-size:13px;margin:2px 0}.articleIdentity strong{font-size:14px}
+.articleResult button{padding:7px 10px}
+@media(max-width:900px){.articleResult{grid-template-columns:1fr 90px}.articleResult>div:nth-child(3){grid-column:1/2}}
