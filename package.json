@@ -7,7 +7,7 @@
     "dev": "npm run dev --workspace=@brebo/calc-web",
     "dev:api": "npm run dev --workspace=@brebo/calc-api",
     "build": "npm run build --workspaces --if-present",
-    "start": "npm run start --workspace=@brebo/calc-api",
+    "start": "npm run preflight && npm run migrate && npm run start --workspace=@brebo/calc-api",
     "migrate": "npm run migrate --workspace=@brebo/calc-api",
     "preflight": "node scripts/preflight.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
