@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeProjectContext, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -278,6 +278,29 @@ app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jp
     res.status(201).json(result);
   } catch {
     res.status(502).json({ error: "Offerte kon niet door BREBO Office worden verwerkt." });
+  }
+});
+
+app.get("/api/quotes/:fileId/preview", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const fileId = Number(req.params.fileId);
+  if (!Number.isInteger(fileId) || fileId <= 0) {
+    res.status(400).json({ error: "Ongeldige offertebron." });
+    return;
+  }
+  try {
+    const preview = await fetchSupplierQuotePreview({
+      calculationId: session.officeCalculationId,
+      fileId
+    });
+    res.setHeader("Content-Type", preview.contentType);
+    if (preview.contentDisposition) res.setHeader("Content-Disposition", preview.contentDisposition);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(Buffer.from(preview.bytes));
+  } catch {
+    res.status(502).json({ error: "Offertevoorbeeld kon niet uit BREBO Office worden opgehaald." });
   }
 });
 
