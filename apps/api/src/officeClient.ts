@@ -139,7 +139,10 @@ export async function uploadSupplierQuoteToOffice(input: {
     redirect: "error",
     signal: AbortSignal.timeout(35000)
   });
-  if (!response.ok) throw new Error(`Office quote upload failed with status ${response.status}.`);
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 1000);
+    throw new Error(`Office quote upload failed with status ${response.status}: ${detail || response.statusText}`);
+  }
   return await response.json() as any;
 }
 
