@@ -255,6 +255,9 @@ app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jp
   if (!session) return;
   const lineRef = String(req.headers["x-brebo-line-ref"] ?? "").trim();
   const filename = String(req.headers["x-brebo-filename"] ?? "offerte").trim();
+  const lineDescription = String(req.headers["x-brebo-line-description"] ?? "").trim();
+  const lineQuantityRaw = String(req.headers["x-brebo-line-quantity"] ?? "").trim();
+  const lineUnit = String(req.headers["x-brebo-line-unit"] ?? "").trim();
   const mimeType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
   if (!lineRef || !Buffer.isBuffer(req.body) || req.body.length === 0) {
     res.status(400).json({ error: "Selecteer een calculatieregel en offertebestand." });
@@ -266,7 +269,10 @@ app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jp
       lineRef,
       filename,
       mimeType,
-      bytes: req.body
+      bytes: req.body,
+      lineDescription,
+      lineQuantity: lineQuantityRaw !== "" && Number.isFinite(Number(lineQuantityRaw)) ? Number(lineQuantityRaw) : undefined,
+      lineUnit
     });
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json(result);
