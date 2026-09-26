@@ -11,7 +11,7 @@ export type OfficeProjectContext = {
     client_name: string;
     client_organization: { id: number; title: string } | null;
     project_kind: string;
-    disciplines: string;
+    disciplines: string[];
     description: string;
     buildings: Array<{ id: number; title: string }>;
   };
