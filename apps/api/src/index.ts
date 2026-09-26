@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext } from "./officeClient.js";
+import { fetchOfficeProjectContext, searchOfficeArticles } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -247,6 +247,24 @@ app.post("/api/launch/consume", async (req, res) => {
     throw error;
   } finally {
     connection.release();
+  }
+});
+
+app.get("/api/articles/search", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const result = await searchOfficeArticles({
+      q: String(req.query.q ?? "").trim(),
+      supplier: String(req.query.supplier ?? "").trim(),
+      category: String(req.query.category ?? "").trim(),
+      limit: Number(req.query.limit ?? 40)
+    });
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json(result);
+  } catch {
+    res.status(502).json({ error: "Artikeldata kon niet uit BREBO Office worden opgehaald." });
   }
 });
 
