@@ -262,7 +262,7 @@ app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jp
   }
   try {
     const result = await uploadSupplierQuoteToOffice({
-      calculationId: session.calculationId,
+      calculationId: session.officeCalculationId,
       lineRef,
       filename,
       mimeType,
