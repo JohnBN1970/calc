@@ -80,3 +80,30 @@ Calculatie, MJOP and Planning must present one BREBO product family:
 - same project-context header
 
 The Calculatie shell becomes the reference implementation for the other workbenches.
+
+
+## BREBO Workbench standard
+
+BREBO Calc is the reference implementation for external specialist workbenches connected to Office.
+
+Every future BREBO workbench must follow the same rules:
+
+1. Office remains the system of record for shared identity and context.
+2. Each workbench has its own repository, runtime and database when domain-specific persistence is needed.
+3. No workbench reads or writes the Office database directly.
+4. Cross-system access uses a narrow, versioned API contract.
+5. Server-to-server communication uses dedicated HMAC-protected credentials or the successor central SSO/API mechanism.
+6. Browser users enter through Office or central BREBO authentication; secrets never reach the browser.
+7. Stable Office identifiers are stored alongside local workbench identifiers.
+8. The BREBO shell, design tokens and navigation model stay visually consistent across applications.
+9. Domain-specific draft/work data belongs to the specialist workbench; established results and canonical references flow back to Office.
+10. Existing Drupal modules remain available until the replacement workbench is proven in production and migration is complete.
+
+### Planned workbenches
+
+- Calculatie: estimating, recipes, price components and commercial calculation.
+- MJOP: condition assessment, measures, cycles, scenarios and multi-year cost planning.
+- Planning: project/resource capacity, crews, conflicts and operational scheduling.
+- Personeel: skills, certificates, availability, employment/inzet context, leave and HR workflows.
+
+The same launch/session pattern used by Calc should be reused unless a later central BREBO SSO implementation supersedes it.
