@@ -142,3 +142,25 @@ export async function uploadSupplierQuoteToOffice(input: {
   if (!response.ok) throw new Error(`Office quote upload failed with status ${response.status}.`);
   return await response.json() as any;
 }
+
+
+export async function fetchSupplierQuotePreview(input: {
+  calculationId: number;
+  fileId: number;
+}): Promise<{ bytes: Uint8Array; contentType: string; contentDisposition: string | null }> {
+  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    throw new Error(`Office quote preview failed with status ${response.status}.`);
+  }
+  return {
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") ?? "application/octet-stream",
+    contentDisposition: response.headers.get("content-disposition")
+  };
+}
