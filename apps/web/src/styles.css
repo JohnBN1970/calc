@@ -11,3 +11,14 @@
 .commandSpacer{flex:1}
 .saveState{display:inline-flex;align-items:center;min-height:34px;padding:0 10px;border:1px solid #dfe4e8;border-radius:999px;background:#fff;color:#6d7780;font-size:12px}
 @media(max-width:900px){.commandbar{overflow-x:auto}.command{min-width:64px}.commandSpacer{min-width:8px}}
+
+.commandActive{background:#e8edf1;color:#111820}
+.priceWorkspace{border-bottom:1px solid #dfe4e8;background:#f8fafb;padding:18px}
+.priceWorkspaceHead{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:14px}
+.priceWorkspaceHead h2{margin:3px 0 4px;font-size:20px}.priceWorkspaceHead p{margin:0;color:#6d7780;font-size:13px}
+.panelClose{border:0;background:transparent;color:#66717a;font-size:24px;padding:0 5px;font-weight:400}
+.priceActions{display:grid;grid-template-columns:minmax(280px,1.5fr) repeat(3,minmax(180px,1fr));gap:10px}
+.priceSearch{background:#fff;border:1px solid #dfe4e8;border-radius:7px;padding:10px 12px}.priceSearch span{display:block;font-size:11px;font-weight:700;color:#707b84;margin-bottom:5px}.priceSearch input{width:100%;border:0;outline:none;font:inherit;font-size:14px}
+.sourceAction{text-align:left;background:#fff;color:#293139;border:1px solid #dfe4e8;border-radius:7px;padding:10px 12px}.sourceAction:hover{background:#f2f5f7}.sourceAction strong,.sourceAction span{display:block}.sourceAction strong{font-size:13px;margin-bottom:4px}.sourceAction span{font-size:11px;line-height:1.35;color:#707b84;font-weight:400}
+.sourcePrinciple{display:flex;gap:7px;margin-top:10px;font-size:11px;color:#707b84}.sourcePrinciple strong{color:#3e4850}
+@media(max-width:1100px){.priceActions{grid-template-columns:1fr 1fr}.priceSearch{grid-column:1/-1}}
