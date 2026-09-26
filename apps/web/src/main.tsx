@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -17,14 +17,17 @@ type Line = {
   subcontracting: number;
   other: number;
 };
-
-const initialLines: Line[] = [
-  { id: 1, parentId: null, lineType: "chapter", code: "30", description: "Kozijnen en beglazing", unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 },
-  { id: 2, parentId: 1, lineType: "paragraph", code: "31", description: "Kozijnen", unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 },
-  { id: 3, parentId: 2, lineType: "item", code: "31.10", description: "Bestaand kozijn demonteren", unit: "st", quantity: 8, labour: 92.5, material: 0, equipment: 6, subcontracting: 0, other: 0 },
-  { id: 4, parentId: 2, lineType: "item", code: "31.20", description: "Kunststof kozijn leveren", unit: "st", quantity: 8, labour: 0, material: 742.35, equipment: 0, subcontracting: 0, other: 0 },
-  { id: 5, parentId: 2, lineType: "item", code: "31.30", description: "Kozijn monteren en afwerken", unit: "st", quantity: 8, labour: 186, material: 48.5, equipment: 18, subcontracting: 0, other: 0 }
-];
+type ProjectContext = {
+  id: number;
+  code: string;
+  title: string;
+  status: string;
+  client_name: string;
+  project_kind: string;
+  disciplines: string;
+  description: string;
+  buildings: Array<{ id: number; title: string }>;
+};
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
@@ -35,17 +38,84 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
+function mapServerLine(raw: Record<string, unknown>): Line {
+  return {
+    id: Number(raw.id),
+    parentId: raw.parent_id == null ? null : Number(raw.parent_id),
+    lineType: String(raw.line_type) as LineType,
+    code: String(raw.code ?? ""),
+    description: String(raw.description ?? ""),
+    unit: String(raw.unit ?? ""),
+    quantity: Number(raw.quantity ?? 0),
+    labour: Number(raw.labour_unit_cost ?? 0),
+    material: Number(raw.material_unit_cost ?? 0),
+    equipment: Number(raw.equipment_unit_cost ?? 0),
+    subcontracting: Number(raw.subcontracting_unit_cost ?? 0),
+    other: Number(raw.other_unit_cost ?? 0)
+  };
+}
+
 function App() {
-  const [lines, setLines] = useState<Line[]>(initialLines);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [project, setProject] = useState<ProjectContext | null>(null);
+  const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
   const [markupPct, setMarkupPct] = useState(30);
-  const [status, setStatus] = useState("Concept — lokaal gewijzigd");
-  const [nextId, setNextId] = useState(6);
+  const [status, setStatus] = useState("Laden…");
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [nextId, setNextId] = useState(-1);
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
     const markupAmount = direct * (markupPct / 100);
     return { direct, markupAmount, sales: direct + markupAmount };
   }, [lines, markupPct]);
+
+  const loadWorkbench = async () => {
+    const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
+    if (response.status === 401) {
+      setAuthorized(false);
+      setStatus("Open deze calculatie vanuit BREBO Office");
+      return;
+    }
+    if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
+    const data = await response.json();
+    const direct = Number(data.version?.direct_cost ?? 0);
+    const markupAmount = Number(data.version?.markup_amount ?? 0);
+    setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
+    setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    setProject(data.project as ProjectContext);
+    setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
+    setAuthorized(true);
+    setStatus("Opgeslagen");
+  };
+
+  useEffect(() => {
+    const boot = async () => {
+      try {
+        const url = new URL(window.location.href);
+        if (url.pathname === "/launch") {
+          const token = url.searchParams.get("token");
+          if (!token) throw new Error("Launch-token ontbreekt.");
+          setStatus("Office-koppeling openen…");
+          const response = await fetch("/api/launch/consume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(String(error.error ?? "Office-link kon niet worden geopend."));
+          }
+          window.history.replaceState({}, "", "/");
+        }
+        await loadWorkbench();
+      } catch (error) {
+        setAuthorized(false);
+        setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
+      }
+    };
+    void boot();
+  }, []);
 
   const patchLine = (id: number, patch: Partial<Line>) => {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
@@ -55,7 +125,7 @@ function App() {
   const addLine = (lineType: LineType) => {
     const parent = [...lines].reverse().find(line => line.lineType === "paragraph") ?? [...lines].reverse().find(line => line.lineType === "chapter");
     const id = nextId;
-    setNextId(id + 1);
+    setNextId(id - 1);
     setLines(current => [...current, {
       id,
       parentId: lineType === "chapter" ? null : parent?.id ?? null,
@@ -72,12 +142,7 @@ function App() {
   const save = async () => {
     setStatus("Opslaan…");
     try {
-      const calculationId = new URLSearchParams(window.location.search).get("id");
-      if (!calculationId) {
-        setStatus("Demo — voeg ?id=<calculatie-id> toe na koppeling met API");
-        return;
-      }
-      const response = await fetch(`/api/calculations/${calculationId}/workbench`, {
+      const response = await fetch("/api/workbench/current", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -101,22 +166,39 @@ function App() {
       });
       if (!response.ok) throw new Error("Opslaan mislukt");
       setStatus("Opgeslagen");
+      await loadWorkbench();
     } catch {
       setStatus("Opslaan mislukt");
     }
   };
 
+  if (authorized === false) {
+    return <div className="entry">
+      <div className="entryCard">
+        <span className="mark">B</span>
+        <h1>BREBO Calculatie</h1>
+        <p>{status}</p>
+        <p className="muted">Calculaties worden vanuit BREBO Office geopend. Daarmee blijven projectcontext, rechten en databron centraal beheerd.</p>
+      </div>
+    </div>;
+  }
+
   return <div className="app">
     <header className="topbar">
       <div className="brand"><span className="mark">B</span><strong>BREBO</strong><span>Calculatie</span></div>
-      <nav><a href="https://office.brebobv.nl">Office</a><a className="active" href="#">Calculatie</a><a href="https://mjop.brebobv.nl">MJOP</a><a href="https://planning.brebobv.nl">Planning</a></nav>
-      <div className="user">John Boon</div>
+      <nav><a href="#">Office</a><a className="active" href="#">Calculatie</a><a href="https://mjop.brebobv.nl">MJOP</a><a href="https://planning.brebobv.nl">Planning</a></nav>
+      <div className="user">BREBO</div>
     </header>
 
     <main>
       <div className="context">
-        <div><span className="eyebrow">PROJECT</span><h1>Nieuwe calculatie</h1><p>Werkblad · {status}</p></div>
-        <div className="contextActions"><button className="secondary">← Office</button><button onClick={save}>Opslaan</button></div>
+        <div>
+          <span className="eyebrow">{project?.code ? `PROJECT · ${project.code}` : "PROJECT"}</span>
+          <h1>{calculationTitle}</h1>
+          <p>{project?.title ?? "Projectcontext laden…"} · {status}</p>
+          {project?.client_name && <p className="projectMeta">Opdrachtgever: {project.client_name}{project.project_kind ? ` · ${project.project_kind}` : ""}</p>}
+        </div>
+        <div className="contextActions"><button className="secondary" onClick={() => window.history.back()}>← Office</button><button onClick={save}>Opslaan</button></div>
       </div>
 
       <section className="kpis">
