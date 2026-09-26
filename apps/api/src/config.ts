@@ -16,7 +16,7 @@ export const config = {
     password: required("MYSQL_PASSWORD")
   },
   office: {
-    baseUrl: required("OFFICE_API_BASE_URL").replace(/\\/$/, ""),
+    baseUrl: (() => { const value = required("OFFICE_API_BASE_URL"); return value.endsWith("/") ? value.slice(0, -1) : value; })(),
     sharedSecret: required("BREBO_CALC_SHARED_SECRET")
   },
   corsOrigin: process.env.CORS_ORIGIN ?? "https://calculatie.brebobv.nl",
