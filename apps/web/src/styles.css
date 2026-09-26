@@ -29,3 +29,7 @@
 .articleResult:last-child{border-bottom:0}.articleResult small,.articleResult span{display:block;color:#707b84;font-size:11px}.articleResult strong{display:block;font-size:13px;margin:2px 0}.articleIdentity strong{font-size:14px}
 .articleResult button{padding:7px 10px}
 @media(max-width:900px){.articleResult{grid-template-columns:1fr 90px}.articleResult>div:nth-child(3){grid-column:1/2}}
+
+.hiddenFile{display:none}
+.row.data{cursor:default}.row.data.is-selected{outline:2px solid currentColor;outline-offset:-2px}
+.quoteStatus{margin-top:6px;font-size:12px;color:#68737c}
