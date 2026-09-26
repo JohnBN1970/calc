@@ -33,6 +33,7 @@ type QuoteProposal = {
   suggested: QuoteCandidate | null;
   fileId: number;
   filename: string;
+  targetLineId: number | null;
 };
 
 type CostCarrier = "labour" | "material" | "equipment" | "subcontracting" | "other";
@@ -265,57 +266,52 @@ function App() {
 
   const uploadQuote = async (file: File | undefined) => {
     if (!file) return;
-    const selected = lines.find(line => line.id === selectedLineId && isCostLine(line));
-    if (!selected) {
-      setQuoteStatus(`${file.name} gekozen. Klik nu de calculatieregel aan waarvoor deze offerte geldt en kies daarna opnieuw Offerte inlezen.`);
-      if (quoteFileRef.current) quoteFileRef.current.value = "";
-      return;
-    }
-    if (selected.id < 0) {
-      setQuoteStatus("Sla de geselecteerde nieuwe calculatieregel eerst op voordat je de offerte koppelt.");
-      if (quoteFileRef.current) quoteFileRef.current.value = "";
-      return;
-    }
-    const targetLineId = selected.id;
+    const selected = lines.find(line => line.id === selectedLineId && isCostLine(line)) ?? null;
+    const targetLineId = selected?.id ?? null;
     setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
     try {
       const response = await fetch("/api/quotes/upload", {
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
-          "X-BREBO-Line-Ref": String(targetLineId),
+          "X-BREBO-Line-Ref": targetLineId == null ? "new-line" : String(targetLineId),
           "X-BREBO-Filename": file.name,
-          "X-BREBO-Line-Description": selected.description,
-          "X-BREBO-Line-Quantity": String(selected.quantity),
-          "X-BREBO-Line-Unit": selected.unit
+          "X-BREBO-Line-Description": selected?.description ?? "",
+          "X-BREBO-Line-Quantity": selected ? String(selected.quantity) : "",
+          "X-BREBO-Line-Unit": selected?.unit ?? ""
         },
         body: file
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(data.error ?? "Offerte kon niet worden verwerkt."));
+      if (!response.ok) throw new Error(`${String(data.error ?? "Offerte kon niet worden verwerkt.")} (HTTP ${response.status})`);
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
       const candidates = Array.isArray(data.proposal?.candidates) ? data.proposal.candidates as QuoteCandidate[] : [];
       setQuoteProposal({
         status: String(data.proposal?.status ?? "unknown"),
         target: {
-          description: String(data.proposal?.target?.description ?? selected.description),
+          description: String(data.proposal?.target?.description ?? selected?.description ?? ""),
           quantity: data.proposal?.target?.quantity == null ? null : Number(data.proposal.target.quantity),
-          unit: String(data.proposal?.target?.unit ?? selected.unit)
+          unit: String(data.proposal?.target?.unit ?? selected?.unit ?? "")
         },
         candidates,
         suggested: data.proposal?.suggested ? data.proposal.suggested as QuoteCandidate : null,
         fileId,
-        filename: file.name
+        filename: file.name,
+        targetLineId
       });
-      patchLine(targetLineId, {
-        priceSourceType: "supplier_quote",
-        officeSourceId: fileId > 0 ? String(fileId) : null,
-        sourceReference: file.name,
-        sourceDocumentId: fileId > 0 ? String(fileId) : null
-      });
+      if (targetLineId != null) {
+        patchLine(targetLineId, {
+          priceSourceType: "supplier_quote",
+          officeSourceId: fileId > 0 ? String(fileId) : null,
+          sourceReference: file.name,
+          sourceDocumentId: fileId > 0 ? String(fileId) : null
+        });
+      }
       setQuoteStatus(extractionStatus === "extracted"
-        ? `Offerte opgeslagen in Office en tekst herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`
+        ? (targetLineId == null
+          ? `Offerte opgeslagen en herkend. Kies rechts een prijs; Calc maakt de calculatieregel automatisch.`
+          : `Offerte opgeslagen en herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`)
         : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
     } catch (error) {
       setQuoteStatus(error instanceof Error ? error.message : "Offerte kon niet worden verwerkt.");
@@ -325,7 +321,7 @@ function App() {
   };
 
   const applyQuoteCandidate = (candidate: QuoteCandidate) => {
-    if (selectedLineId == null || !quoteProposal) return;
+    if (!quoteProposal) return;
     const patch: Partial<Line> = {
       priceSourceType: "supplier_quote",
       officeSourceId: String(quoteProposal.fileId),
@@ -338,8 +334,45 @@ function App() {
     if (quoteCarrier === "equipment") patch.equipment = candidate.value;
     if (quoteCarrier === "subcontracting") patch.subcontracting = candidate.value;
     if (quoteCarrier === "other") patch.other = candidate.value;
-    patchLine(selectedLineId, patch);
-    setQuoteStatus(`${money.format(candidate.value)} overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier} voor regel #${selectedLineId}. Nog opslaan.`);
+
+    if (quoteProposal.targetLineId != null) {
+      patchLine(quoteProposal.targetLineId, patch);
+      setQuoteStatus(`${money.format(candidate.value)} overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier} voor regel #${quoteProposal.targetLineId}. Nog opslaan.`);
+      return;
+    }
+
+    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+    const parent = latestParagraph ?? latestChapter;
+    const id = nextId;
+    setNextId(id - 1);
+    const newLine: Line = {
+      id,
+      parentId: parent?.id ?? null,
+      lineType: "item",
+      code: "",
+      description: quoteProposal.target.description || candidate.text || quoteProposal.filename,
+      unit: quoteProposal.target.unit || "st",
+      quantity: quoteProposal.target.quantity && quoteProposal.target.quantity > 0 ? quoteProposal.target.quantity : 1,
+      labour: 0,
+      material: 0,
+      equipment: 0,
+      subcontracting: 0,
+      other: 0,
+      priceSourceType: "supplier_quote",
+      officeSourceId: String(quoteProposal.fileId),
+      sourceReference: quoteProposal.filename,
+      sourceSupplier: null,
+      sourceUnitPrice: candidate.value,
+      sourcePriceDate: null,
+      sourceDocumentId: String(quoteProposal.fileId),
+      ...patch
+    };
+    setLines(current => [...current, newLine]);
+    setSelectedLineId(id);
+    setQuoteProposal(current => current ? { ...current, targetLineId: id } : current);
+    setStatus("Concept — niet opgeslagen");
+    setQuoteStatus(`${money.format(candidate.value)} overgenomen; Calc heeft automatisch een nieuwe calculatieregel gemaakt. Nog opslaan.`);
   };
 
   const save = async () => {
@@ -445,7 +478,7 @@ function App() {
             <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
-          <div className="quoteStatus">{quoteStatus}</div>
+          <div className="quoteStatus" role="status" aria-live="polite"><strong>Status offerte:</strong> {quoteStatus}</div>
           {quoteProposal && <div className="quoteReview">
             <div className="quotePreviewPane">
               <div className="quotePreviewTitle"><strong>Originele offerte</strong><span>{quoteProposal.filename}</span></div>
