@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS calculations (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   office_project_id BIGINT UNSIGNED NOT NULL,
+  office_calculation_id BIGINT UNSIGNED NOT NULL,
   code VARCHAR(64) NOT NULL,
   title VARCHAR(255) NOT NULL,
   status ENUM('draft','established','archived') NOT NULL DEFAULT 'draft',
@@ -8,6 +9,7 @@ CREATE TABLE IF NOT EXISTS calculations (
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (id),
   UNIQUE KEY uq_calculation_code (code),
+  UNIQUE KEY uq_calculation_office (office_calculation_id),
   KEY idx_calculation_office_project (office_project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -49,4 +51,12 @@ CREATE TABLE IF NOT EXISTS calculation_lines (
   KEY idx_line_parent (parent_id),
   CONSTRAINT fk_line_version FOREIGN KEY (version_id) REFERENCES calculation_versions(id) ON DELETE CASCADE,
   CONSTRAINT fk_line_parent FOREIGN KEY (parent_id) REFERENCES calculation_lines(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS launch_nonces (
+  nonce CHAR(32) NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  consumed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (nonce),
+  KEY idx_launch_nonce_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
