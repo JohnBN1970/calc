@@ -128,6 +128,29 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
+function SourceVisual({ fileId, page, label }: { fileId: string | number; page: number; label: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  if (imageFailed) {
+    return <div className="sourceVisualFallback">
+      <iframe
+        title={label}
+        src={"/api/quotes/" + fileId + "/preview#page=" + page + "&zoom=page-width"}
+      />
+      <small>Bronpagina · PDF-weergave</small>
+    </div>;
+  }
+  return <div className="sourceVisualWrap">
+    <img
+      className="sourceVisual"
+      src={"/api/quotes/" + fileId + "/visual/" + page}
+      alt={label}
+      loading="lazy"
+      onError={() => setImageFailed(true)}
+    />
+    <small>Bronbeeld · pagina {page}</small>
+  </div>;
+}
+
 function mapServerLine(raw: Record<string, unknown>): Line {
   return {
     id: Number(raw.id),
@@ -644,7 +667,7 @@ function App() {
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
-                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && <div className="sourceVisualWrap"><img className="sourceVisual" src={`/api/quotes/${quoteProposal.fileId}/visual/${line.source_page}`} alt={`Bronbeeld offertepositie ${line.position}`} loading="lazy" /><small>Bronbeeld · pagina {line.source_page}</small></div>}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
                 <strong>{money.format(line.line_total)}</strong>
               </label>)}
             </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
@@ -691,7 +714,7 @@ function App() {
                 >Offerte</button>}
                 {(line.sourceDetails || line.sourceVisualPage || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <div className="sourceVisualWrap"><img className="sourceVisual" src={`/api/quotes/${line.sourceDocumentId}/visual/${line.sourceVisualPage}`} alt={`Bronbeeld ${line.code || "offerteregel"}`} loading="lazy" /><small>Bronbeeld · pagina {line.sourceVisualPage}</small></div>}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
