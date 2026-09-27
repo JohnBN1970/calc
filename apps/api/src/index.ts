@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeCalculationWorkspaceState, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, sendOfficeCalculationCommand, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -41,6 +41,7 @@ type LaunchPayload = {
   v: 1;
   calculation_id: number;
   project_id: number;
+  actor_id: number;
   exp: number;
   nonce: string;
 };
@@ -50,6 +51,7 @@ type SessionPayload = {
   calculationId: number;
   officeCalculationId: number;
   officeProjectId: number;
+  officeActorId: number;
   exp: number;
 };
 
@@ -90,6 +92,8 @@ function parseLaunchToken(token: string): LaunchPayload {
     Number(payload.calculation_id) <= 0 ||
     !Number.isInteger(payload.project_id) ||
     Number(payload.project_id) <= 0 ||
+    !Number.isInteger(payload.actor_id) ||
+    Number(payload.actor_id) <= 0 ||
     !Number.isInteger(payload.exp) ||
     Number(payload.exp) < now ||
     Number(payload.exp) > now + 180 ||
@@ -133,6 +137,8 @@ function sessionFromRequest(req: Request): SessionPayload | null {
       !Number.isInteger(payload.calculationId) ||
       !Number.isInteger(payload.officeCalculationId) ||
       !Number.isInteger(payload.officeProjectId) ||
+      !Number.isInteger(payload.officeActorId) ||
+      Number(payload.officeActorId) <= 0 ||
       !Number.isInteger(payload.exp) ||
       Number(payload.exp) < now
     ) return null;
@@ -238,6 +244,7 @@ app.post("/api/launch/consume", async (req, res) => {
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
       officeProjectId: launch.project_id,
+      officeActorId: launch.actor_id,
       exp: now + SESSION_SECONDS
     });
     res.setHeader("Set-Cookie", sessionCookie(token));
@@ -245,6 +252,7 @@ app.post("/api/launch/consume", async (req, res) => {
       status: "ok",
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
+      officeActorId: launch.actor_id,
       project: officeContext.project
     });
   } catch (error) {
@@ -353,6 +361,81 @@ app.post("/api/session/logout", (req, res) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
   res.status(204).end();
+});
+
+app.get("/api/office-workspace/state", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const state = await fetchOfficeCalculationWorkspaceState(session.officeCalculationId);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json(state);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc Office workspace state failed:", detail);
+    res.status(502).json({ error: `Calculatie kon niet uit BREBO Office worden geladen: ${detail}` });
+  }
+});
+
+app.post("/api/office-workspace/rows", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.patch("/api/office-workspace/rows/:rowId", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const rowId = Number(req.params.rowId);
+  if (!Number.isInteger(rowId) || rowId <= 0) {
+    res.status(400).json({ error: "Ongeldige calculatieregel." });
+    return;
+  }
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "PATCH",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${rowId}`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.delete("/api/office-workspace/rows/:rowId", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const rowId = Number(req.params.rowId);
+  if (!Number.isInteger(rowId) || rowId <= 0) {
+    res.status(400).json({ error: "Ongeldige calculatieregel." });
+    return;
+  }
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "DELETE",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${rowId}`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
 });
 
 app.get("/api/workbench/current", async (req, res) => {
