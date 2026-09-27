@@ -26,9 +26,11 @@ type Line = {
   sourceDocumentId: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; unit_price: number; line_total: number; line_no: number };
 type QuoteProposal = {
   status: string;
   target: { description: string; quantity: number | null; unit: string };
+  lines: QuoteLine[];
   candidates: QuoteCandidate[];
   suggested: QuoteCandidate | null;
   fileId: number;
@@ -132,6 +134,7 @@ function App() {
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
+  const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
@@ -287,6 +290,8 @@ function App() {
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
       const candidates = Array.isArray(data.proposal?.candidates) ? data.proposal.candidates as QuoteCandidate[] : [];
+      const quoteLines = Array.isArray(data.proposal?.lines) ? data.proposal.lines as QuoteLine[] : [];
+      setSelectedQuotePositions(quoteLines.map(line => line.position));
       setQuoteProposal({
         status: String(data.proposal?.status ?? "unknown"),
         target: {
@@ -294,6 +299,7 @@ function App() {
           quantity: data.proposal?.target?.quantity == null ? null : Number(data.proposal.target.quantity),
           unit: String(data.proposal?.target?.unit ?? selected?.unit ?? "")
         },
+        lines: quoteLines,
         candidates,
         suggested: data.proposal?.suggested ? data.proposal.suggested as QuoteCandidate : null,
         fileId,
@@ -310,7 +316,7 @@ function App() {
       }
       setQuoteStatus(extractionStatus === "extracted"
         ? (targetLineId == null
-          ? `Offerte opgeslagen en herkend. Kies rechts een prijs; Calc maakt de calculatieregel automatisch.`
+          ? (quoteLines.length > 0 ? `${quoteLines.length} offerteregels herkend. Controleer en neem de geselecteerde regels over.` : `Offerte opgeslagen en herkend. Kies rechts een prijs; Calc maakt de calculatieregel automatisch.`)
           : `Offerte opgeslagen en herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`)
         : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
     } catch (error) {
@@ -318,6 +324,48 @@ function App() {
     } finally {
       if (quoteFileRef.current) quoteFileRef.current.value = "";
     }
+  };
+
+  const applyQuoteLines = () => {
+    if (!quoteProposal || quoteProposal.lines.length === 0) return;
+    const chosen = quoteProposal.lines.filter(line => selectedQuotePositions.includes(line.position));
+    if (chosen.length === 0) {
+      setQuoteStatus("Selecteer minimaal één offerteregel.");
+      return;
+    }
+    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+    const parent = latestParagraph ?? latestChapter;
+    let id = nextId;
+    const created: Line[] = chosen.map(source => {
+      const currentId = id--;
+      const costs = { labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 };
+      costs[quoteCarrier] = source.unit_price;
+      return {
+        id: currentId,
+        parentId: parent?.id ?? null,
+        lineType: "item",
+        code: source.position,
+        description: source.description,
+        unit: source.unit || "st",
+        quantity: source.quantity > 0 ? source.quantity : 1,
+        ...costs,
+        priceSourceType: "supplier_quote",
+        officeSourceId: String(quoteProposal.fileId),
+        sourceReference: quoteProposal.filename,
+        sourceSupplier: null,
+        sourceUnitPrice: source.unit_price,
+        sourcePriceDate: null,
+        sourceDocumentId: String(quoteProposal.fileId)
+      };
+    });
+    setNextId(id);
+    setLines(current => [...current, ...created]);
+    setSelectedLineId(created[created.length - 1]?.id ?? null);
+    setQuoteProposal(null);
+    setSelectedQuotePositions([]);
+    setStatus("Concept — niet opgeslagen");
+    setQuoteStatus(`${created.length} offerteregels overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
   };
 
   const applyQuoteCandidate = (candidate: QuoteCandidate) => {
@@ -496,7 +544,15 @@ function App() {
                 <option value="other">Overig</option>
               </select></label>
             </div>
-            {quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
+            {quoteProposal.lines.length > 0 ? <div className="quoteStructured">
+              <div className="quoteStructuredHead"><strong>{quoteProposal.lines.length} offerteregels herkend</strong><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+              {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
+                <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
+                <span className="quotePosition">{line.position}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small></span>
+                <strong>{money.format(line.line_total)}</strong>
+              </label>)}
+            </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
               <div className="quoteCandidates">{quoteProposal.candidates.map((candidate, index) =>
                 <div className={"quoteCandidate" + (index === 0 ? " is-suggested" : "")} key={`${candidate.line_no}-${candidate.value}`}>
                   <div><small>{index === 0 ? "Voorstel" : `Kandidaat ${index + 1}`} · bronregel {candidate.line_no}</small><strong>{money.format(candidate.value)}</strong><span>{candidate.text}</span></div>
