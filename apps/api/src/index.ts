@@ -30,6 +30,7 @@ type LineInput = {
   sourceUnitPrice?: number | null;
   sourcePriceDate?: string | null;
   sourceDocumentId?: string | null;
+  sourceDetails?: string | null;
 };
 
 type LaunchPayload = {
@@ -358,7 +359,7 @@ app.get("/api/workbench/current", async (req, res) => {
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
-            source_price_date, source_document_id
+            source_price_date, source_document_id, source_details
        FROM calculation_lines
       WHERE version_id = ?
       ORDER BY sort_order, id`,
@@ -443,8 +444,8 @@ app.put("/api/workbench/current", async (req, res) => {
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
-           source_price_date, source_document_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           source_price_date, source_document_id, source_details)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
@@ -455,7 +456,8 @@ app.put("/api/workbench/current", async (req, res) => {
           line.sourceSupplier ? String(line.sourceSupplier).slice(0, 255) : null,
           line.sourceUnitPrice == null ? null : numeric(line.sourceUnitPrice),
           line.sourcePriceDate ? String(line.sourcePriceDate).slice(0, 10) : null,
-          line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null
+          line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null,
+          line.sourceDetails ? String(line.sourceDetails).slice(0, 8000) : null
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);

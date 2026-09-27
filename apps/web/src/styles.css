@@ -63,3 +63,33 @@
 .quoteLineDescription strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .quoteLineDescription small{color:#68737d;margin-top:2px}
 .quoteStructuredLine>strong{text-align:right}
+
+
+.quoteLineDetails,
+.calcLineDetails {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.quoteLineDetails summary,
+.calcLineDetails summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.quoteLineDetails pre,
+.calcLineDetails pre {
+  margin: 7px 0 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(0, 0, 0, .09);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .025);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.calcLineDetails {
+  width: 100%;
+}
