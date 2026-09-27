@@ -383,6 +383,7 @@ function App() {
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [officeAuthoritative, setOfficeAuthoritative] = useState(false);
+  const [officeVersion, setOfficeVersion] = useState("");
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [priceSearch, setPriceSearch] = useState("");
@@ -419,6 +420,7 @@ function App() {
     setLines(mapOfficeWorkspaceLines(data));
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.label ?? data.calculation?.code ?? "BREBO Calculatie"));
+    setOfficeVersion(String(data.version?.version ?? ""));
     setOfficeAuthoritative(true);
     setAuthorized(true);
     setStatus("Live uit BREBO Office");
@@ -454,10 +456,78 @@ function App() {
 
   const patchLine = (id: number, patch: Partial<Line>) => {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
-    setStatus("Concept — niet opgeslagen");
+    setStatus(officeAuthoritative ? "Wijzigingen klaar voor Office" : "Concept — niet opgeslagen");
   };
 
-  const addLine = (lineType: LineType) => {
+  const saveOfficeRow = async (line: Line) => {
+    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    setStatus("Opslaan in Office…");
+    const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: officeVersion,
+        description: line.description,
+        unit: line.unit,
+        quantity: line.quantity,
+        unit_costs: {
+          labour: line.labour,
+          material: line.material,
+          equipment: line.equipment,
+          subcontracting: line.subcontracting,
+          other: line.other
+        }
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(String(error.error ?? "Opslaan in Office mislukt."));
+    }
+    await loadWorkbench();
+  };
+
+  const deleteOfficeRow = async (line: Line) => {
+    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    if (!window.confirm(`Regel "${line.description || line.id}" verwijderen?`)) return;
+    setStatus("Verwijderen in Office…");
+    const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: officeVersion })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(String(error.error ?? "Verwijderen in Office mislukt."));
+    }
+    await loadWorkbench();
+  };
+
+  const addLine = async (lineType: LineType) => {
+    if (officeAuthoritative) {
+      if (lineType !== "item") {
+        setStatus("Hoofdstuk/paragraaf volgt via Office structure commands");
+        return;
+      }
+      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
+      if (!latestParagraph?.officeStructureKey || !officeVersion) {
+        setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
+        return;
+      }
+      setStatus("Nieuwe regel in Office…");
+      const response = await fetch("/api/office-workspace/rows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: officeVersion, paragraph_key: latestParagraph.officeStructureKey })
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        setStatus(String(error.error ?? "Nieuwe regel kon niet worden toegevoegd."));
+        return;
+      }
+      await loadWorkbench();
+      return;
+    }
+
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
     const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
     const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
@@ -746,7 +816,15 @@ function App() {
 
   const save = async () => {
     if (officeAuthoritative) {
-      setStatus("Opslaan volgt via Office-commands");
+      try {
+        const editableRows = lines.filter(line => line.lineType === "item" && line.officeRowId);
+        for (const line of editableRows) {
+          await saveOfficeRow(line);
+        }
+        setStatus("Opgeslagen in Office");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Opslaan in Office mislukt");
+      }
       return;
     }
     setStatus("Opslaan…");
@@ -833,14 +911,14 @@ function App() {
         <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
           <div className="commandDivider" />
-          <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
-          <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
-          <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
+          <button className="command" type="button" onClick={() => void addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
+          <button className="command" type="button" onClick={() => void addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
+          <button className="command" type="button" onClick={() => void addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} disabled={officeAuthoritative} title={officeAuthoritative ? "Office is de bron; command-opslag wordt gekoppeld" : "Calculatie opslaan"}><Icon name="save" /><span>{officeAuthoritative ? "Office live" : "Opslaan"}</span></button>
+          <button className="command commandSave" type="button" onClick={() => void save()} title={officeAuthoritative ? "Wijzigingen opslaan in BREBO Office" : "Calculatie opslaan"}><Icon name="save" /><span>{officeAuthoritative ? "Opslaan in Office" : "Opslaan"}</span></button>
         </div>
 
         {priceWorkspaceOpen && <div className="priceWorkspace">
@@ -908,13 +986,13 @@ function App() {
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
-                <input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+                <input value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
                 <span>▾</span>
-                <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                <input value={line.description} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { description: e.target.value })} />
               </div>;
             }
             return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
-              <input className="cell" value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+              <input className="cell" value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
               <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
                 {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
@@ -931,7 +1009,7 @@ function App() {
                   <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
-              <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
+              <select className="cell" value={line.lineType} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
                 <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
               </select>
               <input className="cell" value={line.unit} onChange={e => patchLine(line.id, { unit: e.target.value })} />
@@ -942,9 +1020,13 @@ function App() {
               <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
               <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
               <strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong>
+              {officeAuthoritative && line.officeRowId && <div className="rowActions" onClick={event => event.stopPropagation()}>
+                <button type="button" onClick={() => void saveOfficeRow(line)}>✓</button>
+                <button type="button" onClick={() => void deleteOfficeRow(line)}>×</button>
+              </div>}
             </div>;
           })}
-          <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+          <button className="newrow" onClick={() => void addLine("item")}>+ Nieuwe calculatieregel</button>
         </div>
       </section>
     </main>
