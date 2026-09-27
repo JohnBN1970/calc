@@ -449,6 +449,97 @@ app.patch("/api/office-workspace/parameters", async (req, res) => {
   }
 });
 
+
+function officeWorkspaceCommandProxy(
+  method: "POST" | "PATCH" | "DELETE",
+  localPath: string,
+  officePath: (session: SessionPayload, req: Request) => string,
+  successStatus = 200
+): void {
+  const handler = async (req: Request, res: Response) => {
+    const session = requireSession(req, res);
+    if (!session) return;
+    try {
+      const result = await sendOfficeCalculationCommand({
+        method,
+        path: officePath(session, req),
+        actorId: session.officeActorId,
+        payload: req.body ?? {}
+      });
+      res.status(successStatus).json(result);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+      res.status(502).json({ error: detail });
+    }
+  };
+  if (method === "POST") app.post(localPath, handler);
+  else if (method === "PATCH") app.patch(localPath, handler);
+  else app.delete(localPath, handler);
+}
+
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/recipes",
+  session => `/api/workbench/v2/calculations/${session.officeCalculationId}/recipes`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "PATCH",
+  "/api/office-workspace/recipes/:recipeId",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/recipes/${req.params.recipeId}`
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/subcalculations",
+  session => `/api/workbench/v2/calculations/${session.officeCalculationId}/subcalculations`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/subcalculations/:subcalculationId/scopes",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/subcalculations/${req.params.subcalculationId}/scopes`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/subcalculations/:subcalculationId/applications",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/subcalculations/${req.params.subcalculationId}/applications`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/subcalculations/:subcalculationId/applications/:applicationId/objects",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/subcalculations/${req.params.subcalculationId}/applications/${req.params.applicationId}/objects`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/subcalculations/:subcalculationId/applications/:applicationId/objects/:objectId/exception-lines",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/subcalculations/${req.params.subcalculationId}/applications/${req.params.applicationId}/objects/${req.params.objectId}/exception-lines`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/rows/:rowId/price-sources",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${req.params.rowId}/price-sources`,
+  201
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/rows/:rowId/price-sources/:sourceId/approve",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${req.params.rowId}/price-sources/${req.params.sourceId}/approve`
+);
+officeWorkspaceCommandProxy(
+  "POST",
+  "/api/office-workspace/rows/:rowId/move",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${req.params.rowId}/move`
+);
+officeWorkspaceCommandProxy(
+  "PATCH",
+  "/api/office-workspace/structure/:structureKey/order",
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/${encodeURIComponent(req.params.structureKey)}/order`
+);
+
 app.all("/api/workbench/current", (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
