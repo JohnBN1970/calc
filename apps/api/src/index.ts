@@ -2,10 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
-import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeCalculationWorkspaceState, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, sendOfficeCalculationCommand, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -34,7 +33,6 @@ type LineInput = {
   sourceVisualPage?: number | null;
   sourceVisualCrop?: { x: number; y: number; width: number; height: number } | null;
   sourceVisualSearchRegion?: { x: number; y: number; width: number; height: number } | null;
-  sourceTextRegions?: Array<{ x: number; y: number; width: number; height: number }> | null;
   sourceOfferSummary?: string | null;
 };
 
@@ -42,15 +40,16 @@ type LaunchPayload = {
   v: 1;
   calculation_id: number;
   project_id: number;
+  actor_id: number;
   exp: number;
   nonce: string;
 };
 
 type SessionPayload = {
   v: 1;
-  calculationId: number;
   officeCalculationId: number;
   officeProjectId: number;
+  officeActorId: number;
   exp: number;
 };
 
@@ -91,6 +90,8 @@ function parseLaunchToken(token: string): LaunchPayload {
     Number(payload.calculation_id) <= 0 ||
     !Number.isInteger(payload.project_id) ||
     Number(payload.project_id) <= 0 ||
+    !Number.isInteger(payload.actor_id) ||
+    Number(payload.actor_id) <= 0 ||
     !Number.isInteger(payload.exp) ||
     Number(payload.exp) < now ||
     Number(payload.exp) > now + 180 ||
@@ -131,9 +132,10 @@ function sessionFromRequest(req: Request): SessionPayload | null {
     const now = Math.floor(Date.now() / 1000);
     if (
       payload.v !== 1 ||
-      !Number.isInteger(payload.calculationId) ||
       !Number.isInteger(payload.officeCalculationId) ||
       !Number.isInteger(payload.officeProjectId) ||
+      !Number.isInteger(payload.officeActorId) ||
+      Number(payload.officeActorId) <= 0 ||
       !Number.isInteger(payload.exp) ||
       Number(payload.exp) < now
     ) return null;
@@ -155,11 +157,6 @@ function requireSession(req: Request, res: Response): SessionPayload | null {
 function sessionCookie(token: string): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}${secure}`;
-}
-
-function numeric(value: unknown): number {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 const app = express();
@@ -192,68 +189,35 @@ app.post("/api/launch/consume", async (req, res) => {
     return;
   }
 
-  const connection = await db.getConnection();
   try {
-    await connection.beginTransaction();
-    try {
-      await connection.execute(
-        "INSERT INTO launch_nonces (nonce, expires_at) VALUES (?, FROM_UNIXTIME(?))",
-        [launch.nonce, launch.exp]
-      );
-    } catch (error) {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY") {
-        await connection.rollback();
-        res.status(409).json({ error: "Deze Calculatie-link is al gebruikt." });
-        return;
-      }
-      throw error;
-    }
-
-    const code = `OFFICE-${launch.calculation_id}`;
-    const title = `${officeContext.project.title} — Calculatie`;
-    const [calculation] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO calculations (office_project_id, office_calculation_id, code, title)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         id = LAST_INSERT_ID(id),
-         office_project_id = VALUES(office_project_id),
-         title = VALUES(title),
-         updated_at = CURRENT_TIMESTAMP(6)`,
-      [launch.project_id, launch.calculation_id, code, title]
+    await db.execute(
+      "INSERT INTO launch_nonces (nonce, expires_at) VALUES (?, FROM_UNIXTIME(?))",
+      [launch.nonce, launch.exp]
     );
-    const localCalculationId = calculation.insertId;
-
-    await connection.execute(
-      `INSERT INTO calculation_versions (calculation_id, version_no)
-       SELECT ?, 1
-       WHERE NOT EXISTS (
-         SELECT 1 FROM calculation_versions WHERE calculation_id = ?
-       )`,
-      [localCalculationId, localCalculationId]
-    );
-    await connection.commit();
-
-    const now = Math.floor(Date.now() / 1000);
-    const token = createSessionToken({
-      v: 1,
-      calculationId: localCalculationId,
-      officeCalculationId: launch.calculation_id,
-      officeProjectId: launch.project_id,
-      exp: now + SESSION_SECONDS
-    });
-    res.setHeader("Set-Cookie", sessionCookie(token));
-    res.json({
-      status: "ok",
-      calculationId: localCalculationId,
-      officeCalculationId: launch.calculation_id,
-      project: officeContext.project
-    });
   } catch (error) {
-    await connection.rollback();
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY") {
+      res.status(409).json({ error: "Deze Calculatie-link is al gebruikt." });
+      return;
+    }
     throw error;
-  } finally {
-    connection.release();
   }
+
+  const now = Math.floor(Date.now() / 1000);
+  const token = createSessionToken({
+    v: 1,
+    officeCalculationId: launch.calculation_id,
+    officeProjectId: launch.project_id,
+    officeActorId: launch.actor_id,
+    exp: now + SESSION_SECONDS
+  });
+  res.setHeader("Set-Cookie", sessionCookie(token));
+  res.json({
+    status: "ok",
+    calculationId: launch.calculation_id,
+    officeCalculationId: launch.calculation_id,
+    officeActorId: launch.actor_id,
+    project: officeContext.project
+  });
 });
 
 app.post("/api/quotes/upload", express.raw({ type: ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"], limit: "20mb" }), async (req, res) => {
@@ -356,161 +320,141 @@ app.post("/api/session/logout", (req, res) => {
   res.status(204).end();
 });
 
-app.get("/api/workbench/current", async (req, res) => {
+app.get("/api/office-workspace/state", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
-
-  const [calculations] = await db.execute<RowDataPacket[]>(
-    "SELECT id, office_project_id, office_calculation_id, code, title, status FROM calculations WHERE id = ? AND office_project_id = ? AND office_calculation_id = ? LIMIT 1",
-    [session.calculationId, session.officeProjectId, session.officeCalculationId]
-  );
-  if (!calculations[0]) {
-    res.status(404).json({ error: "Calculatie niet gevonden." });
-    return;
-  }
-
-  const [versions] = await db.execute<RowDataPacket[]>(
-    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
-    [session.calculationId]
-  );
-  const version = versions[0];
-  if (!version) {
-    res.status(409).json({ error: "Calculatie heeft geen versie." });
-    return;
-  }
-
-  const [lines] = await db.execute<RowDataPacket[]>(
-    `SELECT id, parent_id, sort_order, line_type, code, description, unit, quantity,
-            labour_unit_cost, material_unit_cost, equipment_unit_cost,
-            subcontracting_unit_cost, other_unit_cost, price_source_type,
-            office_source_id, source_reference, source_supplier, source_unit_price,
-            source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary
-       FROM calculation_lines
-      WHERE version_id = ?
-      ORDER BY sort_order, id`,
-    [version.id]
-  );
-
-  let officeContext;
   try {
-    officeContext = await fetchOfficeProjectContext(session.officeProjectId);
-  } catch {
-    res.status(502).json({ error: "BREBO Office is tijdelijk niet bereikbaar." });
-    return;
+    const [state, projectContext] = await Promise.all([
+      fetchOfficeCalculationWorkspaceState(session.officeCalculationId),
+      fetchOfficeProjectContext(session.officeProjectId)
+    ]);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({ ...state, project: projectContext.project });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc Office workspace state failed:", detail);
+    res.status(502).json({ error: `Calculatie kon niet uit BREBO Office worden geladen: ${detail}` });
   }
-
-  res.setHeader("Cache-Control", "no-store, private");
-  res.json({
-    calculation: calculations[0],
-    version,
-    project: officeContext.project,
-    lines
-  });
 });
 
-app.put("/api/workbench/current", async (req, res) => {
+app.post("/api/office-workspace/rows", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
-
-  const markupPct = Number(req.body?.markupPct ?? 0);
-  if (!Array.isArray(req.body?.lines)) {
-    res.status(400).json({ error: "Calculatieregels ontbreken of hebben een ongeldig formaat." });
-    return;
-  }
-  const lines = req.body.lines as LineInput[];
-  if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000) {
-    res.status(400).json({ error: "Ongeldige calculatie-invoer." });
-    return;
-  }
-
-  const connection = await db.getConnection();
   try {
-    await connection.beginTransaction();
-    const [versions] = await connection.execute<RowDataPacket[]>(
-      "SELECT id, status FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1 FOR UPDATE",
-      [session.calculationId]
-    );
-    const version = versions[0];
-    if (!version) {
-      await connection.rollback();
-      res.status(404).json({ error: "Calculatieversie niet gevonden." });
-      return;
-    }
-    if (version.status !== "draft") {
-      await connection.rollback();
-      res.status(409).json({ error: "Alleen een conceptversie kan worden gewijzigd." });
-      return;
-    }
-
-    await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
-
-    let directCost = 0;
-    const temporaryIds = new Map<number, number>();
-    for (const line of lines) {
-      if (!["chapter", "paragraph", "item", "allowance", "adjustable", "option", "note"].includes(line.lineType)) {
-        throw new Error("Unknown line type.");
-      }
-      const quantity = numeric(line.quantity);
-      const labour = numeric(line.labourUnitCost);
-      const material = numeric(line.materialUnitCost);
-      const equipment = numeric(line.equipmentUnitCost);
-      const subcontracting = numeric(line.subcontractingUnitCost);
-      const other = numeric(line.otherUnitCost);
-      const priceSourceType = line.priceSourceType ?? "manual";
-      if (!["manual", "article", "recipe", "supplier_quote"].includes(priceSourceType)) {
-        throw new Error("Unknown price source type.");
-      }
-      if (!["chapter", "paragraph", "note", "option"].includes(line.lineType)) {
-        directCost += quantity * (labour + material + equipment + subcontracting + other);
-      }
-      const parentId = line.parentId != null ? (temporaryIds.get(line.parentId) ?? null) : null;
-      const [insert] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO calculation_lines
-          (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
-           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
-           price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
-           source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
-          String(line.description ?? "").slice(0, 500), line.unit ?? null,
-          line.quantity ?? null, labour, material, equipment, subcontracting, other,
-          priceSourceType,
-          line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
-          line.sourceReference ? String(line.sourceReference).slice(0, 255) : null,
-          line.sourceSupplier ? String(line.sourceSupplier).slice(0, 255) : null,
-          line.sourceUnitPrice == null ? null : numeric(line.sourceUnitPrice),
-          line.sourcePriceDate ? String(line.sourcePriceDate).slice(0, 10) : null,
-          line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null,
-          line.sourceDetails ? String(line.sourceDetails).slice(0, 8000) : null,
-          line.sourceVisualPage == null ? null : Math.max(1, Math.trunc(numeric(line.sourceVisualPage))),
-          line.sourceVisualCrop ? JSON.stringify(line.sourceVisualCrop).slice(0, 500) : null,
-          line.sourceVisualSearchRegion ? JSON.stringify(line.sourceVisualSearchRegion).slice(0, 500) : null,
-          line.sourceTextRegions ? JSON.stringify(line.sourceTextRegions).slice(0, 20000) : null,
-          line.sourceOfferSummary ? String(line.sourceOfferSummary).slice(0, 1200) : null
-        ]
-      );
-      if (line.id != null) temporaryIds.set(line.id, insert.insertId);
-    }
-
-    const markupAmount = directCost * (markupPct / 100);
-    const salesPrice = directCost + markupAmount;
-    await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
-      [directCost, markupAmount, salesPrice, version.id]
-    );
-    await connection.execute(
-      "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
-      [session.calculationId]
-    );
-    await connection.commit();
-    res.json({ directCost, markupAmount, salesPrice });
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
   } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
   }
+});
+
+app.patch("/api/office-workspace/rows/:rowId", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const rowId = Number(req.params.rowId);
+  if (!Number.isInteger(rowId) || rowId <= 0) {
+    res.status(400).json({ error: "Ongeldige calculatieregel." });
+    return;
+  }
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "PATCH",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${rowId}`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.delete("/api/office-workspace/rows/:rowId", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const rowId = Number(req.params.rowId);
+  if (!Number.isInteger(rowId) || rowId <= 0) {
+    res.status(400).json({ error: "Ongeldige calculatieregel." });
+    return;
+  }
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "DELETE",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/rows/${rowId}`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.post("/api/office-workspace/structure/groups", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/groups`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.post("/api/office-workspace/structure/paragraphs", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/paragraphs`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.patch("/api/office-workspace/parameters", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "PATCH",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/parameters`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.all("/api/workbench/current", (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  res.status(410).json({
+    error: "Deze lokale Calc-workbench is buiten gebruik. BREBO Office is de bron van calculatiestate en rekenresultaten."
+  });
 });
 
 const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
