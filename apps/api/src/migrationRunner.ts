@@ -7,8 +7,21 @@ import { config } from "./config.js";
 export async function runMigrations(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const migrationsDir = path.resolve(here, "../../../database");
+  const retiredLegacyMigrations = new Set([
+    "001_initial.sql",
+    "002_line_price_sources.sql",
+    "003_line_source_details.sql",
+    "004_line_source_visual_page.sql",
+    "005_line_offer_summary.sql",
+    "006_line_source_visual_crop.sql",
+    "007_line_source_visual_search_region.sql",
+    "008_line_source_text_regions.sql",
+    "009_line_source_position_bounds.sql"
+  ]);
+
   const files = (await readdir(migrationsDir))
     .filter(file => /^\d+_.+\.sql$/.test(file))
+    .filter(file => !retiredLegacyMigrations.has(file))
     .sort();
 
   const connection = await mysql.createConnection({
