@@ -475,6 +475,23 @@ app.post("/api/office-workspace/structure/paragraphs", async (req, res) => {
   }
 });
 
+app.patch("/api/office-workspace/parameters", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "PATCH",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/parameters`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
 app.get("/api/workbench/current", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
