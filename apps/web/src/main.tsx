@@ -666,6 +666,7 @@ function App() {
       sourceVisualPage: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
+      sourceTextRegions: null,
       sourceOfferSummary: null,
       ...patch
     };
