@@ -504,12 +504,59 @@ function App() {
 
   const addLine = async (lineType: LineType) => {
     if (officeAuthoritative) {
-      if (lineType !== "item") {
-        setStatus("Hoofdstuk/paragraaf volgt via Office structure commands");
+      if (!officeVersion) {
+        setStatus("Office-versie ontbreekt.");
         return;
       }
+
+      if (lineType === "chapter") {
+        const label = window.prompt("Naam hoofdgroep", "Nieuwe hoofdgroep");
+        if (!label?.trim()) return;
+        setStatus("Hoofdgroep toevoegen in Office…");
+        const response = await fetch("/api/office-workspace/structure/groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: officeVersion, label: label.trim(), code: "" })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          setStatus(String(error.error ?? "Hoofdgroep kon niet worden toegevoegd."));
+          return;
+        }
+        await loadWorkbench();
+        return;
+      }
+
+      if (lineType === "paragraph") {
+        const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter" && line.officeStructureKey);
+        if (!latestChapter?.officeStructureKey) {
+          setStatus("Maak eerst een hoofdgroep.");
+          return;
+        }
+        const label = window.prompt("Naam paragraaf", "Nieuwe paragraaf");
+        if (!label?.trim()) return;
+        setStatus("Paragraaf toevoegen in Office…");
+        const response = await fetch("/api/office-workspace/structure/paragraphs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: officeVersion,
+            parent_key: latestChapter.officeStructureKey,
+            label: label.trim(),
+            code: ""
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          setStatus(String(error.error ?? "Paragraaf kon niet worden toegevoegd."));
+          return;
+        }
+        await loadWorkbench();
+        return;
+      }
+
       const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
-      if (!latestParagraph?.officeStructureKey || !officeVersion) {
+      if (!latestParagraph?.officeStructureKey) {
         setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
         return;
       }
