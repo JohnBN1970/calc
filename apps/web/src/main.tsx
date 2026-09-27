@@ -712,6 +712,7 @@ function App() {
       sourceDocumentId: String(quoteProposal.fileId),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourcePositionBounds: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
       sourceTextRegions: null,
