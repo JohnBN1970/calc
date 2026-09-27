@@ -27,7 +27,9 @@ type Line = {
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type QuoteLine = { position: string; quantity: number; unit: string; description: string; unit_price: number; line_total: number; line_no: number };
-type QuoteClassification = { group: string; paragraph: string; discipline: string; subtype: string; confidence: number };
+type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
+type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
+type StructureTarget = { group: string; paragraph: string };
 type QuoteProposal = {
   status: string;
   target: { description: string; quantity: number | null; unit: string };
@@ -73,6 +75,18 @@ type ProjectContext = {
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
+
+const classificationScheme: ClassificationScheme = "custom";
+
+function mapClassification(classification: QuoteClassification | null, scheme: ClassificationScheme): StructureTarget | null {
+  if (!classification) return null;
+  // Mapping belongs to the selected calculation scheme, never to document recognition.
+  // NL-SfB and STABU mappings are deliberately configuration-driven follow-up work.
+  if (scheme === "custom" && classification.element === "kozijn" && classification.material === "staal") {
+    return { group: "Kozijnen", paragraph: "Stalen kozijnen en deuren" };
+  }
+  return null;
+}
 
 
 type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices";
@@ -338,19 +352,20 @@ function App() {
     }
 
     const classification = quoteProposal.classification;
+    const structureTarget = mapClassification(classification, classificationScheme);
     let id = nextId;
     let chapterId: number | null = null;
     let paragraphId: number | null = null;
     const structural: Line[] = [];
 
-    if (classification?.group) {
-      const existingChapter = lines.find(line => line.lineType === "chapter" && line.description.trim().toLowerCase() === classification.group.trim().toLowerCase());
+    if (structureTarget?.group) {
+      const existingChapter = lines.find(line => line.lineType === "chapter" && line.description.trim().toLowerCase() === structureTarget.group.trim().toLowerCase());
       if (existingChapter) {
         chapterId = existingChapter.id;
       } else {
         chapterId = id--;
         structural.push({
-          id: chapterId, parentId: null, lineType: "chapter", code: "", description: classification.group,
+          id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
           sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
@@ -358,14 +373,14 @@ function App() {
       }
 
       const existingParagraph = lines.find(line => line.lineType === "paragraph"
-        && line.description.trim().toLowerCase() === classification.paragraph.trim().toLowerCase()
+        && line.description.trim().toLowerCase() === structureTarget.paragraph.trim().toLowerCase()
         && line.parentId === chapterId);
       if (existingParagraph) {
         paragraphId = existingParagraph.id;
-      } else if (classification.paragraph) {
+      } else if (structureTarget.paragraph) {
         paragraphId = id--;
         structural.push({
-          id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: classification.paragraph,
+          id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
           sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
@@ -408,7 +423,7 @@ function App() {
     setQuoteProposal(null);
     setSelectedQuotePositions([]);
     setStatus("Concept — niet opgeslagen");
-    const structureText = classification ? ` onder ${classification.group} > ${classification.paragraph}` : "";
+    const structureText = structureTarget ? ` onder ${structureTarget.group} > ${structureTarget.paragraph}` : "";
     setQuoteStatus(`${created.length} offerteregels overgenomen${structureText} als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
   };
 
@@ -589,7 +604,7 @@ function App() {
               </select></label>
             </div>
             {quoteProposal.lines.length > 0 ? <div className="quoteStructured">
-              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && <small>{quoteProposal.classification.group} › {quoteProposal.classification.paragraph} · {Math.round(quoteProposal.classification.confidence * 100)}%</small>}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && <small>{quoteProposal.structureTarget.group} › {quoteProposal.structureTarget.paragraph} · {Math.round(quoteProposal.classification.confidence * 100)}%</small>}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
