@@ -25,6 +25,12 @@ BREBO Calculatie
 
 De interface mag zelfstandig evolueren, maar financiële uitkomsten en domeinbesluiten worden niet lokaal opnieuw geïmplementeerd als tweede waarheid.
 
+## Lokale database
+
+De historische tabellen `calculations`, `calculation_versions` en `calculation_lines` zijn **legacy opslag** en maken geen deel meer uit van de actieve calculatieketen. Ze worden nog niet destructief verwijderd zolang migratie/rollbackcontrole loopt. Nieuwe runtimecode mag deze tabellen niet als calculatiebron of rekenbron gebruiken.
+
+Lokale opslag in Calc is alleen toegestaan voor sessies, replaybescherming, cache en tijdelijke migratiehulpmiddelen.
+
 ## Doelarchitectuur
 
 - Frontend: React + TypeScript
