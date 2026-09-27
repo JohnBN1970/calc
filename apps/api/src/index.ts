@@ -441,6 +441,40 @@ app.delete("/api/office-workspace/rows/:rowId", async (req, res) => {
   }
 });
 
+app.post("/api/office-workspace/structure/groups", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/groups`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
+app.post("/api/office-workspace/structure/paragraphs", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const result = await sendOfficeCalculationCommand({
+      method: "POST",
+      path: `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/paragraphs`,
+      actorId: session.officeActorId,
+      payload: req.body ?? {}
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: detail });
+  }
+});
+
 app.get("/api/workbench/current", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
