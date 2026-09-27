@@ -562,6 +562,7 @@ function App() {
       sourceDocumentId: String(quoteProposal.fileId),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourceVisualCrop: null,
       sourceOfferSummary: null,
       ...patch
     };
