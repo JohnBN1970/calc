@@ -604,7 +604,10 @@ function App() {
               </select></label>
             </div>
             {quoteProposal.lines.length > 0 ? <div className="quoteStructured">
-              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && <small>{mapClassification(quoteProposal.classification, classificationScheme).group} › {mapClassification(quoteProposal.classification, classificationScheme).paragraph} · {Math.round(quoteProposal.classification.confidence * 100)}%</small>}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && (() => {
+                  const mapped = mapClassification(quoteProposal.classification, classificationScheme);
+                  return <small>{mapped ? `${mapped.group} › ${mapped.paragraph} · ` : ""}{Math.round(quoteProposal.classification.confidence * 100)}% herkenning</small>;
+                })()}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
