@@ -83,7 +83,7 @@ const classificationScheme: ClassificationScheme = "custom";
 const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
 function parseSourceDetails(details: string | null): Array<[string,string]> {
   if (!details?.trim()) return [];
-  const escaped = sourceDetailLabels.map(label => label.replace(/[.*+?^$()|[\]\\]/g, "\\const classificationScheme: ClassificationScheme = "custom";")).join("|");
+  const escaped = sourceDetailLabels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const normalized = details.replace(new RegExp("\\s*(?=(?:" + escaped + ")\\s*:)", "gi"), "\n");
   const rows: Array<[string,string]> = [];
   for (const raw of normalized.split(/\r?\n/)) {
