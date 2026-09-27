@@ -338,6 +338,7 @@ function App() {
     if (quoteProposal.targetLineId != null) {
       patchLine(quoteProposal.targetLineId, patch);
       setQuoteStatus(`${money.format(candidate.value)} overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier} voor regel #${quoteProposal.targetLineId}. Nog opslaan.`);
+      setQuoteProposal(null);
       return;
     }
 
@@ -370,7 +371,7 @@ function App() {
     };
     setLines(current => [...current, newLine]);
     setSelectedLineId(id);
-    setQuoteProposal(current => current ? { ...current, targetLineId: id } : current);
+    setQuoteProposal(null);
     setStatus("Concept — niet opgeslagen");
     setQuoteStatus(`${money.format(candidate.value)} overgenomen; Calc heeft automatisch een nieuwe calculatieregel gemaakt. Nog opslaan.`);
   };
@@ -526,7 +527,18 @@ function App() {
             }
             return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
               <input className="cell" value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
-              <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+              <div className="descWrap">
+                <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
+                  type="button"
+                  className="priceSourceBadge"
+                  title={line.sourceReference ? `Offerte: ${line.sourceReference}` : "Offerte openen"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    window.open(`/api/quotes/${line.sourceDocumentId}/preview`, "_blank", "noopener,noreferrer");
+                  }}
+                >Offerte</button>}
+              </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
                 <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
               </select>
