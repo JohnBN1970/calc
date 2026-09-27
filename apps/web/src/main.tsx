@@ -30,11 +30,12 @@ type Line = {
   sourceVisualPage: number | null;
   sourceVisualCrop: VisualCrop | null;
   sourceVisualSearchRegion: VisualCrop | null;
+  sourceTextRegions: VisualCrop[] | null;
   sourceOfferSummary: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type VisualCrop = { x: number; y: number; width: number; height: number };
-type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_visual_crop?: VisualCrop | null; source_visual_search_region?: VisualCrop | null; unit_price: number; line_total: number; line_no: number };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_visual_crop?: VisualCrop | null; source_visual_search_region?: VisualCrop | null; source_text_regions?: VisualCrop[] | null; unit_price: number; line_total: number; line_no: number };
 type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
 type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
 type StructureTarget = { group: string; paragraph: string };
@@ -133,7 +134,7 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
-function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop): VisualCrop | null {
+function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegions: VisualCrop[] = []): VisualCrop | null {
   const rx = Math.max(0, Math.floor(full.width * region.x));
   const ry = Math.max(0, Math.floor(full.height * region.y));
   const rw = Math.max(1, Math.min(full.width - rx, Math.floor(full.width * region.width)));
@@ -145,6 +146,20 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop): VisualCr
   const pctx = probe.getContext("2d", { willReadFrequently: true });
   if (!pctx) return null;
   pctx.drawImage(full, rx, ry, rw, rh, 0, 0, probe.width, probe.height);
+
+  // Remove all PDF text geometry before pixel-component analysis. This keeps
+  // headings, labels, prices and technical paragraphs from merging into the
+  // detected drawing. A small padding also removes antialiasing around glyphs.
+  pctx.save();
+  pctx.fillStyle = "#fff";
+  for (const textRegion of textRegions) {
+    const ix0 = Math.max(0, Math.floor(((textRegion.x - region.x) / region.width) * probe.width) - 3);
+    const iy0 = Math.max(0, Math.floor(((textRegion.y - region.y) / region.height) * probe.height) - 3);
+    const ix1 = Math.min(probe.width, Math.ceil((((textRegion.x + textRegion.width) - region.x) / region.width) * probe.width) + 3);
+    const iy1 = Math.min(probe.height, Math.ceil((((textRegion.y + textRegion.height) - region.y) / region.height) * probe.height) + 3);
+    if (ix1 > ix0 && iy1 > iy0) pctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
+  }
+  pctx.restore();
 
   const data = pctx.getImageData(0, 0, probe.width, probe.height).data;
   const width = probe.width, height = probe.height;
@@ -209,9 +224,9 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop): VisualCr
   };
 }
 
-function SourceVisual({ fileId, page, label, crop, searchRegion, onDetected }: {
+function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, onDetected }: {
   fileId: string | number; page: number; label: string; crop?: VisualCrop | null;
-  searchRegion?: VisualCrop | null; onDetected?: (crop: VisualCrop) => void;
+  searchRegion?: VisualCrop | null; textRegions?: VisualCrop[] | null; onDetected?: (crop: VisualCrop) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [state, setState] = useState<"loading"|"ready"|"none">("loading");
@@ -236,7 +251,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, onDetected }: {
         await pdfPage.render({ canvas: full, canvasContext: context, viewport }).promise;
         if (cancelled) return;
 
-        const resolved = crop ?? (searchRegion ? detectVisualCrop(full, searchRegion) : null);
+        const resolved = crop ?? (searchRegion ? detectVisualCrop(full, searchRegion, textRegions ?? []) : null);
         if (!resolved) { setState("none"); return; }
         if (!crop && onDetected) onDetected(resolved);
 
@@ -255,7 +270,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, onDetected }: {
       }
     })();
     return () => { cancelled=true; };
-  }, [fileId,page,crop?.x,crop?.y,crop?.width,crop?.height,searchRegion?.x,searchRegion?.y,searchRegion?.width,searchRegion?.height]);
+  }, [fileId,page,crop?.x,crop?.y,crop?.width,crop?.height,searchRegion?.x,searchRegion?.y,searchRegion?.width,searchRegion?.height,textRegions]);
 
   if ((!crop && !searchRegion) || state==="none") return null;
   return <div className="sourceVisualWrap sourceVisualCrop">
@@ -290,6 +305,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     sourceVisualPage: raw.source_visual_page == null ? null : Number(raw.source_visual_page),
     sourceVisualCrop: raw.source_visual_crop ? JSON.parse(String(raw.source_visual_crop)) as VisualCrop : null,
     sourceVisualSearchRegion: raw.source_visual_search_region ? JSON.parse(String(raw.source_visual_search_region)) as VisualCrop : null,
+    sourceTextRegions: raw.source_text_regions ? JSON.parse(String(raw.source_text_regions)) as VisualCrop[] : null,
     sourceOfferSummary: raw.source_offer_summary == null ? null : String(raw.source_offer_summary)
   };
 }
@@ -387,7 +403,7 @@ function App() {
       quantity: lineType === "item" ? 1 : 0,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -438,6 +454,7 @@ function App() {
       sourceVisualPage: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
+      sourceTextRegions: null,
       sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
@@ -533,7 +550,7 @@ function App() {
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
       }
 
@@ -548,7 +565,7 @@ function App() {
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
       }
     } else {
@@ -583,6 +600,7 @@ function App() {
         sourceVisualPage: source.source_page == null ? null : Number(source.source_page),
         sourceVisualCrop: source.source_visual_crop ?? null,
         sourceVisualSearchRegion: source.source_visual_search_region ?? null,
+        sourceTextRegions: source.source_text_regions ?? null,
         sourceOfferSummary: source.offer_summary?.trim() || null
       };
     });
@@ -691,6 +709,7 @@ function App() {
             sourceVisualPage: line.sourceVisualPage,
             sourceVisualCrop: line.sourceVisualCrop,
             sourceVisualSearchRegion: line.sourceVisualSearchRegion,
+            sourceTextRegions: line.sourceTextRegions,
             sourceOfferSummary: line.sourceOfferSummary
           }))
         })
@@ -791,7 +810,7 @@ function App() {
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
-                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && (line.source_visual_crop || line.source_visual_search_region) && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} searchRegion={line.source_visual_search_region} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && (line.source_visual_crop || line.source_visual_search_region) && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} searchRegion={line.source_visual_search_region} textRegions={line.source_text_regions} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
                 <strong>{money.format(line.line_total)}</strong>
               </label>)}
             </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
@@ -838,7 +857,7 @@ function App() {
                 >Offerte</button>}
                 {(line.sourceDetails || (line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion)) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
