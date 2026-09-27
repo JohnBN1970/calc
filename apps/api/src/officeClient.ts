@@ -184,3 +184,75 @@ export async function fetchSupplierQuotePreview(input: {
     contentDisposition: response.headers.get("content-disposition")
   };
 }
+
+
+export type OfficeCalculationWorkspaceState = {
+  contract: "brebo-calculation-workspace-v2";
+  calculation: Record<string, unknown>;
+  version: Record<string, unknown>;
+  editable: boolean;
+  structure: Array<Record<string, unknown>>;
+  rows: Array<Record<string, unknown>>;
+  recipes: Array<Record<string, unknown>>;
+  subcalculations: Array<Record<string, unknown>>;
+  result: Record<string, unknown>;
+  readiness: Record<string, unknown>;
+};
+
+export async function fetchOfficeCalculationWorkspaceState(calculationId: number): Promise<OfficeCalculationWorkspaceState> {
+  if (!Number.isInteger(calculationId) || calculationId <= 0) {
+    throw new Error("Invalid Office calculation id.");
+  }
+  const path = `/api/workbench/v2/calculations/${calculationId}`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 1000);
+    throw new Error(`Office workspace state failed with status ${response.status}: ${detail || response.statusText}`);
+  }
+  const payload = await response.json() as OfficeCalculationWorkspaceState;
+  if (payload.contract !== "brebo-calculation-workspace-v2") {
+    throw new Error("Office returned an invalid calculation workspace contract.");
+  }
+  return payload;
+}
+
+export async function sendOfficeCalculationCommand<T = Record<string, unknown>>(input: {
+  method: "POST" | "PATCH" | "DELETE";
+  path: string;
+  actorId: number;
+  payload?: Record<string, unknown>;
+}): Promise<T> {
+  if (!Number.isInteger(input.actorId) || input.actorId <= 0) {
+    throw new Error("Invalid Office actor id.");
+  }
+  if (!input.path.startsWith("/api/workbench/v2/calculations/")) {
+    throw new Error("Invalid Office calculation command path.");
+  }
+  const body = JSON.stringify({
+    ...(input.payload ?? {}),
+    actor_id: input.actorId
+  });
+  const headers = signedHeaders(input.method, input.path, body);
+  headers["Content-Type"] = "application/json";
+  const response = await fetch(config.office.baseUrl + input.path, {
+    method: input.method,
+    headers,
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) as T : ({} as T);
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null && "message" in payload
+      ? String((payload as Record<string, unknown>).message)
+      : text.slice(0, 1000);
+    throw new Error(`Office calculation command failed with status ${response.status}: ${detail || response.statusText}`);
+  }
+  return payload;
+}
