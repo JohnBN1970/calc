@@ -27,9 +27,11 @@ type Line = {
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type QuoteLine = { position: string; quantity: number; unit: string; description: string; unit_price: number; line_total: number; line_no: number };
+type QuoteClassification = { group: string; paragraph: string; discipline: string; subtype: string; confidence: number };
 type QuoteProposal = {
   status: string;
   target: { description: string; quantity: number | null; unit: string };
+  classification: QuoteClassification | null;
   lines: QuoteLine[];
   candidates: QuoteCandidate[];
   suggested: QuoteCandidate | null;
@@ -299,6 +301,7 @@ function App() {
           quantity: data.proposal?.target?.quantity == null ? null : Number(data.proposal.target.quantity),
           unit: String(data.proposal?.target?.unit ?? selected?.unit ?? "")
         },
+        classification: data.proposal?.classification ? data.proposal.classification as QuoteClassification : null,
         lines: quoteLines,
         candidates,
         suggested: data.proposal?.suggested ? data.proposal.suggested as QuoteCandidate : null,
@@ -333,17 +336,56 @@ function App() {
       setQuoteStatus("Selecteer minimaal één offerteregel.");
       return;
     }
-    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
-    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
-    const parent = latestParagraph ?? latestChapter;
+
+    const classification = quoteProposal.classification;
     let id = nextId;
+    let chapterId: number | null = null;
+    let paragraphId: number | null = null;
+    const structural: Line[] = [];
+
+    if (classification?.group) {
+      const existingChapter = lines.find(line => line.lineType === "chapter" && line.description.trim().toLowerCase() === classification.group.trim().toLowerCase());
+      if (existingChapter) {
+        chapterId = existingChapter.id;
+      } else {
+        chapterId = id--;
+        structural.push({
+          id: chapterId, parentId: null, lineType: "chapter", code: "", description: classification.group,
+          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
+        });
+      }
+
+      const existingParagraph = lines.find(line => line.lineType === "paragraph"
+        && line.description.trim().toLowerCase() === classification.paragraph.trim().toLowerCase()
+        && line.parentId === chapterId);
+      if (existingParagraph) {
+        paragraphId = existingParagraph.id;
+      } else if (classification.paragraph) {
+        paragraphId = id--;
+        structural.push({
+          id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: classification.paragraph,
+          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
+        });
+      }
+    } else {
+      const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+      chapterId = latestChapter?.id ?? null;
+      paragraphId = latestParagraph?.id ?? null;
+    }
+
+    const parentId = paragraphId ?? chapterId;
     const created: Line[] = chosen.map(source => {
       const currentId = id--;
       const costs = { labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 };
       costs[quoteCarrier] = source.unit_price;
       return {
         id: currentId,
-        parentId: parent?.id ?? null,
+        parentId,
         lineType: "item",
         code: source.position,
         description: source.description,
@@ -359,13 +401,15 @@ function App() {
         sourceDocumentId: String(quoteProposal.fileId)
       };
     });
+
     setNextId(id);
-    setLines(current => [...current, ...created]);
+    setLines(current => [...current, ...structural, ...created]);
     setSelectedLineId(created[created.length - 1]?.id ?? null);
     setQuoteProposal(null);
     setSelectedQuotePositions([]);
     setStatus("Concept — niet opgeslagen");
-    setQuoteStatus(`${created.length} offerteregels overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
+    const structureText = classification ? ` onder ${classification.group} > ${classification.paragraph}` : "";
+    setQuoteStatus(`${created.length} offerteregels overgenomen${structureText} als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
   };
 
   const applyQuoteCandidate = (candidate: QuoteCandidate) => {
@@ -545,7 +589,7 @@ function App() {
               </select></label>
             </div>
             {quoteProposal.lines.length > 0 ? <div className="quoteStructured">
-              <div className="quoteStructuredHead"><strong>{quoteProposal.lines.length} offerteregels herkend</strong><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && <small>{quoteProposal.classification.group} › {quoteProposal.classification.paragraph} · {Math.round(quoteProposal.classification.confidence * 100)}%</small>}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
