@@ -8,11 +8,12 @@
   "scripts": {
     "dev": "npm run dev --workspace=@brebo/calc-web",
     "dev:api": "npm run dev --workspace=@brebo/calc-api",
-    "build": "npm run build --workspaces --if-present",
-    "start": "npm run preflight && npm run migrate && npm run start --workspace=@brebo/calc-api",
+    "build": "npm run build --workspaces --if-present && npm run verify-build",
+    "start": "npm run preflight && node startup.js",
     "migrate": "npm run migrate --workspace=@brebo/calc-api",
     "preflight": "node scripts/preflight.mjs",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify-build": "node scripts/verify-build.mjs"
   },
   "engines": {
     "node": ">=22"
