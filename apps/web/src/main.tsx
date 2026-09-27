@@ -275,6 +275,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, an
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [state, setState] = useState<"loading"|"ready"|"none">("loading");
+  const [detectedCrop, setDetectedCrop] = useState<VisualCrop | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,7 +298,8 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, an
         if (cancelled) return;
 
         const resolved = crop ?? (searchRegion ? detectVisualCrop(full, searchRegion, textRegions ?? [], anchor) : null);
-        if (!resolved) { setState("none"); return; }
+        if (!resolved) { setDetectedCrop(null); setState("none"); return; }
+        setDetectedCrop(resolved);
         if (!crop && onDetected) onDetected(resolved);
 
         const sx=Math.max(0,Math.floor(full.width*resolved.x)), sy=Math.max(0,Math.floor(full.height*resolved.y));
@@ -322,6 +324,10 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, an
     <canvas ref={canvasRef} aria-label={label} />
     {state==="loading" && <small>Positiebeeld zoeken…</small>}
     {state==="ready" && <small>Automatisch herkend positiebeeld · pagina {page}</small>}
+    <details className="sourceVisualDebug" onClick={event => event.stopPropagation()}>
+      <summary>Beelddetectie debug</summary>
+      <pre>{JSON.stringify({ page, mode: crop ? "bestaande crop" : "dynamische detectie", existing_crop: crop ?? null, detected_crop: detectedCrop, position_bounds: anchor ?? null, search_region: searchRegion ?? null, text_regions_count: textRegions?.length ?? 0, text_regions: textRegions ?? [] }, null, 2)}</pre>
+    </details>
   </div>;
 }
 
