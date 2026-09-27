@@ -31,6 +31,8 @@ De historische tabellen `calculations`, `calculation_versions` en `calculation_l
 
 Lokale opslag in Calc is alleen toegestaan voor sessies, replaybescherming, cache en tijdelijke migratiehulpmiddelen.
 
+De historische migrations 001-009 blijven in de repository als audit-/rollbackhistorie, maar worden niet meer uitgevoerd door de actieve migration runner. Verse Calc-runtimes bouwen dus geen lokale calculatie-, versie- of regeltabellen meer op. Alleen runtime-infrastructuur zoals launch/replaybescherming wordt aangemaakt.
+
 ## Doelarchitectuur
 
 - Frontend: React + TypeScript
