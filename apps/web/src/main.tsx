@@ -28,6 +28,7 @@ type Line = {
   sourceDocumentId: string | null;
   sourceDetails: string | null;
   sourceVisualPage: number | null;
+  sourcePositionBounds: VisualCrop | null;
   sourceVisualCrop: VisualCrop | null;
   sourceVisualSearchRegion: VisualCrop | null;
   sourceTextRegions: VisualCrop[] | null;
@@ -35,7 +36,7 @@ type Line = {
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type VisualCrop = { x: number; y: number; width: number; height: number };
-type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_visual_crop?: VisualCrop | null; source_visual_search_region?: VisualCrop | null; source_text_regions?: VisualCrop[] | null; unit_price: number; line_total: number; line_no: number };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_position_bounds?: VisualCrop | null; source_visual_crop?: VisualCrop | null; source_visual_search_region?: VisualCrop | null; source_text_regions?: VisualCrop[] | null; unit_price: number; line_total: number; line_no: number };
 type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
 type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
 type StructureTarget = { group: string; paragraph: string };
@@ -134,99 +135,143 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
-function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegions: VisualCrop[] = []): VisualCrop | null {
-  const rx = Math.max(0, Math.floor(full.width * region.x));
-  const ry = Math.max(0, Math.floor(full.height * region.y));
-  const rw = Math.max(1, Math.min(full.width - rx, Math.floor(full.width * region.width)));
-  const rh = Math.max(1, Math.min(full.height - ry, Math.floor(full.height * region.height)));
-  const probe = document.createElement("canvas");
-  const scale = Math.min(1, 520 / Math.max(rw, rh));
-  probe.width = Math.max(1, Math.floor(rw * scale));
-  probe.height = Math.max(1, Math.floor(rh * scale));
-  const pctx = probe.getContext("2d", { willReadFrequently: true });
-  if (!pctx) return null;
-  pctx.drawImage(full, rx, ry, rw, rh, 0, 0, probe.width, probe.height);
+function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegions: VisualCrop[] = [], anchor?: VisualCrop | null): VisualCrop | null {
+  const rx=Math.max(0,Math.floor(full.width*region.x));
+  const ry=Math.max(0,Math.floor(full.height*region.y));
+  const rw=Math.max(1,Math.min(full.width-rx,Math.floor(full.width*region.width)));
+  const rh=Math.max(1,Math.min(full.height-ry,Math.floor(full.height*region.height)));
+  const probe=document.createElement("canvas");
+  const scale=Math.min(1,650/Math.max(rw,rh));
+  probe.width=Math.max(1,Math.floor(rw*scale));
+  probe.height=Math.max(1,Math.floor(rh*scale));
+  const ctx=probe.getContext("2d",{willReadFrequently:true});
+  if(!ctx)return null;
+  ctx.drawImage(full,rx,ry,rw,rh,0,0,probe.width,probe.height);
 
-  // Remove all PDF text geometry before pixel-component analysis. This keeps
-  // headings, labels, prices and technical paragraphs from merging into the
-  // detected drawing. A small padding also removes antialiasing around glyphs.
-  pctx.save();
-  pctx.fillStyle = "#fff";
-  for (const textRegion of textRegions) {
-    const ix0 = Math.max(0, Math.floor(((textRegion.x - region.x) / region.width) * probe.width) - 3);
-    const iy0 = Math.max(0, Math.floor(((textRegion.y - region.y) / region.height) * probe.height) - 3);
-    const ix1 = Math.min(probe.width, Math.ceil((((textRegion.x + textRegion.width) - region.x) / region.width) * probe.width) + 3);
-    const iy1 = Math.min(probe.height, Math.ceil((((textRegion.y + textRegion.height) - region.y) / region.height) * probe.height) + 3);
-    if (ix1 > ix0 && iy1 > iy0) pctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
-  }
-  pctx.restore();
-
-  const data = pctx.getImageData(0, 0, probe.width, probe.height).data;
-  const width = probe.width, height = probe.height;
-  const mask = new Uint8Array(width * height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x, p = i * 4;
-      const gray = (data[p] + data[p + 1] + data[p + 2]) / 3;
-      if (gray < 218 && data[p + 3] > 40) mask[i] = 1;
-    }
+  ctx.fillStyle="#fff";
+  for(const t of textRegions){
+    const x0=Math.max(0,Math.floor(((t.x-region.x)/region.width)*probe.width)-4);
+    const y0=Math.max(0,Math.floor(((t.y-region.y)/region.height)*probe.height)-4);
+    const x1=Math.min(probe.width,Math.ceil((((t.x+t.width)-region.x)/region.width)*probe.width)+4);
+    const y1=Math.min(probe.height,Math.ceil((((t.y+t.height)-region.y)/region.height)*probe.height)+4);
+    if(x1>x0&&y1>y0)ctx.fillRect(x0,y0,x1-x0,y1-y0);
   }
 
-  // Connect nearby strokes so vector linework becomes one visual component,
-  // while ordinary glyphs/text remain comparatively small and dense.
-  const dilated = new Uint8Array(mask.length);
-  const radius = 3;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    if (!mask[y * width + x]) continue;
-    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
-      const nx=x+dx, ny=y+dy;
-      if (nx>=0 && ny>=0 && nx<width && ny<height) dilated[ny*width+nx]=1;
-    }
+  const img=ctx.getImageData(0,0,probe.width,probe.height);
+  const W=probe.width,H=probe.height, dark=new Uint8Array(W*H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const p=(y*W+x)*4;
+    const gray=(img.data[p]+img.data[p+1]+img.data[p+2])/3;
+    if(gray<205&&img.data[p+3]>50)dark[y*W+x]=1;
   }
 
-  const seen = new Uint8Array(mask.length);
-  let best: {x0:number;y0:number;x1:number;y1:number;score:number}|null = null;
-  const queueX = new Int32Array(mask.length);
-  const queueY = new Int32Array(mask.length);
-
-  for (let sy = 0; sy < height; sy++) for (let sx = 0; sx < width; sx++) {
-    const start = sy * width + sx;
-    if (!dilated[start] || seen[start]) continue;
-    let head=0, tail=0, x0=sx, x1=sx, y0=sy, y1=sy, pixels=0, ink=0;
-    queueX[tail]=sx; queueY[tail++]=sy; seen[start]=1;
-    while (head<tail) {
-      const x=queueX[head], y=queueY[head++];
-      pixels++; if (mask[y*width+x]) ink++;
-      if (x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
-      for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
-        const nx=x+dx, ny=y+dy;
-        if(nx<0||ny<0||nx>=width||ny>=height) continue;
-        const ni=ny*width+nx;
-        if(dilated[ni]&&!seen[ni]){seen[ni]=1;queueX[tail]=nx;queueY[tail++]=ny;}
+  // Extract long orthogonal runs. Product drawings tend to contain persistent
+  // horizontal/vertical geometry; residual glyph fragments generally do not.
+  const structural=new Uint8Array(W*H);
+  const minH=Math.max(10,Math.floor(W*0.025));
+  const minV=Math.max(10,Math.floor(H*0.025));
+  for(let y=0;y<H;y++){
+    let s=-1;
+    for(let x=0;x<=W;x++){
+      const on=x<W&&dark[y*W+x];
+      if(on&&s<0)s=x;
+      if((!on||x===W)&&s>=0){
+        const e=x-1;
+        if(e-s+1>=minH)for(let xx=s;xx<=e;xx++)structural[y*W+xx]=1;
+        s=-1;
       }
     }
-    const bw=x1-x0+1, bh=y1-y0+1, area=bw*bh, density=ink/Math.max(1,area);
-    if (bw < width*0.08 || bh < height*0.08) continue;
-    if (area < width*height*0.012 || density > 0.38) continue;
-    const score = area * (1 - Math.min(0.9, density)) * (1 + Math.min(bw,bh)/Math.max(bw,bh));
-    if (!best || score > best.score) best={x0,y0,x1,y1,score};
   }
-  if (!best) return null;
+  for(let x=0;x<W;x++){
+    let s=-1;
+    for(let y=0;y<=H;y++){
+      const on=y<H&&dark[y*W+x];
+      if(on&&s<0)s=y;
+      if((!on||y===H)&&s>=0){
+        const e=y-1;
+        if(e-s+1>=minV)for(let yy=s;yy<=e;yy++)structural[yy*W+x]=1;
+        s=-1;
+      }
+    }
+  }
 
-  const pad = 8;
-  const x0=Math.max(0,best.x0-pad), y0=Math.max(0,best.y0-pad);
-  const x1=Math.min(width-1,best.x1+pad), y1=Math.min(height-1,best.y1+pad);
-  return {
-    x: region.x + (x0 / width) * region.width,
-    y: region.y + (y0 / height) * region.height,
-    width: ((x1-x0+1)/width) * region.width,
-    height: ((y1-y0+1)/height) * region.height
+  // Grow structural runs slightly, then collect candidate drawing clusters.
+  const grown=new Uint8Array(W*H),R=5;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(structural[y*W+x]){
+    for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++){
+      const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<W&&ny<H)grown[ny*W+nx]=1;
+    }
+  }
+
+  const seen=new Uint8Array(W*H);
+  const qx=new Int32Array(W*H),qy=new Int32Array(W*H);
+  let best:{x0:number;y0:number;x1:number;y1:number;score:number}|null=null;
+
+  const anchorCx=anchor ? ((anchor.x+anchor.width/2-region.x)/region.width)*W : W*0.5;
+  const anchorCy=anchor ? ((anchor.y+anchor.height-region.y)/region.height)*H : 0;
+
+  for(let sy=0;sy<H;sy++)for(let sx=0;sx<W;sx++){
+    const si=sy*W+sx;
+    if(!grown[si]||seen[si])continue;
+    let head=0,tail=0,x0=sx,x1=sx,y0=sy,y1=sy,structPixels=0,darkPixels=0;
+    qx[tail]=sx;qy[tail++]=sy;seen[si]=1;
+    while(head<tail){
+      const x=qx[head],y=qy[head++];
+      if(structural[y*W+x])structPixels++;
+      if(dark[y*W+x])darkPixels++;
+      if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=W||ny>=H)continue;
+        const ni=ny*W+nx;
+        if(grown[ni]&&!seen[ni]){seen[ni]=1;qx[tail]=nx;qy[tail++]=ny;}
+      }
+    }
+    const bw=x1-x0+1,bh=y1-y0+1,area=bw*bh;
+    if(bw<W*0.06||bh<H*0.06||area<W*H*0.004)continue;
+    const aspect=Math.min(bw,bh)/Math.max(bw,bh);
+    const lineScore=structPixels/Math.max(1,area);
+    const inkDensity=darkPixels/Math.max(1,area);
+    if(lineScore<0.002||inkDensity>0.32)continue;
+
+    const cx=(x0+x1)/2,cy=(y0+y1)/2;
+    const dist=Math.hypot((cx-anchorCx)/W,(cy-anchorCy)/H);
+    const proximity=1/Math.max(0.15,dist);
+    const rectangularity=0.55+aspect;
+    const sizeScore=Math.sqrt(area/(W*H));
+    const score=sizeScore*rectangularity*proximity*(1+Math.min(2,lineScore*90))*(1-Math.min(0.8,inkDensity));
+    if(!best||score>best.score)best={x0,y0,x1,y1,score};
+  }
+  if(!best)return null;
+
+  // Expand from structural skeleton to include nearby dimension lines and thin
+  // drawing strokes, but not distant masked text.
+  let x0=Math.max(0,best.x0-12),y0=Math.max(0,best.y0-12);
+  let x1=Math.min(W-1,best.x1+12),y1=Math.min(H-1,best.y1+12);
+  for(let pass=0;pass<2;pass++){
+    const margin=10;
+    let nx0=x0,ny0=y0,nx1=x1,ny1=y1;
+    for(let y=Math.max(0,y0-margin);y<=Math.min(H-1,y1+margin);y++)for(let x=Math.max(0,x0-margin);x<=Math.min(W-1,x1+margin);x++){
+      if(!dark[y*W+x])continue;
+      if(x>=x0-margin&&x<=x1+margin&&y>=y0-margin&&y<=y1+margin){
+        nx0=Math.min(nx0,x);ny0=Math.min(ny0,y);nx1=Math.max(nx1,x);ny1=Math.max(ny1,y);
+      }
+    }
+    x0=nx0;y0=ny0;x1=nx1;y1=ny1;
+  }
+
+  return{
+    x:region.x+(x0/W)*region.width,
+    y:region.y+(y0/H)*region.height,
+    width:((x1-x0+1)/W)*region.width,
+    height:((y1-y0+1)/H)*region.height
   };
 }
 
-function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, onDetected }: {
+function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, anchor, onDetected }: {
   fileId: string | number; page: number; label: string; crop?: VisualCrop | null;
-  searchRegion?: VisualCrop | null; textRegions?: VisualCrop[] | null; onDetected?: (crop: VisualCrop) => void;
+  searchRegion?: VisualCrop | null; textRegions?: VisualCrop[] | null; anchor?: VisualCrop | null; onDetected?: (crop: VisualCrop) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [state, setState] = useState<"loading"|"ready"|"none">("loading");
@@ -251,7 +296,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, on
         await pdfPage.render({ canvas: full, canvasContext: context, viewport }).promise;
         if (cancelled) return;
 
-        const resolved = crop ?? (searchRegion ? detectVisualCrop(full, searchRegion, textRegions ?? []) : null);
+        const resolved = crop ?? (searchRegion ? detectVisualCrop(full, searchRegion, textRegions ?? [], anchor) : null);
         if (!resolved) { setState("none"); return; }
         if (!crop && onDetected) onDetected(resolved);
 
@@ -270,7 +315,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, on
       }
     })();
     return () => { cancelled=true; };
-  }, [fileId,page,crop?.x,crop?.y,crop?.width,crop?.height,searchRegion?.x,searchRegion?.y,searchRegion?.width,searchRegion?.height,textRegions]);
+  }, [fileId,page,crop?.x,crop?.y,crop?.width,crop?.height,searchRegion?.x,searchRegion?.y,searchRegion?.width,searchRegion?.height,textRegions,anchor?.x,anchor?.y,anchor?.width,anchor?.height]);
 
   if ((!crop && !searchRegion) || state==="none") return null;
   return <div className="sourceVisualWrap sourceVisualCrop">
@@ -303,6 +348,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     sourceDocumentId: raw.source_document_id == null ? null : String(raw.source_document_id),
     sourceDetails: raw.source_details == null ? null : String(raw.source_details),
     sourceVisualPage: raw.source_visual_page == null ? null : Number(raw.source_visual_page),
+    sourcePositionBounds: raw.source_position_bounds ? JSON.parse(String(raw.source_position_bounds)) as VisualCrop : null,
     sourceVisualCrop: raw.source_visual_crop ? JSON.parse(String(raw.source_visual_crop)) as VisualCrop : null,
     sourceVisualSearchRegion: raw.source_visual_search_region ? JSON.parse(String(raw.source_visual_search_region)) as VisualCrop : null,
     sourceTextRegions: raw.source_text_regions ? JSON.parse(String(raw.source_text_regions)) as VisualCrop[] : null,
@@ -403,7 +449,7 @@ function App() {
       quantity: lineType === "item" ? 1 : 0,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -452,6 +498,7 @@ function App() {
       sourceDocumentId: String(article.catalog_import_id),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourcePositionBounds: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
       sourceTextRegions: null,
@@ -550,7 +597,7 @@ function App() {
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
       }
 
@@ -565,7 +612,7 @@ function App() {
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
       }
     } else {
@@ -598,6 +645,7 @@ function App() {
         sourceDocumentId: String(quoteProposal.fileId),
         sourceDetails: source.details?.trim() || null,
         sourceVisualPage: source.source_page == null ? null : Number(source.source_page),
+        sourcePositionBounds: source.source_position_bounds ?? null,
         sourceVisualCrop: source.source_visual_crop ?? null,
         sourceVisualSearchRegion: source.source_visual_search_region ?? null,
         sourceTextRegions: source.source_text_regions ?? null,
@@ -708,6 +756,7 @@ function App() {
             sourceDocumentId: line.sourceDocumentId,
             sourceDetails: line.sourceDetails,
             sourceVisualPage: line.sourceVisualPage,
+            sourcePositionBounds: line.sourcePositionBounds,
             sourceVisualCrop: line.sourceVisualCrop,
             sourceVisualSearchRegion: line.sourceVisualSearchRegion,
             sourceTextRegions: line.sourceTextRegions,
@@ -811,7 +860,7 @@ function App() {
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
-                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && (line.source_visual_crop || line.source_visual_search_region) && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} searchRegion={line.source_visual_search_region} textRegions={line.source_text_regions} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && (line.source_visual_crop || line.source_visual_search_region) && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} searchRegion={line.source_visual_search_region} textRegions={line.source_text_regions} anchor={line.source_position_bounds} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
                 <strong>{money.format(line.line_total)}</strong>
               </label>)}
             </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
@@ -858,7 +907,7 @@ function App() {
                 >Offerte</button>}
                 {(line.sourceDetails || (line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion)) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
