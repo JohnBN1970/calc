@@ -26,6 +26,7 @@ type Line = {
   sourceDocumentId: string | null;
   sourceDetails: string | null;
   sourceVisualPage: number | null;
+  sourceVisualCrop: VisualCrop | null;
   sourceOfferSummary: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
@@ -206,6 +207,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     sourceDocumentId: raw.source_document_id == null ? null : String(raw.source_document_id),
     sourceDetails: raw.source_details == null ? null : String(raw.source_details),
     sourceVisualPage: raw.source_visual_page == null ? null : Number(raw.source_visual_page),
+    sourceVisualCrop: raw.source_visual_crop ? JSON.parse(String(raw.source_visual_crop)) as VisualCrop : null,
     sourceOfferSummary: raw.source_offer_summary == null ? null : String(raw.source_offer_summary)
   };
 }
@@ -303,7 +305,7 @@ function App() {
       quantity: lineType === "item" ? 1 : 0,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -352,6 +354,7 @@ function App() {
       sourceDocumentId: String(article.catalog_import_id),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourceVisualCrop: null,
       sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
@@ -447,7 +450,7 @@ function App() {
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
         });
       }
 
@@ -462,7 +465,7 @@ function App() {
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
         });
       }
     } else {
@@ -495,6 +498,7 @@ function App() {
         sourceDocumentId: String(quoteProposal.fileId),
         sourceDetails: source.details?.trim() || null,
         sourceVisualPage: source.source_page == null ? null : Number(source.source_page),
+        sourceVisualCrop: source.source_visual_crop ?? null,
         sourceOfferSummary: source.offer_summary?.trim() || null
       };
     });
@@ -599,6 +603,7 @@ function App() {
             sourceDocumentId: line.sourceDocumentId,
             sourceDetails: line.sourceDetails,
             sourceVisualPage: line.sourceVisualPage,
+            sourceVisualCrop: line.sourceVisualCrop,
             sourceOfferSummary: line.sourceOfferSummary
           }))
         })
@@ -744,9 +749,9 @@ function App() {
                     window.open(`/api/quotes/${line.sourceDocumentId}/preview`, "_blank", "noopener,noreferrer");
                   }}
                 >Offerte</button>}
-                {(line.sourceDetails || line.sourceVisualPage || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
+                {(line.sourceDetails || (line.sourceVisualPage && line.sourceVisualCrop) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceVisualCrop && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
