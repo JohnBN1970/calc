@@ -146,7 +146,7 @@ function SourceVisual({ fileId, page, label, crop }: { fileId: string | number; 
         const response = await fetch("/api/quotes/" + fileId + "/preview");
         if (!response.ok) throw new Error("PDF source unavailable");
         const bytes = new Uint8Array(await response.arrayBuffer());
-        const pdf = await pdfjs.getDocument({ data: bytes, disableWorker: true }).promise;
+        const pdf = await pdfjs.getDocument({ data: bytes }).promise;
         const pdfPage = await pdf.getPage(page);
         const viewport = pdfPage.getViewport({ scale: 1.7 });
         const full = document.createElement("canvas");
@@ -154,7 +154,7 @@ function SourceVisual({ fileId, page, label, crop }: { fileId: string | number; 
         full.height = Math.ceil(viewport.height);
         const context = full.getContext("2d");
         if (!context) throw new Error("Canvas unavailable");
-        await pdfPage.render({ canvasContext: context, viewport }).promise;
+        await pdfPage.render({ canvas: full, canvasContext: context, viewport }).promise;
         if (cancelled) return;
 
         const sx = Math.max(0, Math.floor(full.width * crop.x));
