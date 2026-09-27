@@ -86,7 +86,6 @@ type ProjectContext = {
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
-const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
 
 const classificationScheme: ClassificationScheme = "custom";
 const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
@@ -433,13 +432,10 @@ function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
-  const [markupPct, setMarkupPct] = useState(30);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
-  const [officeAuthoritative, setOfficeAuthoritative] = useState(false);
   const [officeVersion, setOfficeVersion] = useState("");
   const [officeResult, setOfficeResult] = useState<Record<string, unknown>>({});
-  const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
@@ -461,18 +457,11 @@ function App() {
     if (!response.ok) throw new Error("Werkbank kon niet uit BREBO Office worden geladen.");
     const data = await response.json();
     const result = data.result ?? {};
-    const commercial = result.commercial_result ?? {};
-    const parameters = result.parameters ?? {};
-    const direct = Number(result.priced_direct_cost ?? 0);
-    const sales = Number(commercial.sales_price ?? direct);
-    const effectiveMarkupPct = direct !== 0 ? ((sales - direct) / direct) * 100 : 0;
-    setMarkupPct(Number(parameters.single_margin_pct ?? effectiveMarkupPct));
     setOfficeResult(result);
     setLines(mapOfficeWorkspaceLines(data));
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.label ?? data.calculation?.code ?? "BREBO Calculatie"));
     setOfficeVersion(String(data.version?.version ?? ""));
-    setOfficeAuthoritative(true);
     setAuthorized(true);
     setStatus("Live uit BREBO Office");
   };
@@ -507,11 +496,11 @@ function App() {
 
   const patchLine = (id: number, patch: Partial<Line>) => {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
-    setStatus(officeAuthoritative ? "Wijzigingen klaar voor Office" : "Concept — niet opgeslagen");
+    setStatus("Wijzigingen klaar voor Office");
   };
 
   const saveOfficeRow = async (line: Line) => {
-    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    if (!line.officeRowId || !officeVersion) return;
     setStatus("Opslaan in Office…");
     const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
       method: "PATCH",
@@ -538,7 +527,7 @@ function App() {
   };
 
   const deleteOfficeRow = async (line: Line) => {
-    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    if (!line.officeRowId || !officeVersion) return;
     if (!window.confirm(`Regel "${line.description || line.id}" verwijderen?`)) return;
     setStatus("Verwijderen in Office…");
     const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
@@ -554,96 +543,77 @@ function App() {
   };
 
   const addLine = async (lineType: LineType) => {
-    if (officeAuthoritative) {
-      if (!officeVersion) {
-        setStatus("Office-versie ontbreekt.");
-        return;
-      }
+    if (!officeVersion) {
+      setStatus("Office-versie ontbreekt.");
+      return;
+    }
 
-      if (lineType === "chapter") {
-        const label = window.prompt("Naam hoofdgroep", "Nieuwe hoofdgroep");
-        if (!label?.trim()) return;
-        setStatus("Hoofdgroep toevoegen in Office…");
-        const response = await fetch("/api/office-workspace/structure/groups", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ version: officeVersion, label: label.trim(), code: "" })
-        });
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          setStatus(String(error.error ?? "Hoofdgroep kon niet worden toegevoegd."));
-          return;
-        }
-        await loadWorkbench();
-        return;
-      }
-
-      if (lineType === "paragraph") {
-        const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter" && line.officeStructureKey);
-        if (!latestChapter?.officeStructureKey) {
-          setStatus("Maak eerst een hoofdgroep.");
-          return;
-        }
-        const label = window.prompt("Naam paragraaf", "Nieuwe paragraaf");
-        if (!label?.trim()) return;
-        setStatus("Paragraaf toevoegen in Office…");
-        const response = await fetch("/api/office-workspace/structure/paragraphs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            version: officeVersion,
-            parent_key: latestChapter.officeStructureKey,
-            label: label.trim(),
-            code: ""
-          })
-        });
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          setStatus(String(error.error ?? "Paragraaf kon niet worden toegevoegd."));
-          return;
-        }
-        await loadWorkbench();
-        return;
-      }
-
-      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
-      if (!latestParagraph?.officeStructureKey) {
-        setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
-        return;
-      }
-      setStatus("Nieuwe regel in Office…");
-      const response = await fetch("/api/office-workspace/rows", {
+    if (lineType === "chapter") {
+      const label = window.prompt("Naam hoofdgroep", "Nieuwe hoofdgroep");
+      if (!label?.trim()) return;
+      setStatus("Hoofdgroep toevoegen in Office…");
+      const response = await fetch("/api/office-workspace/structure/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: officeVersion, paragraph_key: latestParagraph.officeStructureKey })
+        body: JSON.stringify({ version: officeVersion, label: label.trim(), code: "" })
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        setStatus(String(error.error ?? "Nieuwe regel kon niet worden toegevoegd."));
+        setStatus(String(error.error ?? "Hoofdgroep kon niet worden toegevoegd."));
         return;
       }
       await loadWorkbench();
       return;
     }
 
-    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
-    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
-    const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
-    const id = nextId;
-    setNextId(id - 1);
-    setLines(current => [...current, {
-      id,
-      parentId: lineType === "chapter" ? null : parent?.id ?? null,
-      lineType,
-      code: "",
-      description: lineType === "chapter" ? "Nieuw hoofdstuk" : lineType === "paragraph" ? "Nieuwe paragraaf" : "",
-      unit: lineType === "item" ? "st" : "",
-      quantity: lineType === "item" ? 1 : 0,
-      labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
-      priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
-    }]);
-    setStatus("Concept — niet opgeslagen");
+    if (lineType === "paragraph") {
+      const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter" && line.officeStructureKey);
+      if (!latestChapter?.officeStructureKey) {
+        setStatus("Maak eerst een hoofdgroep.");
+        return;
+      }
+      const label = window.prompt("Naam paragraaf", "Nieuwe paragraaf");
+      if (!label?.trim()) return;
+      setStatus("Paragraaf toevoegen in Office…");
+      const response = await fetch("/api/office-workspace/structure/paragraphs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          parent_key: latestChapter.officeStructureKey,
+          label: label.trim(),
+          code: ""
+        })
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        setStatus(String(error.error ?? "Paragraaf kon niet worden toegevoegd."));
+        return;
+      }
+      await loadWorkbench();
+      return;
+    }
+
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
+    if (!latestParagraph?.officeStructureKey) {
+      setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
+      return;
+    }
+    setStatus("Nieuwe regel in Office…");
+    const response = await fetch("/api/office-workspace/rows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: officeVersion, paragraph_key: latestParagraph.officeStructureKey })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      setStatus(String(error.error ?? "Nieuwe regel kon niet worden toegevoegd."));
+      return;
+    }
+    await loadWorkbench();
+    return;
+    }
+
   };
 
   const searchArticles = async () => {
@@ -663,7 +633,7 @@ function App() {
   };
 
   const addArticleLine = async (article: ArticleSearchItem) => {
-    if (!officeAuthoritative || !officeVersion) {
+    if (!officeVersion) {
       setStatus("Office-context ontbreekt.");
       return;
     }
@@ -819,7 +789,7 @@ function App() {
   };
 
   const applyQuoteLines = async () => {
-    if (!quoteProposal || quoteProposal.lines.length === 0 || !officeAuthoritative || !officeVersion) return;
+    if (!quoteProposal || quoteProposal.lines.length === 0 || !officeVersion) return;
     const chosen = quoteProposal.lines.filter(line => selectedQuotePositions.includes(line.position));
     if (chosen.length === 0) {
       setQuoteStatus("Selecteer minimaal één offerteregel.");
@@ -994,65 +964,91 @@ function App() {
     }
   };
 
-  const applyQuoteCandidate = (candidate: QuoteCandidate) => {
-    if (!quoteProposal) return;
-    const patch: Partial<Line> = {
-      priceSourceType: "supplier_quote",
-      officeSourceId: String(quoteProposal.fileId),
-      sourceReference: quoteProposal.filename,
-      sourceUnitPrice: candidate.value,
-      sourceDocumentId: String(quoteProposal.fileId)
-    };
-    if (quoteCarrier === "labour") patch.labour = candidate.value;
-    if (quoteCarrier === "material") patch.material = candidate.value;
-    if (quoteCarrier === "equipment") patch.equipment = candidate.value;
-    if (quoteCarrier === "subcontracting") patch.subcontracting = candidate.value;
-    if (quoteCarrier === "other") patch.other = candidate.value;
+  const applyQuoteCandidate = async (candidate: QuoteCandidate) => {
+    if (!quoteProposal || !officeVersion) return;
+    try {
+      let rowId = quoteProposal.targetLineId;
+      if (rowId == null) {
+        const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
+        if (!latestParagraph?.officeStructureKey) throw new Error("Maak eerst een paragraaf in de calculatiestructuur.");
+        const createResponse = await fetch("/api/office-workspace/rows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: officeVersion, paragraph_key: latestParagraph.officeStructureKey })
+        });
+        const created = await createResponse.json().catch(() => ({}));
+        if (!createResponse.ok) throw new Error(String(created.error ?? "Calculatieregel kon niet worden aangemaakt."));
+        rowId = Number(created.row_id ?? 0);
+      }
+      if (!Number.isInteger(rowId) || Number(rowId) <= 0) throw new Error("Office gaf geen geldige regel-ID terug.");
 
-    if (quoteProposal.targetLineId != null) {
-      patchLine(quoteProposal.targetLineId, patch);
-      setQuoteStatus(`${money.format(candidate.value)} overgenomen als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier} voor regel #${quoteProposal.targetLineId}. Nog opslaan.`);
+      const target = lines.find(line => line.officeRowId === rowId);
+      const unitCosts: Record<CostCarrier, number> = {
+        labour: target?.labour ?? 0,
+        material: target?.material ?? 0,
+        equipment: target?.equipment ?? 0,
+        subcontracting: target?.subcontracting ?? 0,
+        other: target?.other ?? 0
+      };
+      unitCosts[quoteCarrier] = candidate.value;
+
+      const rowResponse = await fetch(`/api/office-workspace/rows/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          description: target?.description || quoteProposal.target.description || candidate.text || quoteProposal.filename,
+          unit: target?.unit || quoteProposal.target.unit || "st",
+          quantity: target?.quantity || quoteProposal.target.quantity || 1,
+          unit_costs: unitCosts
+        })
+      });
+      const rowResult = await rowResponse.json().catch(() => ({}));
+      if (!rowResponse.ok) throw new Error(String(rowResult.error ?? "Offerteprijs kon niet op de regel worden gezet."));
+
+      const sourceResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          source_type: "supplier_quote",
+          source_ref: quoteProposal.filename,
+          file_id: quoteProposal.fileId,
+          cost_carrier: quoteCarrier,
+          extracted_description: quoteProposal.target.description || candidate.text,
+          extracted_quantity: quoteProposal.target.quantity ?? 1,
+          extracted_unit: quoteProposal.target.unit || "st",
+          extracted_unit_price: candidate.value,
+          extracted_total: candidate.value * (quoteProposal.target.quantity ?? 1),
+          proposed_unit_cost: candidate.value,
+          extraction_status: "review",
+          internal_note: candidate.text
+        })
+      });
+      const source = await sourceResponse.json().catch(() => ({}));
+      if (!sourceResponse.ok) throw new Error(String(source.error ?? "Offerteprijsbron kon niet worden geregistreerd."));
+      const sourceId = Number(source.price_source_id ?? 0);
+      if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("Office gaf geen geldige prijsbron-ID terug.");
+
+      const approveResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources/${sourceId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          cost_carrier: quoteCarrier,
+          unit_cost: candidate.value,
+          note: `Goedgekeurd vanuit leveranciersofferte ${quoteProposal.filename}`
+        })
+      });
+      const approved = await approveResponse.json().catch(() => ({}));
+      if (!approveResponse.ok) throw new Error(String(approved.error ?? "Offerteprijs kon niet worden goedgekeurd."));
+
       setQuoteProposal(null);
-      return;
+      await loadWorkbench();
+      setQuoteStatus(`${money.format(candidate.value)} als Office-prijsbron verwerkt.`);
+    } catch (error) {
+      setQuoteStatus(error instanceof Error ? error.message : "Offerteprijs kon niet in Office worden verwerkt.");
     }
-
-    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
-    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
-    const parent = latestParagraph ?? latestChapter;
-    const id = nextId;
-    setNextId(id - 1);
-    const newLine: Line = {
-      id,
-      parentId: parent?.id ?? null,
-      lineType: "item",
-      code: "",
-      description: quoteProposal.target.description || candidate.text || quoteProposal.filename,
-      unit: quoteProposal.target.unit || "st",
-      quantity: quoteProposal.target.quantity && quoteProposal.target.quantity > 0 ? quoteProposal.target.quantity : 1,
-      labour: 0,
-      material: 0,
-      equipment: 0,
-      subcontracting: 0,
-      other: 0,
-      priceSourceType: "supplier_quote",
-      officeSourceId: String(quoteProposal.fileId),
-      sourceReference: quoteProposal.filename,
-      sourceSupplier: null,
-      sourceUnitPrice: candidate.value,
-      sourcePriceDate: null,
-      sourceDocumentId: String(quoteProposal.fileId),
-      sourceDetails: null,
-      sourceVisualPage: null,
-      sourceVisualCrop: null,
-      sourceVisualSearchRegion: null,
-      sourceOfferSummary: null,
-      ...patch
-    };
-    setLines(current => [...current, newLine]);
-    setSelectedLineId(id);
-    setQuoteProposal(null);
-    setStatus("Concept — niet opgeslagen");
-    setQuoteStatus(`${money.format(candidate.value)} overgenomen; Calc heeft automatisch een nieuwe calculatieregel gemaakt. Nog opslaan.`);
   };
 
   const officeCommercial = (officeResult.commercial_result ?? {}) as Record<string, unknown>;
@@ -1066,59 +1062,14 @@ function App() {
   };
 
   const save = async () => {
-    if (officeAuthoritative) {
-      try {
-        const editableRows = lines.filter(line => line.lineType === "item" && line.officeRowId);
-        for (const line of editableRows) {
-          await saveOfficeRow(line);
-        }
-        setStatus("Opgeslagen in Office");
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Opslaan in Office mislukt");
-      }
-      return;
-    }
-    setStatus("Opslaan…");
     try {
-      const response = await fetch("/api/workbench/current", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          markupPct,
-          lines: lines.map((line, index) => ({
-            id: line.id,
-            parentId: line.parentId,
-            sortOrder: index,
-            lineType: line.lineType,
-            code: line.code,
-            description: line.description,
-            unit: line.unit,
-            quantity: line.quantity,
-            labourUnitCost: line.labour,
-            materialUnitCost: line.material,
-            equipmentUnitCost: line.equipment,
-            subcontractingUnitCost: line.subcontracting,
-            otherUnitCost: line.other,
-            priceSourceType: line.priceSourceType,
-            officeSourceId: line.officeSourceId,
-            sourceReference: line.sourceReference,
-            sourceSupplier: line.sourceSupplier,
-            sourceUnitPrice: line.sourceUnitPrice,
-            sourcePriceDate: line.sourcePriceDate,
-            sourceDocumentId: line.sourceDocumentId,
-            sourceDetails: line.sourceDetails,
-            sourceVisualPage: line.sourceVisualPage,
-            sourceVisualCrop: line.sourceVisualCrop,
-            sourceVisualSearchRegion: line.sourceVisualSearchRegion,
-            sourceOfferSummary: line.sourceOfferSummary
-          }))
-        })
-      });
-      if (!response.ok) throw new Error("Opslaan mislukt");
-      setStatus("Opgeslagen");
-      await loadWorkbench();
-    } catch {
-      setStatus("Opslaan mislukt");
+      const editableRows = lines.filter(line => line.lineType === "item" && line.officeRowId);
+      for (const line of editableRows) {
+        await saveOfficeRow(line);
+      }
+      setStatus("Opgeslagen in Office");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Opslaan in Office mislukt");
     }
   };
 
@@ -1169,7 +1120,7 @@ function App() {
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={() => void save()} title={officeAuthoritative ? "Wijzigingen opslaan in BREBO Office" : "Calculatie opslaan"}><Icon name="save" /><span>{officeAuthoritative ? "Opslaan in Office" : "Opslaan"}</span></button>
+          <button className="command commandSave" type="button" onClick={() => void save()} title="Wijzigingen opslaan in BREBO Office"><Icon name="save" /><span>Opslaan in Office</span></button>
         </div>
 
         {priceWorkspaceOpen && <div className="priceWorkspace">
@@ -1237,13 +1188,13 @@ function App() {
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
-                <input value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
+                <input value={line.code} disabled onChange={e => patchLine(line.id, { code: e.target.value })} />
                 <span>▾</span>
-                <input value={line.description} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                <input value={line.description} disabled onChange={e => patchLine(line.id, { description: e.target.value })} />
               </div>;
             }
             return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
-              <input className="cell" value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
+              <input className="cell" value={line.code} disabled onChange={e => patchLine(line.id, { code: e.target.value })} />
               <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
                 {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
@@ -1260,7 +1211,7 @@ function App() {
                   <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
-              <select className="cell" value={line.lineType} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
+              <select className="cell" value={line.lineType} disabled onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
                 <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
               </select>
               <input className="cell" value={line.unit} onChange={e => patchLine(line.id, { unit: e.target.value })} />
@@ -1270,8 +1221,8 @@ function App() {
               <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
               <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
               <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
-              <strong>{line.lineType === "note" ? "—" : money.format(officeAuthoritative ? officeRowDirect(line) : lineDirect(line))}</strong>
-              {officeAuthoritative && line.officeRowId && <div className="rowActions" onClick={event => event.stopPropagation()}>
+              <strong>{line.lineType === "note" ? "—" : money.format(officeRowDirect(line))}</strong>
+              {line.officeRowId && <div className="rowActions" onClick={event => event.stopPropagation()}>
                 <button type="button" onClick={() => void saveOfficeRow(line)}>✓</button>
                 <button type="button" onClick={() => void deleteOfficeRow(line)}>×</button>
               </div>}
