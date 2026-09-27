@@ -42,10 +42,14 @@ Recommended settings:
 ```text
 Node.js version: 22
 Build command: npm run build
-Entrypoint: apps/api/dist/startup.js
+Entrypoint: startup.js
 ```
 
-Hostinger installs dependencies as part of the deployment flow. The Hostinger entrypoint deliberately performs:
+Hostinger installs dependencies as part of the deployment flow. Use the **root `startup.js` wrapper** as entrypoint; LiteSpeed/Hostinger can load that CommonJS wrapper safely and it then imports the compiled ESM API startup. Do not point Hostinger directly at `apps/api/dist/startup.js`.
+
+The build command now also verifies that `apps/api/dist/startup.js`, `apps/api/dist/index.js` and `apps/web/dist/index.html` were actually produced. A missing build artifact therefore fails with a concrete log message.
+
+The runtime path deliberately performs:
 
 ```text
 runtime preflight -> idempotent MySQL migration -> start Node application
@@ -66,3 +70,23 @@ The Node process serves both the API and the built React application.
 7. Confirm that the saved line is still present.
 
 Do not remove the Drupal calculation module until this flow has been proven with real production data and the migration strategy has been approved.
+
+
+## Canonical Hostinger settings
+
+Use exactly:
+
+```text
+Node.js: 22
+Install: npm install
+Build: npm run build
+Entrypoint: startup.js
+```
+
+If Hostinger offers a start-command field instead of an entrypoint, use:
+
+```text
+npm start
+```
+
+Do not use `apps/api/dist/startup.js` as the Hostinger/LiteSpeed entrypoint.
