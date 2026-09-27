@@ -662,40 +662,96 @@ function App() {
     }
   };
 
-  const addArticleLine = (article: ArticleSearchItem) => {
-    const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
-    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
-    const parent = latestParagraph ?? latestChapter;
-    const id = nextId;
-    setNextId(id - 1);
-    setLines(current => [...current, {
-      id,
-      parentId: parent?.id ?? null,
-      lineType: "item",
-      code: article.code,
-      description: article.description,
-      unit: article.unit,
-      quantity: 1,
-      labour: 0,
-      material: Number(article.net_price ?? 0),
-      equipment: 0,
-      subcontracting: 0,
-      other: 0,
-      priceSourceType: "article",
-      officeSourceId: String(article.article_id),
-      sourceReference: article.supplier_article_no,
-      sourceSupplier: article.supplier,
-      sourceUnitPrice: Number(article.net_price ?? 0),
-      sourcePriceDate: article.price_date,
-      sourceDocumentId: String(article.catalog_import_id),
-      sourceDetails: null,
-      sourceVisualPage: null,
-      sourceVisualCrop: null,
-      sourceVisualSearchRegion: null,
-      sourceOfferSummary: null
-    }]);
-    setStatus("Concept — niet opgeslagen");
-    setPriceWorkspaceOpen(false);
+  const addArticleLine = async (article: ArticleSearchItem) => {
+    if (!officeAuthoritative || !officeVersion) {
+      setStatus("Office-context ontbreekt.");
+      return;
+    }
+    const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
+    if (!latestParagraph?.officeStructureKey) {
+      setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
+      return;
+    }
+
+    setStatus("Artikel als Office-prijsbron toevoegen…");
+    try {
+      const createResponse = await fetch("/api/office-workspace/rows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          paragraph_key: latestParagraph.officeStructureKey
+        })
+      });
+      const created = await createResponse.json().catch(() => ({}));
+      if (!createResponse.ok) throw new Error(String(created.error ?? "Calculatieregel kon niet worden aangemaakt."));
+      const rowId = Number(created.row_id ?? 0);
+      if (!Number.isInteger(rowId) || rowId <= 0) throw new Error("Office gaf geen geldige regel-ID terug.");
+
+      const rowResponse = await fetch(`/api/office-workspace/rows/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          description: article.description,
+          unit: article.unit || "st",
+          quantity: 1,
+          unit_costs: {
+            labour: 0,
+            material: 0,
+            equipment: 0,
+            subcontracting: 0,
+            other: 0
+          }
+        })
+      });
+      const rowResult = await rowResponse.json().catch(() => ({}));
+      if (!rowResponse.ok) throw new Error(String(rowResult.error ?? "Artikelregel kon niet worden gevuld."));
+
+      const sourceResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          source_type: "article",
+          source_ref: String(article.article_id),
+          supplier_ref: article.supplier_article_no,
+          supplier_name: article.supplier,
+          currency: "EUR",
+          cost_carrier: "material",
+          extracted_description: article.description,
+          extracted_quantity: 1,
+          extracted_unit: article.unit,
+          extracted_unit_price: Number(article.net_price ?? 0),
+          extracted_total: Number(article.net_price ?? 0),
+          proposed_unit_cost: Number(article.net_price ?? 0),
+          internal_note: `Office artikel ${article.code}; catalog import ${article.catalog_import_id}; prijsdatum ${article.price_date}`
+        })
+      });
+      const source = await sourceResponse.json().catch(() => ({}));
+      if (!sourceResponse.ok) throw new Error(String(source.error ?? "Prijsbron kon niet worden geregistreerd."));
+      const sourceId = Number(source.price_source_id ?? 0);
+      if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("Office gaf geen geldige prijsbron-ID terug.");
+
+      const approveResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources/${sourceId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: officeVersion,
+          cost_carrier: "material",
+          unit_cost: Number(article.net_price ?? 0),
+          note: `Artikelprijs uit centrale Office-artikelstam; prijsdatum ${article.price_date}`
+        })
+      });
+      const approved = await approveResponse.json().catch(() => ({}));
+      if (!approveResponse.ok) throw new Error(String(approved.error ?? "Prijsbron kon niet worden goedgekeurd."));
+
+      await loadWorkbench();
+      setPriceWorkspaceOpen(false);
+      setStatus("Artikel en prijsbron opgeslagen in Office");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Artikel kon niet in Office worden verwerkt.");
+    }
   };
 
   const openQuoteUpload = () => {
@@ -1085,7 +1141,7 @@ function App() {
               <div className="articleIdentity"><small>{article.code}{article.product_group ? ` · ${article.product_group}` : ""}</small><strong>{article.description}</strong><span>{article.supplier} · art. {article.supplier_article_no}</span></div>
               <div><small>Eenheid</small><strong>{article.unit}</strong></div>
               <div><small>Netto</small><strong>{money.format(article.net_price)}</strong><span>{article.price_date}</span></div>
-              <button type="button" onClick={() => addArticleLine(article)}>Kiezen</button>
+              <button type="button" onClick={() => void addArticleLine(article)}>Kiezen</button>
             </div>)}
           </div>}
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
