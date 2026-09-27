@@ -367,9 +367,12 @@ app.get("/api/office-workspace/state", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
   try {
-    const state = await fetchOfficeCalculationWorkspaceState(session.officeCalculationId);
+    const [state, projectContext] = await Promise.all([
+      fetchOfficeCalculationWorkspaceState(session.officeCalculationId),
+      fetchOfficeProjectContext(session.officeProjectId)
+    ]);
     res.setHeader("Cache-Control", "no-store, private");
-    res.json(state);
+    res.json({ ...state, project: projectContext.project });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
     console.error("BREBO Calc Office workspace state failed:", detail);
