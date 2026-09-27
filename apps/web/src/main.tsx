@@ -29,7 +29,8 @@ type Line = {
   sourceOfferSummary: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
-type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; unit_price: number; line_total: number; line_no: number };
+type VisualCrop = { x: number; y: number; width: number; height: number };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_visual_crop?: VisualCrop | null; unit_price: number; line_total: number; line_no: number };
 type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
 type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
 type StructureTarget = { group: string; paragraph: string };
@@ -128,26 +129,57 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
-function SourceVisual({ fileId, page, label }: { fileId: string | number; page: number; label: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  if (imageFailed) {
-    return <div className="sourceVisualFallback">
-      <iframe
-        title={label}
-        src={"/api/quotes/" + fileId + "/preview#page=" + page + "&zoom=page-width"}
-      />
-      <small>Bronpagina · PDF-weergave</small>
-    </div>;
-  }
-  return <div className="sourceVisualWrap">
-    <img
-      className="sourceVisual"
-      src={"/api/quotes/" + fileId + "/visual/" + page}
-      alt={label}
-      loading="lazy"
-      onError={() => setImageFailed(true)}
-    />
-    <small>Bronbeeld · pagina {page}</small>
+function SourceVisual({ fileId, page, label, crop }: { fileId: string | number; page: number; label: string; crop?: VisualCrop | null }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [state, setState] = useState<"loading"|"ready"|"none">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!crop) {
+      setState("none");
+      return;
+    }
+    (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const response = await fetch("/api/quotes/" + fileId + "/preview");
+        if (!response.ok) throw new Error("PDF source unavailable");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const pdf = await pdfjs.getDocument({ data: bytes, disableWorker: true }).promise;
+        const pdfPage = await pdf.getPage(page);
+        const viewport = pdfPage.getViewport({ scale: 1.7 });
+        const full = document.createElement("canvas");
+        full.width = Math.ceil(viewport.width);
+        full.height = Math.ceil(viewport.height);
+        const context = full.getContext("2d");
+        if (!context) throw new Error("Canvas unavailable");
+        await pdfPage.render({ canvasContext: context, viewport }).promise;
+        if (cancelled) return;
+
+        const sx = Math.max(0, Math.floor(full.width * crop.x));
+        const sy = Math.max(0, Math.floor(full.height * crop.y));
+        const sw = Math.max(1, Math.min(full.width - sx, Math.floor(full.width * crop.width)));
+        const sh = Math.max(1, Math.min(full.height - sy, Math.floor(full.height * crop.height)));
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = sw;
+        canvas.height = sh;
+        const target = canvas.getContext("2d");
+        if (!target) throw new Error("Canvas unavailable");
+        target.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+        setState("ready");
+      } catch {
+        if (!cancelled) setState("none");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fileId, page, crop?.x, crop?.y, crop?.width, crop?.height]);
+
+  if (!crop || state === "none") return null;
+  return <div className="sourceVisualWrap sourceVisualCrop">
+    <canvas ref={canvasRef} aria-label={label} />
+    {state === "loading" && <small>Bronbeeld laden…</small>}
+    {state === "ready" && <small>Positiebeeld · bronpagina {page}</small>}
   </div>;
 }
 
@@ -667,7 +699,7 @@ function App() {
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
-                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && line.source_visual_crop && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
                 <strong>{money.format(line.line_total)}</strong>
               </label>)}
             </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
