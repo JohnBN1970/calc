@@ -80,6 +80,21 @@ const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(li
 const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
 
 const classificationScheme: ClassificationScheme = "custom";
+const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
+function parseSourceDetails(details: string | null): Array<[string,string]> {
+  if (!details?.trim()) return [];
+  const escaped = sourceDetailLabels.map(label => label.replace(/[.*+?^$()|[\]\\]/g, "\\const classificationScheme: ClassificationScheme = "custom";")).join("|");
+  const normalized = details.replace(new RegExp("\\s*(?=(?:" + escaped + ")\\s*:)", "gi"), "\n");
+  const rows: Array<[string,string]> = [];
+  for (const raw of normalized.split(/\r?\n/)) {
+    const line = raw.trim().replace(/\s+/g, " ");
+    const match = line.match(new RegExp("^(" + escaped + ")\\s*:\\s*(.*)$", "i"));
+    if (match) rows.push([match[1], match[2].trim()]);
+    else if (line && rows.length) rows[rows.length - 1][1] = (rows[rows.length - 1][1] + " " + line).trim();
+  }
+  return rows;
+}
+
 
 function mapClassification(classification: QuoteClassification | null, scheme: ClassificationScheme): StructureTarget | null {
   if (!classification) return null;
@@ -676,7 +691,7 @@ function App() {
                 >Offerte</button>}
                 {(line.sourceDetails || line.sourceVisualPage || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <div className="sourceVisualWrap"><img className="sourceVisual" src={`/api/quotes/${line.sourceDocumentId}/visual/${line.sourceVisualPage}`} alt={`Bronbeeld ${line.code || "offerteregel"}`} loading="lazy" /><small>Bronbeeld · pagina {line.sourceVisualPage}</small></div>}<div className="sourceDetailContent">{line.sourceDetails && <pre>{line.sourceDetails}</pre>}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <div className="sourceVisualWrap"><img className="sourceVisual" src={`/api/quotes/${line.sourceDocumentId}/visual/${line.sourceVisualPage}`} alt={`Bronbeeld ${line.code || "offerteregel"}`} loading="lazy" /><small>Bronbeeld · pagina {line.sourceVisualPage}</small></div>}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
