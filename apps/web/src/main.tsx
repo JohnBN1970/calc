@@ -611,9 +611,6 @@ function App() {
       return;
     }
     await loadWorkbench();
-    return;
-    }
-
   };
 
   const searchArticles = async () => {
