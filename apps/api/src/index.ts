@@ -537,7 +537,7 @@ officeWorkspaceCommandProxy(
 officeWorkspaceCommandProxy(
   "PATCH",
   "/api/office-workspace/structure/:structureKey/order",
-  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/${encodeURIComponent(req.params.structureKey)}/order`
+  (session, req) => `/api/workbench/v2/calculations/${session.officeCalculationId}/structure/${encodeURIComponent(String(req.params.structureKey))}/order`
 );
 
 app.all("/api/workbench/current", (req, res) => {
