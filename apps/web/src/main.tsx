@@ -26,10 +26,12 @@ type Line = {
   sourceDocumentId: string | null;
   sourceDetails: string | null;
   sourceVisualPage: number | null;
+  sourceVisualCrop: VisualCrop | null;
   sourceOfferSummary: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
-type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; unit_price: number; line_total: number; line_no: number };
+type VisualCrop = { x: number; y: number; width: number; height: number };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_visual_crop?: VisualCrop | null; unit_price: number; line_total: number; line_no: number };
 type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
 type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
 type StructureTarget = { group: string; paragraph: string };
@@ -128,26 +130,57 @@ function NumberCell({ value, onChange }: { value: number; onChange: (value: numb
     onChange={event => onChange(Number(event.target.value))} />;
 }
 
-function SourceVisual({ fileId, page, label }: { fileId: string | number; page: number; label: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  if (imageFailed) {
-    return <div className="sourceVisualFallback">
-      <iframe
-        title={label}
-        src={"/api/quotes/" + fileId + "/preview#page=" + page + "&zoom=page-width"}
-      />
-      <small>Bronpagina · PDF-weergave</small>
-    </div>;
-  }
-  return <div className="sourceVisualWrap">
-    <img
-      className="sourceVisual"
-      src={"/api/quotes/" + fileId + "/visual/" + page}
-      alt={label}
-      loading="lazy"
-      onError={() => setImageFailed(true)}
-    />
-    <small>Bronbeeld · pagina {page}</small>
+function SourceVisual({ fileId, page, label, crop }: { fileId: string | number; page: number; label: string; crop?: VisualCrop | null }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [state, setState] = useState<"loading"|"ready"|"none">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!crop) {
+      setState("none");
+      return;
+    }
+    (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const response = await fetch("/api/quotes/" + fileId + "/preview");
+        if (!response.ok) throw new Error("PDF source unavailable");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+        const pdfPage = await pdf.getPage(page);
+        const viewport = pdfPage.getViewport({ scale: 1.7 });
+        const full = document.createElement("canvas");
+        full.width = Math.ceil(viewport.width);
+        full.height = Math.ceil(viewport.height);
+        const context = full.getContext("2d");
+        if (!context) throw new Error("Canvas unavailable");
+        await pdfPage.render({ canvas: full, canvasContext: context, viewport }).promise;
+        if (cancelled) return;
+
+        const sx = Math.max(0, Math.floor(full.width * crop.x));
+        const sy = Math.max(0, Math.floor(full.height * crop.y));
+        const sw = Math.max(1, Math.min(full.width - sx, Math.floor(full.width * crop.width)));
+        const sh = Math.max(1, Math.min(full.height - sy, Math.floor(full.height * crop.height)));
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = sw;
+        canvas.height = sh;
+        const target = canvas.getContext("2d");
+        if (!target) throw new Error("Canvas unavailable");
+        target.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+        setState("ready");
+      } catch {
+        if (!cancelled) setState("none");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fileId, page, crop?.x, crop?.y, crop?.width, crop?.height]);
+
+  if (!crop || state === "none") return null;
+  return <div className="sourceVisualWrap sourceVisualCrop">
+    <canvas ref={canvasRef} aria-label={label} />
+    {state === "loading" && <small>Bronbeeld laden…</small>}
+    {state === "ready" && <small>Positiebeeld · bronpagina {page}</small>}
   </div>;
 }
 
@@ -174,6 +207,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     sourceDocumentId: raw.source_document_id == null ? null : String(raw.source_document_id),
     sourceDetails: raw.source_details == null ? null : String(raw.source_details),
     sourceVisualPage: raw.source_visual_page == null ? null : Number(raw.source_visual_page),
+    sourceVisualCrop: raw.source_visual_crop ? JSON.parse(String(raw.source_visual_crop)) as VisualCrop : null,
     sourceOfferSummary: raw.source_offer_summary == null ? null : String(raw.source_offer_summary)
   };
 }
@@ -271,7 +305,7 @@ function App() {
       quantity: lineType === "item" ? 1 : 0,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -320,6 +354,7 @@ function App() {
       sourceDocumentId: String(article.catalog_import_id),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourceVisualCrop: null,
       sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
@@ -415,7 +450,7 @@ function App() {
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
         });
       }
 
@@ -430,7 +465,7 @@ function App() {
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceOfferSummary: null
         });
       }
     } else {
@@ -463,6 +498,7 @@ function App() {
         sourceDocumentId: String(quoteProposal.fileId),
         sourceDetails: source.details?.trim() || null,
         sourceVisualPage: source.source_page == null ? null : Number(source.source_page),
+        sourceVisualCrop: source.source_visual_crop ?? null,
         sourceOfferSummary: source.offer_summary?.trim() || null
       };
     });
@@ -526,6 +562,7 @@ function App() {
       sourceDocumentId: String(quoteProposal.fileId),
       sourceDetails: null,
       sourceVisualPage: null,
+      sourceVisualCrop: null,
       sourceOfferSummary: null,
       ...patch
     };
@@ -567,6 +604,7 @@ function App() {
             sourceDocumentId: line.sourceDocumentId,
             sourceDetails: line.sourceDetails,
             sourceVisualPage: line.sourceVisualPage,
+            sourceVisualCrop: line.sourceVisualCrop,
             sourceOfferSummary: line.sourceOfferSummary
           }))
         })
@@ -667,7 +705,7 @@ function App() {
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
-                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small>{(line.details || line.source_page || line.offer_summary) && <details className="quoteLineDetails"><summary>Technisch detail</summary><div className="sourceDetailPanel">{line.source_page && line.source_visual_crop && <SourceVisual fileId={quoteProposal.fileId} page={Number(line.source_page)} crop={line.source_visual_crop} label={`Bronbeeld offertepositie ${line.position}`} />}<div className="sourceDetailContent">{line.detail_fields && Object.keys(line.detail_fields).length > 0 ? <dl className="detailFields">{Object.entries(line.detail_fields).map(([key,value]) => <React.Fragment key={key}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : line.details && <pre>{line.details}</pre>}{line.offer_summary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><p>{line.offer_summary}</p></div>}</div></div></details>}</span>
                 <strong>{money.format(line.line_total)}</strong>
               </label>)}
             </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
@@ -712,9 +750,9 @@ function App() {
                     window.open(`/api/quotes/${line.sourceDocumentId}/preview`, "_blank", "noopener,noreferrer");
                   }}
                 >Offerte</button>}
-                {(line.sourceDetails || line.sourceVisualPage || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
+                {(line.sourceDetails || (line.sourceVisualPage && line.sourceVisualCrop) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
                   <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
+                  <div className="sourceDetailPanel">{line.sourceVisualPage && line.sourceVisualCrop && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
               <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
