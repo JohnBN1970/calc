@@ -2,7 +2,9 @@
   "name": "brebo-calculatie",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace=@brebo/calc-web",
     "dev:api": "npm run dev --workspace=@brebo/calc-api",
@@ -12,5 +14,7 @@
     "preflight": "node scripts/preflight.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
