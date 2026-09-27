@@ -14,3 +14,8 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm run build
+      - name: Legacy calculation truth tables must not return to runtime
+        run: |
+          ! grep -R --line-number --fixed-strings "calculation_versions" apps/api/src
+          ! grep -R --line-number --fixed-strings "calculation_lines" apps/api/src
+          ! grep -R --line-number --fixed-strings "INSERT INTO calculations" apps/api/src
