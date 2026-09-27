@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -31,6 +31,7 @@ type LineInput = {
   sourcePriceDate?: string | null;
   sourceDocumentId?: string | null;
   sourceDetails?: string | null;
+  sourceVisualPage?: number | null;
 };
 
 type LaunchPayload = {
@@ -307,6 +308,26 @@ app.get("/api/quotes/:fileId/preview", async (req, res) => {
   }
 });
 
+app.get("/api/quotes/:fileId/visual/:page", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const fileId = Number(req.params.fileId);
+  const page = Number(req.params.page);
+  if (!Number.isInteger(fileId) || fileId <= 0 || !Number.isInteger(page) || page <= 0) {
+    res.status(400).json({ error: "Ongeldige offerteafbeelding." });
+    return;
+  }
+  try {
+    const visual = await fetchSupplierQuotePositionVisual({ calculationId: session.officeCalculationId, fileId, page });
+    res.setHeader("Content-Type", visual.contentType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(Buffer.from(visual.bytes));
+  } catch {
+    res.status(502).json({ error: "Offerteafbeelding kon niet uit BREBO Office worden opgehaald." });
+  }
+});
+
 app.get("/api/articles/search", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
@@ -359,7 +380,7 @@ app.get("/api/workbench/current", async (req, res) => {
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
-            source_price_date, source_document_id, source_details
+            source_price_date, source_document_id, source_details, source_visual_page
        FROM calculation_lines
       WHERE version_id = ?
       ORDER BY sort_order, id`,
@@ -444,8 +465,8 @@ app.put("/api/workbench/current", async (req, res) => {
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
-           source_price_date, source_document_id, source_details)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           source_price_date, source_document_id, source_details, source_visual_page)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
@@ -457,7 +478,8 @@ app.put("/api/workbench/current", async (req, res) => {
           line.sourceUnitPrice == null ? null : numeric(line.sourceUnitPrice),
           line.sourcePriceDate ? String(line.sourcePriceDate).slice(0, 10) : null,
           line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null,
-          line.sourceDetails ? String(line.sourceDetails).slice(0, 8000) : null
+          line.sourceDetails ? String(line.sourceDetails).slice(0, 8000) : null,
+          line.sourceVisualPage == null ? null : Math.max(1, Math.trunc(numeric(line.sourceVisualPage)))
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);

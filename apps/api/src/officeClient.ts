@@ -147,6 +147,23 @@ export async function uploadSupplierQuoteToOffice(input: {
 }
 
 
+export async function fetchSupplierQuotePositionVisual(input: {
+  calculationId: number;
+  fileId: number;
+  page: number;
+}): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) throw new Error(`Office quote visual failed with status ${response.status}.`);
+  return { bytes: new Uint8Array(await response.arrayBuffer()), contentType: response.headers.get("content-type") ?? "image/jpeg" };
+}
+
+
 export async function fetchSupplierQuotePreview(input: {
   calculationId: number;
   fileId: number;
