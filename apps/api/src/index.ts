@@ -5,7 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
-import { fetchOfficeProjectContext, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -304,6 +304,26 @@ app.get("/api/quotes/:fileId/preview", async (req, res) => {
     res.send(Buffer.from(preview.bytes));
   } catch {
     res.status(502).json({ error: "Offertevoorbeeld kon niet uit BREBO Office worden opgehaald." });
+  }
+});
+
+app.get("/api/quotes/:fileId/visual/:page", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  const fileId = Number(req.params.fileId);
+  const page = Number(req.params.page);
+  if (!Number.isInteger(fileId) || fileId <= 0 || !Number.isInteger(page) || page <= 0) {
+    res.status(400).json({ error: "Ongeldige offerteafbeelding." });
+    return;
+  }
+  try {
+    const visual = await fetchSupplierQuotePositionVisual({ calculationId: session.officeCalculationId, fileId, page });
+    res.setHeader("Content-Type", visual.contentType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(Buffer.from(visual.bytes));
+  } catch {
+    res.status(502).json({ error: "Offerteafbeelding kon niet uit BREBO Office worden opgehaald." });
   }
 });
 
