@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -28,11 +28,13 @@ type Line = {
   sourceDocumentId: string | null;
   sourceDetails: string | null;
   sourceVisualPage: number | null;
-  sourcePositionBounds: VisualCrop | null;
+  sourcePositionBounds?: VisualCrop | null;
   sourceVisualCrop: VisualCrop | null;
   sourceVisualSearchRegion: VisualCrop | null;
-  sourceTextRegions: VisualCrop[] | null;
+  sourceTextRegions?: VisualCrop[] | null;
   sourceOfferSummary: string | null;
+  officeRowId?: number | null;
+  officeStructureKey?: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type VisualCrop = { x: number; y: number; width: number; height: number };
@@ -158,15 +160,13 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegio
   }
 
   const img=ctx.getImageData(0,0,probe.width,probe.height);
-  const W=probe.width,H=probe.height, dark=new Uint8Array(W*H);
+  const W=probe.width,H=probe.height,dark=new Uint8Array(W*H);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
     const p=(y*W+x)*4;
     const gray=(img.data[p]+img.data[p+1]+img.data[p+2])/3;
     if(gray<205&&img.data[p+3]>50)dark[y*W+x]=1;
   }
 
-  // Extract long orthogonal runs. Product drawings tend to contain persistent
-  // horizontal/vertical geometry; residual glyph fragments generally do not.
   const structural=new Uint8Array(W*H);
   const minH=Math.max(10,Math.floor(W*0.025));
   const minV=Math.max(10,Math.floor(H*0.025));
@@ -195,7 +195,6 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegio
     }
   }
 
-  // Grow structural runs slightly, then collect candidate drawing clusters.
   const grown=new Uint8Array(W*H),R=5;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(structural[y*W+x]){
     for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++){
@@ -207,7 +206,6 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegio
   const seen=new Uint8Array(W*H);
   const qx=new Int32Array(W*H),qy=new Int32Array(W*H);
   let best:{x0:number;y0:number;x1:number;y1:number;score:number}|null=null;
-
   const anchorCx=anchor ? ((anchor.x+anchor.width/2-region.x)/region.width)*W : W*0.5;
   const anchorCy=anchor ? ((anchor.y+anchor.height-region.y)/region.height)*H : 0;
 
@@ -245,8 +243,6 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegio
   }
   if(!best)return null;
 
-  // Expand from structural skeleton to include nearby dimension lines and thin
-  // drawing strokes, but not distant masked text.
   let x0=Math.max(0,best.x0-12),y0=Math.max(0,best.y0-12);
   let x1=Math.min(W-1,best.x1+12),y1=Math.min(H-1,best.y1+12);
   for(let pass=0;pass<2;pass++){
@@ -254,14 +250,12 @@ function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegio
     let nx0=x0,ny0=y0,nx1=x1,ny1=y1;
     for(let y=Math.max(0,y0-margin);y<=Math.min(H-1,y1+margin);y++)for(let x=Math.max(0,x0-margin);x<=Math.min(W-1,x1+margin);x++){
       if(!dark[y*W+x])continue;
-      if(x>=x0-margin&&x<=x1+margin&&y>=y0-margin&&y<=y1+margin){
-        nx0=Math.min(nx0,x);ny0=Math.min(ny0,y);nx1=Math.max(nx1,x);ny1=Math.max(ny1,y);
-      }
+      nx0=Math.min(nx0,x);ny0=Math.min(ny0,y);nx1=Math.max(nx1,x);ny1=Math.max(ny1,y);
     }
     x0=nx0;y0=ny0;x1=nx1;y1=ny1;
   }
 
-  return{
+  return {
     x:region.x+(x0/W)*region.width,
     y:region.y+(y0/H)*region.height,
     width:((x1-x0+1)/W)*region.width,
@@ -356,6 +350,85 @@ function mapServerLine(raw: Record<string, unknown>): Line {
   };
 }
 
+
+function mapOfficeWorkspaceLines(data: Record<string, unknown>): Line[] {
+  const structure = Array.isArray(data.structure) ? data.structure as Array<Record<string, unknown>> : [];
+  const rows = Array.isArray(data.rows) ? data.rows as Array<Record<string, unknown>> : [];
+  const keyToSyntheticId = new Map<string, number>();
+
+  structure.forEach((item, index) => {
+    keyToSyntheticId.set(String(item.node_key ?? ""), -(index + 1));
+  });
+
+  const result: Line[] = structure.map((item, index) => {
+    const key = String(item.node_key ?? "");
+    const parentKey = item.parent_key == null ? "" : String(item.parent_key);
+    return {
+      id: -(index + 1),
+      parentId: parentKey ? (keyToSyntheticId.get(parentKey) ?? null) : null,
+      lineType: String(item.node_type ?? "") === "main_group" ? "chapter" : "paragraph",
+      code: String(item.code ?? ""),
+      description: String(item.label ?? ""),
+      unit: "",
+      quantity: 0,
+      labour: 0,
+      material: 0,
+      equipment: 0,
+      subcontracting: 0,
+      other: 0,
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceOfferSummary: null,
+      officeRowId: null,
+      officeStructureKey: key
+    };
+  });
+
+  for (const row of rows) {
+    const paragraphKey = String(row.paragraph_key ?? "");
+    const rowId = Number(row.row_id ?? row.id ?? 0);
+    result.push({
+      id: rowId,
+      parentId: keyToSyntheticId.get(paragraphKey) ?? null,
+      lineType: "item",
+      code: String(row.code ?? ""),
+      description: String(row.description ?? ""),
+      unit: String(row.unit ?? ""),
+      quantity: Number(row.actual_quantity ?? row.contract_quantity ?? 0),
+      labour: Number(row.labour_unit_cost ?? 0),
+      material: Number(row.material_unit_cost ?? 0),
+      equipment: Number(row.equipment_unit_cost ?? 0),
+      subcontracting: Number(row.subcontracting_unit_cost ?? 0),
+      other: Number(row.other_unit_cost ?? 0),
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceOfferSummary: null,
+      officeRowId: rowId,
+      officeStructureKey: paragraphKey
+    });
+  }
+
+  return result;
+}
+
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
@@ -363,6 +436,9 @@ function App() {
   const [markupPct, setMarkupPct] = useState(30);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [officeAuthoritative, setOfficeAuthoritative] = useState(false);
+  const [officeVersion, setOfficeVersion] = useState("");
+  const [officeResult, setOfficeResult] = useState<Record<string, unknown>>({});
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [priceSearch, setPriceSearch] = useState("");
@@ -375,29 +451,30 @@ function App() {
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
-  const totals = useMemo(() => {
-    const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
-    const markupAmount = direct * (markupPct / 100);
-    return { direct, markupAmount, sales: direct + markupAmount };
-  }, [lines, markupPct]);
-
   const loadWorkbench = async () => {
-    const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
+    const response = await fetch("/api/office-workspace/state", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
       setAuthorized(false);
       setStatus("Open deze calculatie vanuit BREBO Office");
       return;
     }
-    if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
+    if (!response.ok) throw new Error("Werkbank kon niet uit BREBO Office worden geladen.");
     const data = await response.json();
-    const direct = Number(data.version?.direct_cost ?? 0);
-    const markupAmount = Number(data.version?.markup_amount ?? 0);
-    setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
-    setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    const result = data.result ?? {};
+    const commercial = result.commercial_result ?? {};
+    const parameters = result.parameters ?? {};
+    const direct = Number(result.priced_direct_cost ?? 0);
+    const sales = Number(commercial.sales_price ?? direct);
+    const effectiveMarkupPct = direct !== 0 ? ((sales - direct) / direct) * 100 : 0;
+    setMarkupPct(Number(parameters.single_margin_pct ?? effectiveMarkupPct));
+    setOfficeResult(result);
+    setLines(mapOfficeWorkspaceLines(data));
     setProject(data.project as ProjectContext);
-    setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
+    setCalculationTitle(String(data.calculation?.label ?? data.calculation?.code ?? "BREBO Calculatie"));
+    setOfficeVersion(String(data.version?.version ?? ""));
+    setOfficeAuthoritative(true);
     setAuthorized(true);
-    setStatus("Opgeslagen");
+    setStatus("Live uit BREBO Office");
   };
 
   useEffect(() => {
@@ -430,10 +507,125 @@ function App() {
 
   const patchLine = (id: number, patch: Partial<Line>) => {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
-    setStatus("Concept — niet opgeslagen");
+    setStatus(officeAuthoritative ? "Wijzigingen klaar voor Office" : "Concept — niet opgeslagen");
   };
 
-  const addLine = (lineType: LineType) => {
+  const saveOfficeRow = async (line: Line) => {
+    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    setStatus("Opslaan in Office…");
+    const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: officeVersion,
+        description: line.description,
+        unit: line.unit,
+        quantity: line.quantity,
+        unit_costs: {
+          labour: line.labour,
+          material: line.material,
+          equipment: line.equipment,
+          subcontracting: line.subcontracting,
+          other: line.other
+        }
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(String(error.error ?? "Opslaan in Office mislukt."));
+    }
+    await loadWorkbench();
+  };
+
+  const deleteOfficeRow = async (line: Line) => {
+    if (!officeAuthoritative || !line.officeRowId || !officeVersion) return;
+    if (!window.confirm(`Regel "${line.description || line.id}" verwijderen?`)) return;
+    setStatus("Verwijderen in Office…");
+    const response = await fetch(`/api/office-workspace/rows/${line.officeRowId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: officeVersion })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(String(error.error ?? "Verwijderen in Office mislukt."));
+    }
+    await loadWorkbench();
+  };
+
+  const addLine = async (lineType: LineType) => {
+    if (officeAuthoritative) {
+      if (!officeVersion) {
+        setStatus("Office-versie ontbreekt.");
+        return;
+      }
+
+      if (lineType === "chapter") {
+        const label = window.prompt("Naam hoofdgroep", "Nieuwe hoofdgroep");
+        if (!label?.trim()) return;
+        setStatus("Hoofdgroep toevoegen in Office…");
+        const response = await fetch("/api/office-workspace/structure/groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: officeVersion, label: label.trim(), code: "" })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          setStatus(String(error.error ?? "Hoofdgroep kon niet worden toegevoegd."));
+          return;
+        }
+        await loadWorkbench();
+        return;
+      }
+
+      if (lineType === "paragraph") {
+        const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter" && line.officeStructureKey);
+        if (!latestChapter?.officeStructureKey) {
+          setStatus("Maak eerst een hoofdgroep.");
+          return;
+        }
+        const label = window.prompt("Naam paragraaf", "Nieuwe paragraaf");
+        if (!label?.trim()) return;
+        setStatus("Paragraaf toevoegen in Office…");
+        const response = await fetch("/api/office-workspace/structure/paragraphs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: officeVersion,
+            parent_key: latestChapter.officeStructureKey,
+            label: label.trim(),
+            code: ""
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          setStatus(String(error.error ?? "Paragraaf kon niet worden toegevoegd."));
+          return;
+        }
+        await loadWorkbench();
+        return;
+      }
+
+      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey);
+      if (!latestParagraph?.officeStructureKey) {
+        setStatus("Maak eerst een paragraaf in de calculatiestructuur.");
+        return;
+      }
+      setStatus("Nieuwe regel in Office…");
+      const response = await fetch("/api/office-workspace/rows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: officeVersion, paragraph_key: latestParagraph.officeStructureKey })
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        setStatus(String(error.error ?? "Nieuwe regel kon niet worden toegevoegd."));
+        return;
+      }
+      await loadWorkbench();
+      return;
+    }
+
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
     const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
     const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
@@ -449,7 +641,7 @@ function App() {
       quantity: lineType === "item" ? 1 : 0,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -498,10 +690,8 @@ function App() {
       sourceDocumentId: String(article.catalog_import_id),
       sourceDetails: null,
       sourceVisualPage: null,
-      sourcePositionBounds: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
-      sourceTextRegions: null,
       sourceOfferSummary: null
     }]);
     setStatus("Concept — niet opgeslagen");
@@ -597,7 +787,7 @@ function App() {
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
         });
       }
 
@@ -612,7 +802,7 @@ function App() {
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
           unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
         });
       }
     } else {
@@ -712,10 +902,8 @@ function App() {
       sourceDocumentId: String(quoteProposal.fileId),
       sourceDetails: null,
       sourceVisualPage: null,
-      sourcePositionBounds: null,
       sourceVisualCrop: null,
       sourceVisualSearchRegion: null,
-      sourceTextRegions: null,
       sourceOfferSummary: null,
       ...patch
     };
@@ -726,7 +914,29 @@ function App() {
     setQuoteStatus(`${money.format(candidate.value)} overgenomen; Calc heeft automatisch een nieuwe calculatieregel gemaakt. Nog opslaan.`);
   };
 
+  const officeCommercial = (officeResult.commercial_result ?? {}) as Record<string, unknown>;
+  const officeComponents = (officeResult.components ?? {}) as Record<string, Record<string, unknown>>;
+  const officeDirectCost = Number(officeResult.priced_direct_cost ?? 0);
+  const officeSalesPrice = Number(officeCommercial.sales_price ?? 0);
+  const officeCommercialAmount = Math.max(0, officeSalesPrice - officeDirectCost);
+  const officeRowDirect = (line: Line): number => {
+    if (!line.officeRowId) return 0;
+    return Number(officeComponents[`line_${line.officeRowId}`]?.direct_cost ?? 0);
+  };
+
   const save = async () => {
+    if (officeAuthoritative) {
+      try {
+        const editableRows = lines.filter(line => line.lineType === "item" && line.officeRowId);
+        for (const line of editableRows) {
+          await saveOfficeRow(line);
+        }
+        setStatus("Opgeslagen in Office");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Opslaan in Office mislukt");
+      }
+      return;
+    }
     setStatus("Opslaan…");
     try {
       const response = await fetch("/api/workbench/current", {
@@ -757,10 +967,8 @@ function App() {
             sourceDocumentId: line.sourceDocumentId,
             sourceDetails: line.sourceDetails,
             sourceVisualPage: line.sourceVisualPage,
-            sourcePositionBounds: line.sourcePositionBounds,
             sourceVisualCrop: line.sourceVisualCrop,
             sourceVisualSearchRegion: line.sourceVisualSearchRegion,
-            sourceTextRegions: line.sourceTextRegions,
             sourceOfferSummary: line.sourceOfferSummary
           }))
         })
@@ -803,24 +1011,24 @@ function App() {
       </div>
 
       <section className="kpis">
-        <div><span>Directe kostprijs</span><strong>{money.format(totals.direct)}</strong></div>
-        <div><span>Opslag op inkoop</span><strong><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</strong></div>
-        <div><span>Opslagbedrag</span><strong>{money.format(totals.markupAmount)}</strong></div>
-        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(totals.sales)}</strong></div>
+        <div><span>Directe kostprijs</span><strong>{money.format(officeDirectCost)}</strong></div>
+        <div><span>Commerciële methode</span><strong>{String((officeResult.parameters as Record<string, unknown> | undefined)?.commercial_method ?? "—")}</strong></div>
+        <div><span>Commerciële opslag</span><strong>{money.format(officeCommercialAmount)}</strong></div>
+        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(officeSalesPrice)}</strong></div>
       </section>
 
       <section className="workbench">
         <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
           <div className="commandDivider" />
-          <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
-          <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
-          <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
+          <button className="command" type="button" onClick={() => void addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
+          <button className="command" type="button" onClick={() => void addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
+          <button className="command" type="button" onClick={() => void addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
+          <button className="command commandSave" type="button" onClick={() => void save()} title={officeAuthoritative ? "Wijzigingen opslaan in BREBO Office" : "Calculatie opslaan"}><Icon name="save" /><span>{officeAuthoritative ? "Opslaan in Office" : "Opslaan"}</span></button>
         </div>
 
         {priceWorkspaceOpen && <div className="priceWorkspace">
@@ -888,13 +1096,13 @@ function App() {
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
-                <input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+                <input value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
                 <span>▾</span>
-                <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                <input value={line.description} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { description: e.target.value })} />
               </div>;
             }
             return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
-              <input className="cell" value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+              <input className="cell" value={line.code} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { code: e.target.value })} />
               <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
                 {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
@@ -911,7 +1119,7 @@ function App() {
                   <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
                 </details>}
               </div>
-              <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
+              <select className="cell" value={line.lineType} disabled={officeAuthoritative} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
                 <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
               </select>
               <input className="cell" value={line.unit} onChange={e => patchLine(line.id, { unit: e.target.value })} />
@@ -921,10 +1129,14 @@ function App() {
               <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
               <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
               <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
-              <strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong>
+              <strong>{line.lineType === "note" ? "—" : money.format(officeAuthoritative ? officeRowDirect(line) : lineDirect(line))}</strong>
+              {officeAuthoritative && line.officeRowId && <div className="rowActions" onClick={event => event.stopPropagation()}>
+                <button type="button" onClick={() => void saveOfficeRow(line)}>✓</button>
+                <button type="button" onClick={() => void deleteOfficeRow(line)}>×</button>
+              </div>}
             </div>;
           })}
-          <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+          <button className="newrow" onClick={() => void addLine("item")}>+ Nieuwe calculatieregel</button>
         </div>
       </section>
     </main>
