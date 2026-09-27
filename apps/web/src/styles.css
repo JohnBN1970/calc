@@ -47,3 +47,8 @@
 .quotePreviewPane iframe{border:0;width:100%;flex:1;min-height:470px;background:#fff}
 .quoteReviewContent{min-width:0}
 @media(max-width:1050px){.quoteReview{grid-template-columns:1fr}.quotePreviewPane{border-right:0;border-bottom:1px solid #e5e9ec}.quotePreviewPane iframe{min-height:400px}}
+
+.descWrap{display:flex;align-items:center;gap:6px;min-width:0}
+.descWrap .desc{min-width:0;flex:1}
+.priceSourceBadge{border:1px solid #d5dbe0;background:#f7f9fa;color:#48525b;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap}
+.priceSourceBadge:hover{background:#eef2f4}
