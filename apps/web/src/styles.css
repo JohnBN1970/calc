@@ -93,3 +93,10 @@
 .calcLineDetails {
   width: 100%;
 }
+
+.sourceDetailPanel{display:grid;grid-template-columns:minmax(260px,38%) minmax(0,1fr);gap:14px;align-items:start;margin-top:8px}
+.sourceVisual{display:block;width:100%;max-height:520px;object-fit:contain;background:#fff;border:1px solid #dfe4e8;border-radius:7px}
+.sourceDetailPanel pre{margin:0!important;max-height:520px;overflow:auto}
+.calcLineDetails[open]{position:relative;z-index:3}
+.calcLineDetails[open] .sourceDetailPanel{position:absolute;left:0;top:100%;width:min(980px,calc(100vw - 90px));padding:12px;background:#fff;border:1px solid #d7dde1;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.12)}
+@media(max-width:900px){.sourceDetailPanel{grid-template-columns:1fr}.calcLineDetails[open] .sourceDetailPanel{width:min(92vw,760px)}}
