@@ -4,11 +4,26 @@ BREBO Calculatie is de gespecialiseerde calculatiewerkbank voor BREBO.
 
 ## Hoofdprincipe
 
-- **BREBO Office is de centrale databron en eigenaar van projectcontext.**
-- **BREBO Calculatie is de interactieve werkbank voor calculeren.**
-- Vastgestelde calculatieversies worden via een expliciet API-contract teruggeleverd aan Office.
+- **BREBO Office is de centrale bron van waarheid, rekenmotor en eigenaar van de calculatiedomeinlogica.**
+- **BREBO Calculatie is de gespecialiseerde interactieve software-interface voor de calculator.**
+- Calc leest actuele calculatiestate via expliciete Office API-contracten en stuurt bewerkingen als commands terug naar Office.
+- Office valideert, rekent, versieert en bewaart de canonieke calculatie.
+- Calc mag lokale opslag alleen gebruiken voor sessie-, cache- of tijdelijke migratiedoeleinden; niet als concurrerende calculatiewaarheid.
 - Er is geen directe databasekoppeling tussen Calculatie en Office.
-- De huidige Drupal-calculatiemodule blijft bestaan totdat deze applicatie productieproof is.
+
+## Applicatiegrens
+
+```
+BREBO Office
+  brondata + calculatiedomein + rekenmotor + versies + audit
+          ^
+          | signed API state / commands
+          v
+BREBO Calculatie
+  React software-interface + gebruikersinteractie
+```
+
+De interface mag zelfstandig evolueren, maar financiële uitkomsten en domeinbesluiten worden niet lokaal opnieuw geïmplementeerd als tweede waarheid.
 
 ## Doelarchitectuur
 
