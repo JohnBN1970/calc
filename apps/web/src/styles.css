@@ -52,3 +52,14 @@
 .descWrap .desc{min-width:0;flex:1}
 .priceSourceBadge{border:1px solid #d5dbe0;background:#f7f9fa;color:#48525b;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap}
 .priceSourceBadge:hover{background:#eef2f4}
+
+.quoteStructured{display:flex;flex-direction:column;min-height:0;overflow:auto}
+.quoteStructuredHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid #e3e7ea;position:sticky;top:0;background:#fff;z-index:1}
+.quoteStructuredHead button{border:0;border-radius:6px;background:#182028;color:#fff;padding:9px 12px;font-weight:700;cursor:pointer}
+.quoteStructuredLine{display:grid;grid-template-columns:22px 48px minmax(0,1fr) 100px;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #edf0f2;cursor:pointer}
+.quoteStructuredLine:hover{background:#fafbfc}
+.quotePosition{font-weight:700}
+.quoteLineDescription{display:flex;flex-direction:column;min-width:0}
+.quoteLineDescription strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quoteLineDescription small{color:#68737d;margin-top:2px}
+.quoteStructuredLine>strong{text-align:right}

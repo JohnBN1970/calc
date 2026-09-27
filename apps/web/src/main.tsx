@@ -26,9 +26,15 @@ type Line = {
   sourceDocumentId: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
+type QuoteLine = { position: string; quantity: number; unit: string; description: string; unit_price: number; line_total: number; line_no: number };
+type QuoteClassification = { discipline: string; element: string; material: string; type: string; confidence: number };
+type ClassificationScheme = "nl_sfb" | "stabu" | "custom";
+type StructureTarget = { group: string; paragraph: string };
 type QuoteProposal = {
   status: string;
   target: { description: string; quantity: number | null; unit: string };
+  classification: QuoteClassification | null;
+  lines: QuoteLine[];
   candidates: QuoteCandidate[];
   suggested: QuoteCandidate | null;
   fileId: number;
@@ -69,6 +75,18 @@ type ProjectContext = {
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
+
+const classificationScheme: ClassificationScheme = "custom";
+
+function mapClassification(classification: QuoteClassification | null, scheme: ClassificationScheme): StructureTarget | null {
+  if (!classification) return null;
+  // Mapping belongs to the selected calculation scheme, never to document recognition.
+  // NL-SfB and STABU mappings are deliberately configuration-driven follow-up work.
+  if (scheme === "custom" && classification.element === "kozijn" && classification.material === "staal") {
+    return { group: "Kozijnen", paragraph: "Stalen kozijnen en deuren" };
+  }
+  return null;
+}
 
 
 type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices";
@@ -132,6 +150,7 @@ function App() {
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
+  const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
@@ -287,6 +306,8 @@ function App() {
       const fileId = Number(data.source?.file_id ?? 0);
       const extractionStatus = String(data.extraction?.status ?? "unknown");
       const candidates = Array.isArray(data.proposal?.candidates) ? data.proposal.candidates as QuoteCandidate[] : [];
+      const quoteLines = Array.isArray(data.proposal?.lines) ? data.proposal.lines as QuoteLine[] : [];
+      setSelectedQuotePositions(quoteLines.map(line => line.position));
       setQuoteProposal({
         status: String(data.proposal?.status ?? "unknown"),
         target: {
@@ -294,6 +315,8 @@ function App() {
           quantity: data.proposal?.target?.quantity == null ? null : Number(data.proposal.target.quantity),
           unit: String(data.proposal?.target?.unit ?? selected?.unit ?? "")
         },
+        classification: data.proposal?.classification ? data.proposal.classification as QuoteClassification : null,
+        lines: quoteLines,
         candidates,
         suggested: data.proposal?.suggested ? data.proposal.suggested as QuoteCandidate : null,
         fileId,
@@ -310,7 +333,7 @@ function App() {
       }
       setQuoteStatus(extractionStatus === "extracted"
         ? (targetLineId == null
-          ? `Offerte opgeslagen en herkend. Kies rechts een prijs; Calc maakt de calculatieregel automatisch.`
+          ? (quoteLines.length > 0 ? `${quoteLines.length} offerteregels herkend. Controleer en neem de geselecteerde regels over.` : `Offerte opgeslagen en herkend. Kies rechts een prijs; Calc maakt de calculatieregel automatisch.`)
           : `Offerte opgeslagen en herkend. Bron #${fileId} is aan regel ${targetLineId} gekoppeld.`)
         : `Offerte opgeslagen in Office als bron #${fileId}; extractiestatus: ${extractionStatus}.`);
     } catch (error) {
@@ -318,6 +341,90 @@ function App() {
     } finally {
       if (quoteFileRef.current) quoteFileRef.current.value = "";
     }
+  };
+
+  const applyQuoteLines = () => {
+    if (!quoteProposal || quoteProposal.lines.length === 0) return;
+    const chosen = quoteProposal.lines.filter(line => selectedQuotePositions.includes(line.position));
+    if (chosen.length === 0) {
+      setQuoteStatus("Selecteer minimaal één offerteregel.");
+      return;
+    }
+
+    const classification = quoteProposal.classification;
+    const structureTarget = mapClassification(classification, classificationScheme);
+    let id = nextId;
+    let chapterId: number | null = null;
+    let paragraphId: number | null = null;
+    const structural: Line[] = [];
+
+    if (structureTarget?.group) {
+      const existingChapter = lines.find(line => line.lineType === "chapter" && line.description.trim().toLowerCase() === structureTarget.group.trim().toLowerCase());
+      if (existingChapter) {
+        chapterId = existingChapter.id;
+      } else {
+        chapterId = id--;
+        structural.push({
+          id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
+          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
+        });
+      }
+
+      const existingParagraph = lines.find(line => line.lineType === "paragraph"
+        && line.description.trim().toLowerCase() === structureTarget.paragraph.trim().toLowerCase()
+        && line.parentId === chapterId);
+      if (existingParagraph) {
+        paragraphId = existingParagraph.id;
+      } else if (structureTarget.paragraph) {
+        paragraphId = id--;
+        structural.push({
+          id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
+          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
+          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null
+        });
+      }
+    } else {
+      const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
+      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
+      chapterId = latestChapter?.id ?? null;
+      paragraphId = latestParagraph?.id ?? null;
+    }
+
+    const parentId = paragraphId ?? chapterId;
+    const created: Line[] = chosen.map(source => {
+      const currentId = id--;
+      const costs = { labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 };
+      costs[quoteCarrier] = source.unit_price;
+      return {
+        id: currentId,
+        parentId,
+        lineType: "item",
+        code: source.position,
+        description: source.description,
+        unit: source.unit || "st",
+        quantity: source.quantity > 0 ? source.quantity : 1,
+        ...costs,
+        priceSourceType: "supplier_quote",
+        officeSourceId: String(quoteProposal.fileId),
+        sourceReference: quoteProposal.filename,
+        sourceSupplier: null,
+        sourceUnitPrice: source.unit_price,
+        sourcePriceDate: null,
+        sourceDocumentId: String(quoteProposal.fileId)
+      };
+    });
+
+    setNextId(id);
+    setLines(current => [...current, ...structural, ...created]);
+    setSelectedLineId(created[created.length - 1]?.id ?? null);
+    setQuoteProposal(null);
+    setSelectedQuotePositions([]);
+    setStatus("Concept — niet opgeslagen");
+    const structureText = structureTarget ? ` onder ${structureTarget.group} > ${structureTarget.paragraph}` : "";
+    setQuoteStatus(`${created.length} offerteregels overgenomen${structureText} als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
   };
 
   const applyQuoteCandidate = (candidate: QuoteCandidate) => {
@@ -496,7 +603,18 @@ function App() {
                 <option value="other">Overig</option>
               </select></label>
             </div>
-            {quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
+            {quoteProposal.lines.length > 0 ? <div className="quoteStructured">
+              <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && (() => {
+                  const mapped = mapClassification(quoteProposal.classification, classificationScheme);
+                  return <small>{mapped ? `${mapped.group} › ${mapped.paragraph} · ` : ""}{Math.round(quoteProposal.classification.confidence * 100)}% herkenning</small>;
+                })()}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+              {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
+                <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
+                <span className="quotePosition">{line.position}</span>
+                <span className="quoteLineDescription"><strong>{line.description}</strong><small>{line.quantity} {line.unit} × {money.format(line.unit_price)}</small></span>
+                <strong>{money.format(line.line_total)}</strong>
+              </label>)}
+            </div> : quoteProposal.candidates.length === 0 ? <p className="muted">Office heeft tekst uitgelezen, maar nog geen betrouwbaar bedrag gevonden.</p> :
               <div className="quoteCandidates">{quoteProposal.candidates.map((candidate, index) =>
                 <div className={"quoteCandidate" + (index === 0 ? " is-suggested" : "")} key={`${candidate.line_no}-${candidate.value}`}>
                   <div><small>{index === 0 ? "Voorstel" : `Kandidaat ${index + 1}`} · bronregel {candidate.line_no}</small><strong>{money.format(candidate.value)}</strong><span>{candidate.text}</span></div>
