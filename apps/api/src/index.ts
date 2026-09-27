@@ -34,6 +34,7 @@ type LineInput = {
   sourceVisualPage?: number | null;
   sourceVisualCrop?: { x: number; y: number; width: number; height: number } | null;
   sourceVisualSearchRegion?: { x: number; y: number; width: number; height: number } | null;
+  sourceTextRegions?: Array<{ x: number; y: number; width: number; height: number }> | null;
   sourceOfferSummary?: string | null;
 };
 
@@ -383,7 +384,7 @@ app.get("/api/workbench/current", async (req, res) => {
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
-            source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_offer_summary
+            source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary
        FROM calculation_lines
       WHERE version_id = ?
       ORDER BY sort_order, id`,
@@ -468,8 +469,8 @@ app.put("/api/workbench/current", async (req, res) => {
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
-           source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           source_price_date, source_document_id, source_details, source_visual_page, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
@@ -485,6 +486,7 @@ app.put("/api/workbench/current", async (req, res) => {
           line.sourceVisualPage == null ? null : Math.max(1, Math.trunc(numeric(line.sourceVisualPage))),
           line.sourceVisualCrop ? JSON.stringify(line.sourceVisualCrop).slice(0, 500) : null,
           line.sourceVisualSearchRegion ? JSON.stringify(line.sourceVisualSearchRegion).slice(0, 500) : null,
+          line.sourceTextRegions ? JSON.stringify(line.sourceTextRegions).slice(0, 20000) : null,
           line.sourceOfferSummary ? String(line.sourceOfferSummary).slice(0, 1200) : null
         ]
       );
