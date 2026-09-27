@@ -384,6 +384,7 @@ function App() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [officeAuthoritative, setOfficeAuthoritative] = useState(false);
   const [officeVersion, setOfficeVersion] = useState("");
+  const [officeResult, setOfficeResult] = useState<Record<string, unknown>>({});
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [priceSearch, setPriceSearch] = useState("");
@@ -396,12 +397,6 @@ function App() {
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
-  const totals = useMemo(() => {
-    const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
-    const markupAmount = direct * (markupPct / 100);
-    return { direct, markupAmount, sales: direct + markupAmount };
-  }, [lines, markupPct]);
-
   const loadWorkbench = async () => {
     const response = await fetch("/api/office-workspace/state", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
@@ -413,10 +408,12 @@ function App() {
     const data = await response.json();
     const result = data.result ?? {};
     const commercial = result.commercial_result ?? {};
+    const parameters = result.parameters ?? {};
     const direct = Number(result.priced_direct_cost ?? 0);
     const sales = Number(commercial.sales_price ?? direct);
-    const markupAmount = sales - direct;
-    setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
+    const effectiveMarkupPct = direct !== 0 ? ((sales - direct) / direct) * 100 : 0;
+    setMarkupPct(Number(parameters.single_margin_pct ?? effectiveMarkupPct));
+    setOfficeResult(result);
     setLines(mapOfficeWorkspaceLines(data));
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.label ?? data.calculation?.code ?? "BREBO Calculatie"));
@@ -861,6 +858,16 @@ function App() {
     setQuoteStatus(`${money.format(candidate.value)} overgenomen; Calc heeft automatisch een nieuwe calculatieregel gemaakt. Nog opslaan.`);
   };
 
+  const officeCommercial = (officeResult.commercial_result ?? {}) as Record<string, unknown>;
+  const officeComponents = (officeResult.components ?? {}) as Record<string, Record<string, unknown>>;
+  const officeDirectCost = Number(officeResult.priced_direct_cost ?? 0);
+  const officeSalesPrice = Number(officeCommercial.sales_price ?? 0);
+  const officeCommercialAmount = Math.max(0, officeSalesPrice - officeDirectCost);
+  const officeRowDirect = (line: Line): number => {
+    if (!line.officeRowId) return 0;
+    return Number(officeComponents[`line_${line.officeRowId}`]?.direct_cost ?? 0);
+  };
+
   const save = async () => {
     if (officeAuthoritative) {
       try {
@@ -948,10 +955,10 @@ function App() {
       </div>
 
       <section className="kpis">
-        <div><span>Directe kostprijs</span><strong>{money.format(totals.direct)}</strong></div>
-        <div><span>Opslag op inkoop</span><strong><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</strong></div>
-        <div><span>Opslagbedrag</span><strong>{money.format(totals.markupAmount)}</strong></div>
-        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(totals.sales)}</strong></div>
+        <div><span>Directe kostprijs</span><strong>{money.format(officeDirectCost)}</strong></div>
+        <div><span>Commerciële methode</span><strong>{String((officeResult.parameters as Record<string, unknown> | undefined)?.commercial_method ?? "—")}</strong></div>
+        <div><span>Commerciële opslag</span><strong>{money.format(officeCommercialAmount)}</strong></div>
+        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(officeSalesPrice)}</strong></div>
       </section>
 
       <section className="workbench">
@@ -1066,7 +1073,7 @@ function App() {
               <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
               <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
               <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
-              <strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong>
+              <strong>{line.lineType === "note" ? "—" : money.format(officeAuthoritative ? officeRowDirect(line) : lineDirect(line))}</strong>
               {officeAuthoritative && line.officeRowId && <div className="rowActions" onClick={event => event.stopPropagation()}>
                 <button type="button" onClick={() => void saveOfficeRow(line)}>✓</button>
                 <button type="button" onClick={() => void deleteOfficeRow(line)}>×</button>
