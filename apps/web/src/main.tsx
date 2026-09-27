@@ -70,6 +70,21 @@ const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
 
+function quoteLineDescription(text: string, filename: string): string {
+  let value = text.replace(/\s+/g, " ").trim();
+  value = value
+    .replace(/^(voorstel|kandidaat\s*\d*)\s*[·:-]*\s*/i, "")
+    .replace(/\b(subtotaal|totaal|btw|kredietbeperking)\b.*$/i, "")
+    .trim();
+
+  // Remove obvious quantity/unit/price tails while keeping the supplier's item description.
+  value = value.replace(/\s+\d+(?:[.,]\d+)?\s+(?:st|stuk|stuks|m|m1|m2|m3|meter|kg|uur|uren)\b.*$/i, "").trim();
+  value = value.replace(/\s+€\s*\d[\d.,]*.*$/i, "").trim();
+
+  if (!value) return filename;
+  return value.length > 180 ? value.slice(0, 177).trimEnd() + "…" : value;
+}
+
 
 type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices";
 
@@ -352,7 +367,7 @@ function App() {
       parentId: parent?.id ?? null,
       lineType: "item",
       code: "",
-      description: quoteProposal.target.description || candidate.text || quoteProposal.filename,
+      description: quoteProposal.target.description || quoteLineDescription(candidate.text, quoteProposal.filename),
       unit: quoteProposal.target.unit || "st",
       quantity: quoteProposal.target.quantity && quoteProposal.target.quantity > 0 ? quoteProposal.target.quantity : 1,
       labour: 0,
