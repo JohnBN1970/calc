@@ -31,6 +31,8 @@ type Line = {
   sourceVisualCrop: VisualCrop | null;
   sourceVisualSearchRegion: VisualCrop | null;
   sourceOfferSummary: string | null;
+  officeRowId?: number | null;
+  officeStructureKey?: string | null;
 };
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type VisualCrop = { x: number; y: number; width: number; height: number };
@@ -294,6 +296,85 @@ function mapServerLine(raw: Record<string, unknown>): Line {
   };
 }
 
+
+function mapOfficeWorkspaceLines(data: Record<string, unknown>): Line[] {
+  const structure = Array.isArray(data.structure) ? data.structure as Array<Record<string, unknown>> : [];
+  const rows = Array.isArray(data.rows) ? data.rows as Array<Record<string, unknown>> : [];
+  const keyToSyntheticId = new Map<string, number>();
+
+  structure.forEach((item, index) => {
+    keyToSyntheticId.set(String(item.node_key ?? ""), -(index + 1));
+  });
+
+  const result: Line[] = structure.map((item, index) => {
+    const key = String(item.node_key ?? "");
+    const parentKey = item.parent_key == null ? "" : String(item.parent_key);
+    return {
+      id: -(index + 1),
+      parentId: parentKey ? (keyToSyntheticId.get(parentKey) ?? null) : null,
+      lineType: String(item.node_type ?? "") === "main_group" ? "chapter" : "paragraph",
+      code: String(item.code ?? ""),
+      description: String(item.label ?? ""),
+      unit: "",
+      quantity: 0,
+      labour: 0,
+      material: 0,
+      equipment: 0,
+      subcontracting: 0,
+      other: 0,
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceOfferSummary: null,
+      officeRowId: null,
+      officeStructureKey: key
+    };
+  });
+
+  for (const row of rows) {
+    const paragraphKey = String(row.paragraph_key ?? "");
+    const rowId = Number(row.row_id ?? row.id ?? 0);
+    result.push({
+      id: rowId,
+      parentId: keyToSyntheticId.get(paragraphKey) ?? null,
+      lineType: "item",
+      code: String(row.code ?? ""),
+      description: String(row.description ?? ""),
+      unit: String(row.unit ?? ""),
+      quantity: Number(row.actual_quantity ?? row.contract_quantity ?? 0),
+      labour: Number(row.labour_unit_cost ?? 0),
+      material: Number(row.material_unit_cost ?? 0),
+      equipment: Number(row.equipment_unit_cost ?? 0),
+      subcontracting: Number(row.subcontracting_unit_cost ?? 0),
+      other: Number(row.other_unit_cost ?? 0),
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceOfferSummary: null,
+      officeRowId: rowId,
+      officeStructureKey: paragraphKey
+    });
+  }
+
+  return result;
+}
+
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
@@ -301,6 +382,7 @@ function App() {
   const [markupPct, setMarkupPct] = useState(30);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [officeAuthoritative, setOfficeAuthoritative] = useState(false);
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [priceSearch, setPriceSearch] = useState("");
@@ -320,22 +402,26 @@ function App() {
   }, [lines, markupPct]);
 
   const loadWorkbench = async () => {
-    const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
+    const response = await fetch("/api/office-workspace/state", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
       setAuthorized(false);
       setStatus("Open deze calculatie vanuit BREBO Office");
       return;
     }
-    if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
+    if (!response.ok) throw new Error("Werkbank kon niet uit BREBO Office worden geladen.");
     const data = await response.json();
-    const direct = Number(data.version?.direct_cost ?? 0);
-    const markupAmount = Number(data.version?.markup_amount ?? 0);
+    const result = data.result ?? {};
+    const commercial = result.commercial_result ?? {};
+    const direct = Number(result.priced_direct_cost ?? 0);
+    const sales = Number(commercial.sales_price ?? direct);
+    const markupAmount = sales - direct;
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
-    setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    setLines(mapOfficeWorkspaceLines(data));
     setProject(data.project as ProjectContext);
-    setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
+    setCalculationTitle(String(data.calculation?.label ?? data.calculation?.code ?? "BREBO Calculatie"));
+    setOfficeAuthoritative(true);
     setAuthorized(true);
-    setStatus("Opgeslagen");
+    setStatus("Live uit BREBO Office");
   };
 
   useEffect(() => {
@@ -659,6 +745,10 @@ function App() {
   };
 
   const save = async () => {
+    if (officeAuthoritative) {
+      setStatus("Opslaan volgt via Office-commands");
+      return;
+    }
     setStatus("Opslaan…");
     try {
       const response = await fetch("/api/workbench/current", {
@@ -750,7 +840,7 @@ function App() {
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
+          <button className="command commandSave" type="button" onClick={save} disabled={officeAuthoritative} title={officeAuthoritative ? "Office is de bron; command-opslag wordt gekoppeld" : "Calculatie opslaan"}><Icon name="save" /><span>{officeAuthoritative ? "Office live" : "Opslaan"}</span></button>
         </div>
 
         {priceWorkspaceOpen && <div className="priceWorkspace">
