@@ -647,6 +647,7 @@ function App() {
       sourceDetails: null,
       sourceVisualPage: null,
       sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
       sourceOfferSummary: null,
       ...patch
     };
