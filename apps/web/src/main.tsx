@@ -818,95 +818,180 @@ function App() {
     }
   };
 
-  const applyQuoteLines = () => {
-    if (!quoteProposal || quoteProposal.lines.length === 0) return;
+  const applyQuoteLines = async () => {
+    if (!quoteProposal || quoteProposal.lines.length === 0 || !officeAuthoritative || !officeVersion) return;
     const chosen = quoteProposal.lines.filter(line => selectedQuotePositions.includes(line.position));
     if (chosen.length === 0) {
       setQuoteStatus("Selecteer minimaal één offerteregel.");
       return;
     }
 
-    const classification = quoteProposal.classification;
-    const structureTarget = mapClassification(classification, classificationScheme);
-    let id = nextId;
-    let chapterId: number | null = null;
-    let paragraphId: number | null = null;
-    const structural: Line[] = [];
+    setQuoteStatus("Geselecteerde offerteregels in Office verwerken…");
+    try {
+      const classification = quoteProposal.classification;
+      const structureTarget = mapClassification(classification, classificationScheme);
+      let paragraphKey: string | null = null;
 
-    if (structureTarget?.group) {
-      const existingChapter = lines.find(line => line.lineType === "chapter" && line.description.trim().toLowerCase() === structureTarget.group.trim().toLowerCase());
-      if (existingChapter) {
-        chapterId = existingChapter.id;
+      if (structureTarget?.group) {
+        let chapter = lines.find(line =>
+          line.lineType === "chapter"
+          && line.officeStructureKey
+          && line.description.trim().toLowerCase() === structureTarget.group.trim().toLowerCase()
+        );
+
+        if (!chapter?.officeStructureKey) {
+          const groupResponse = await fetch("/api/office-workspace/structure/groups", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              version: officeVersion,
+              label: structureTarget.group,
+              code: ""
+            })
+          });
+          const group = await groupResponse.json().catch(() => ({}));
+          if (!groupResponse.ok) throw new Error(String(group.error ?? "Hoofdgroep kon niet in Office worden aangemaakt."));
+          chapter = {
+            id: -1,
+            parentId: null,
+            lineType: "chapter",
+            code: "",
+            description: structureTarget.group,
+            unit: "",
+            quantity: 0,
+            labour: 0,
+            material: 0,
+            equipment: 0,
+            subcontracting: 0,
+            other: 0,
+            priceSourceType: "manual",
+            officeSourceId: null,
+            sourceReference: null,
+            sourceSupplier: null,
+            sourceUnitPrice: null,
+            sourcePriceDate: null,
+            sourceDocumentId: null,
+            sourceDetails: null,
+            sourceVisualPage: null,
+            sourcePositionBounds: null,
+            sourceVisualCrop: null,
+            sourceVisualSearchRegion: null,
+            sourceTextRegions: null,
+            sourceOfferSummary: null,
+            officeStructureKey: String(group.structure_key ?? "")
+          };
+        }
+
+        const existingParagraph = lines.find(line =>
+          line.lineType === "paragraph"
+          && line.officeStructureKey
+          && line.description.trim().toLowerCase() === structureTarget.paragraph.trim().toLowerCase()
+          && line.parentId === chapter?.id
+        );
+
+        if (existingParagraph?.officeStructureKey) {
+          paragraphKey = existingParagraph.officeStructureKey;
+        } else {
+          const paragraphResponse = await fetch("/api/office-workspace/structure/paragraphs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              version: officeVersion,
+              parent_key: chapter.officeStructureKey,
+              label: structureTarget.paragraph,
+              code: ""
+            })
+          });
+          const paragraph = await paragraphResponse.json().catch(() => ({}));
+          if (!paragraphResponse.ok) throw new Error(String(paragraph.error ?? "Paragraaf kon niet in Office worden aangemaakt."));
+          paragraphKey = String(paragraph.structure_key ?? "");
+        }
       } else {
-        chapterId = id--;
-        structural.push({
-          id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
-          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
-          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
-        });
+        paragraphKey = [...lines].reverse().find(line => line.lineType === "paragraph" && line.officeStructureKey)?.officeStructureKey ?? null;
       }
 
-      const existingParagraph = lines.find(line => line.lineType === "paragraph"
-        && line.description.trim().toLowerCase() === structureTarget.paragraph.trim().toLowerCase()
-        && line.parentId === chapterId);
-      if (existingParagraph) {
-        paragraphId = existingParagraph.id;
-      } else if (structureTarget.paragraph) {
-        paragraphId = id--;
-        structural.push({
-          id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
-          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
-          priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
-          sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceOfferSummary: null
+      if (!paragraphKey) throw new Error("Geen Office-paragraaf beschikbaar voor de offerteregels.");
+
+      for (const source of chosen) {
+        const createResponse = await fetch("/api/office-workspace/rows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: officeVersion, paragraph_key: paragraphKey })
         });
+        const created = await createResponse.json().catch(() => ({}));
+        if (!createResponse.ok) throw new Error(String(created.error ?? "Offerteregel kon niet in Office worden aangemaakt."));
+        const rowId = Number(created.row_id ?? 0);
+        if (!Number.isInteger(rowId) || rowId <= 0) throw new Error("Office gaf geen geldige regel-ID terug.");
+
+        const rowResponse = await fetch(`/api/office-workspace/rows/${rowId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: officeVersion,
+            description: source.description,
+            unit: source.unit || "st",
+            quantity: source.quantity > 0 ? source.quantity : 1,
+            unit_costs: {
+              labour: 0,
+              material: 0,
+              equipment: 0,
+              subcontracting: 0,
+              other: 0
+            }
+          })
+        });
+        const rowResult = await rowResponse.json().catch(() => ({}));
+        if (!rowResponse.ok) throw new Error(String(rowResult.error ?? "Offerteregel kon niet worden gevuld."));
+
+        const sourceResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: officeVersion,
+            source_type: "supplier_quote",
+            source_ref: source.position,
+            file_id: quoteProposal.fileId,
+            supplier_ref: quoteProposal.filename,
+            cost_carrier: quoteCarrier,
+            extracted_description: source.description,
+            extracted_quantity: source.quantity,
+            extracted_unit: source.unit,
+            extracted_unit_price: source.unit_price,
+            extracted_total: source.line_total,
+            proposed_unit_cost: source.unit_price,
+            extraction_status: "review",
+            scope_summary: source.details ?? "",
+            internal_note: source.offer_summary ?? `Offerteregel ${source.position} uit ${quoteProposal.filename}`
+          })
+        });
+        const priceSource = await sourceResponse.json().catch(() => ({}));
+        if (!sourceResponse.ok) throw new Error(String(priceSource.error ?? "Offerteprijsbron kon niet worden geregistreerd."));
+        const sourceId = Number(priceSource.price_source_id ?? 0);
+        if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("Office gaf geen geldige prijsbron-ID terug.");
+
+        const approveResponse = await fetch(`/api/office-workspace/rows/${rowId}/price-sources/${sourceId}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: officeVersion,
+            cost_carrier: quoteCarrier,
+            unit_cost: source.unit_price,
+            note: `Goedgekeurd vanuit leveranciersofferte ${quoteProposal.filename}, positie ${source.position}`
+          })
+        });
+        const approved = await approveResponse.json().catch(() => ({}));
+        if (!approveResponse.ok) throw new Error(String(approved.error ?? "Offerteprijs kon niet worden goedgekeurd."));
       }
-    } else {
-      const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
-      const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
-      chapterId = latestChapter?.id ?? null;
-      paragraphId = latestParagraph?.id ?? null;
+
+      const count = chosen.length;
+      const structureText = structureTarget ? ` onder ${structureTarget.group} > ${structureTarget.paragraph}` : "";
+      setQuoteProposal(null);
+      setSelectedQuotePositions([]);
+      await loadWorkbench();
+      setQuoteStatus(`${count} offerteregels in Office verwerkt${structureText} als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}.`);
+    } catch (error) {
+      setQuoteStatus(error instanceof Error ? error.message : "Offerteregels konden niet in Office worden verwerkt.");
     }
-
-    const parentId = paragraphId ?? chapterId;
-    const created: Line[] = chosen.map(source => {
-      const currentId = id--;
-      const costs = { labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0 };
-      costs[quoteCarrier] = source.unit_price;
-      return {
-        id: currentId,
-        parentId,
-        lineType: "item",
-        code: source.position,
-        description: source.description,
-        unit: source.unit || "st",
-        quantity: source.quantity > 0 ? source.quantity : 1,
-        ...costs,
-        priceSourceType: "supplier_quote",
-        officeSourceId: String(quoteProposal.fileId),
-        sourceReference: quoteProposal.filename,
-        sourceSupplier: null,
-        sourceUnitPrice: source.unit_price,
-        sourcePriceDate: null,
-        sourceDocumentId: String(quoteProposal.fileId),
-        sourceDetails: source.details?.trim() || null,
-        sourceVisualPage: source.source_page == null ? null : Number(source.source_page),
-        sourcePositionBounds: source.source_position_bounds ?? null,
-        sourceVisualCrop: source.source_visual_crop ?? null,
-        sourceVisualSearchRegion: source.source_visual_search_region ?? null,
-        sourceTextRegions: source.source_text_regions ?? null,
-        sourceOfferSummary: source.offer_summary?.trim() || null
-      };
-    });
-
-    setNextId(id);
-    setLines(current => [...current, ...structural, ...created]);
-    setSelectedLineId(created[created.length - 1]?.id ?? null);
-    setQuoteProposal(null);
-    setSelectedQuotePositions([]);
-    setStatus("Concept — niet opgeslagen");
-    const structureText = structureTarget ? ` onder ${structureTarget.group} > ${structureTarget.paragraph}` : "";
-    setQuoteStatus(`${created.length} offerteregels overgenomen${structureText} als ${quoteCarrier === "subcontracting" ? "OA" : quoteCarrier}. Nog opslaan.`);
   };
 
   const applyQuoteCandidate = (candidate: QuoteCandidate) => {
@@ -1121,7 +1206,7 @@ function App() {
               <div className="quoteStructuredHead"><div><strong>{quoteProposal.lines.length} offerteregels herkend</strong>{quoteProposal.classification && (() => {
                   const mapped = mapClassification(quoteProposal.classification, classificationScheme);
                   return <small>{mapped ? `${mapped.group} › ${mapped.paragraph} · ` : ""}{Math.round(quoteProposal.classification.confidence * 100)}% herkenning</small>;
-                })()}</div><button type="button" onClick={applyQuoteLines}>Geselecteerde regels overnemen</button></div>
+                })()}</div><button type="button" onClick={() => void applyQuoteLines()}>Geselecteerde regels overnemen</button></div>
               {quoteProposal.lines.map(line => <label className="quoteStructuredLine" key={line.position}>
                 <input type="checkbox" checked={selectedQuotePositions.includes(line.position)} onChange={event => setSelectedQuotePositions(current => event.target.checked ? [...current, line.position] : current.filter(position => position !== line.position))} />
                 <span className="quotePosition">{line.position}</span>
