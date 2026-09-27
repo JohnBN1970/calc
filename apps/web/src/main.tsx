@@ -1,6 +1,8 @@
+/// <reference types="vite/client" />
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -143,6 +145,7 @@ function SourceVisual({ fileId, page, label, crop }: { fileId: string | number; 
     (async () => {
       try {
         const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
         const response = await fetch("/api/quotes/" + fileId + "/preview");
         if (!response.ok) throw new Error("PDF source unavailable");
         const bytes = new Uint8Array(await response.arrayBuffer());
