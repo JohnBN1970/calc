@@ -517,8 +517,20 @@ app.put("/api/workbench/current", async (req, res) => {
 
 const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(apiDirectory, "../../web/dist");
-app.use(express.static(webDist, { index: false, maxAge: process.env.NODE_ENV === "production" ? "1h" : 0 }));
+app.use(express.static(webDist, {
+  index: false,
+  maxAge: process.env.NODE_ENV === "production" ? "1y" : 0,
+  immutable: process.env.NODE_ENV === "production",
+  setHeaders: (res, filePath) => {
+    // Vite assets are content-hashed and safe to cache aggressively. The HTML
+    // shell must never be cached or clients can remain pinned to an old build.
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    }
+  }
+}));
 app.get(/^(?!\/api\/).*/, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.sendFile(path.join(webDist, "index.html"));
 });
 
