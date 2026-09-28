@@ -578,12 +578,16 @@ function App() {
       }
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const estimatedHeight = 330;
+      // Prefer opening upward for rows in the lower half of the viewport.
+      // This avoids relying on an estimated menu height, which proved too small
+      // for the complete action list on compact calculation workbenches.
       const right = Math.max(8, window.innerWidth - rect.right);
-      const opensUp = window.innerHeight - rect.bottom < estimatedHeight && rect.top > estimatedHeight;
+      const spaceAbove = rect.top - 8;
+      const spaceBelow = window.innerHeight - rect.bottom - 8;
+      const opensUp = spaceAbove > spaceBelow;
       setMenuStyle(opensUp
-        ? { position: "fixed", right, bottom: Math.max(8, window.innerHeight - rect.top + 4) }
-        : { position: "fixed", right, top: Math.max(8, rect.bottom + 4) });
+        ? { position: "fixed", right, bottom: Math.max(8, window.innerHeight - rect.top + 4), maxHeight: Math.max(120, spaceAbove - 8) }
+        : { position: "fixed", right, top: Math.max(8, rect.bottom + 4), maxHeight: Math.max(120, spaceBelow - 8) });
       setOpen(true);
     };
 
@@ -1032,7 +1036,7 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="mark">B</span><strong>BREBO</strong><span>Calculatie</span></div>
       <nav><a href="#">Office</a><a className="active" href="#">Calculatie</a><a href="https://mjop.brebobv.nl">MJOP</a><a href="https://planning.brebobv.nl">Planning</a></nav>
-      <div className="user" title="Calc frontend build 2026.09.28-r1">BREBO <small className="buildMark">r1</small></div>
+      <div className="user" title="Calc frontend build 2026.09.28-r2">BREBO <small className="buildMark">r2</small></div>
     </header>
 
     <main>
