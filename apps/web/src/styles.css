@@ -123,3 +123,10 @@
 .chapter,.paragraph{position:relative}.chapter>.lineActions,.paragraph>.lineActions{margin-left:auto;margin-right:8px}
 
 .buildMark{font-size:9px;font-weight:700;color:#8a949c;margin-left:4px;vertical-align:middle}
+
+.bulkBar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #dfe4e8;background:#f7f9fa;font-size:12px}
+.bulkBar strong{margin-right:6px}.bulkBar button,.bulkBar select{border:1px solid #d4dbe0;background:#fff;color:#273039;border-radius:5px;padding:6px 8px;font:inherit}.bulkBar button{cursor:pointer}.bulkBar button.danger{color:#9b2c2c}.bulkBar label{display:flex;align-items:center;gap:6px;font-weight:600}
+.codeHead{display:flex;align-items:center;gap:6px}.codeHead input{margin:0}
+.bulkCodeCell{display:flex;align-items:center;gap:6px;padding:0 8px!important}.bulkCodeCell>input[type="checkbox"]{flex:0 0 auto;width:14px;height:14px;margin:0;cursor:pointer}.bulkCodeCell>input:not([type="checkbox"]){min-width:0;flex:1;border:0;background:transparent;color:inherit;font:inherit;outline:none;padding:9px 0}
+.row.data.is-bulk-selected{background:#f2f5f7}
+.chapter .bulkCodeCell,.paragraph .bulkCodeCell{padding-left:12px!important}
