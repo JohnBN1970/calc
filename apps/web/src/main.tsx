@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import "./styles.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -565,24 +566,65 @@ function App() {
     patchLine(lineId, { parentId });
   };
 
-  const LineActions = ({ line }: { line: Line }) => <details className="lineActions" onClick={event => event.stopPropagation()}>
-    <summary title="Regelacties">⋮</summary>
-    <div className="lineActionsMenu">
-      <button type="button" onClick={() => insertRelative(line.id, "above")}>Regel erboven invoegen</button>
-      <button type="button" onClick={() => insertRelative(line.id, "below")}>Regel eronder invoegen</button>
-      <button type="button" onClick={() => duplicateLine(line.id)}>Dupliceren</button>
-      <button type="button" onClick={() => moveLine(line.id, -1)}>Omhoog</button>
-      <button type="button" onClick={() => moveLine(line.id, 1)}>Omlaag</button>
-      {line.lineType !== "chapter" && <label>Verplaatsen naar
-        <select value={line.parentId ?? ""} onChange={event => moveToParent(line.id, event.target.value === "" ? null : Number(event.target.value))}>
-          <option value="">Geen bovenliggend niveau</option>
-          {lines.filter(parent => parent.lineType === "chapter" || parent.lineType === "paragraph").filter(parent => parent.id !== line.id).map(parent => <option key={parent.id} value={parent.id}>{parent.lineType === "chapter" ? "H · " : "P · "}{parent.description}</option>)}
-        </select>
-      </label>}
-      {line.sourceDocumentId && <button type="button" onClick={() => detachSource(line.id)}>Bron loskoppelen</button>}
-      <button type="button" className="danger" onClick={() => deleteLine(line.id)}>Verwijderen</button>
-    </div>
-  </details>;
+  const LineActions = ({ line }: { line: Line }) => {
+    const buttonRef = useRef<HTMLButtonElement | null>(null);
+    const [open, setOpen] = useState(false);
+    const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+    const toggle = () => {
+      if (open) {
+        setOpen(false);
+        return;
+      }
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const estimatedHeight = 330;
+      const right = Math.max(8, window.innerWidth - rect.right);
+      const opensUp = window.innerHeight - rect.bottom < estimatedHeight && rect.top > estimatedHeight;
+      setMenuStyle(opensUp
+        ? { position: "fixed", right, bottom: Math.max(8, window.innerHeight - rect.top + 4) }
+        : { position: "fixed", right, top: Math.max(8, rect.bottom + 4) });
+      setOpen(true);
+    };
+
+    useEffect(() => {
+      if (!open) return;
+      const close = () => setOpen(false);
+      const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+      window.addEventListener("resize", close);
+      window.addEventListener("scroll", close, true);
+      window.addEventListener("keydown", onKey);
+      return () => {
+        window.removeEventListener("resize", close);
+        window.removeEventListener("scroll", close, true);
+        window.removeEventListener("keydown", onKey);
+      };
+    }, [open]);
+
+    const menu = open ? createPortal(
+      <div className="lineActionsMenu lineActionsOverlay" style={menuStyle} onClick={event => event.stopPropagation()}>
+        <button type="button" onClick={() => { insertRelative(line.id, "above"); setOpen(false); }}>Regel erboven invoegen</button>
+        <button type="button" onClick={() => { insertRelative(line.id, "below"); setOpen(false); }}>Regel eronder invoegen</button>
+        <button type="button" onClick={() => { duplicateLine(line.id); setOpen(false); }}>Dupliceren</button>
+        <button type="button" onClick={() => { moveLine(line.id, -1); setOpen(false); }}>Omhoog</button>
+        <button type="button" onClick={() => { moveLine(line.id, 1); setOpen(false); }}>Omlaag</button>
+        {line.lineType !== "chapter" && <label>Verplaatsen naar
+          <select value={line.parentId ?? ""} onChange={event => { moveToParent(line.id, event.target.value === "" ? null : Number(event.target.value)); setOpen(false); }}>
+            <option value="">Geen bovenliggend niveau</option>
+            {lines.filter(parent => parent.lineType === "chapter" || parent.lineType === "paragraph").filter(parent => parent.id !== line.id).map(parent => <option key={parent.id} value={parent.id}>{parent.lineType === "chapter" ? "H · " : "P · "}{parent.description}</option>)}
+          </select>
+        </label>}
+        {line.sourceDocumentId && <button type="button" onClick={() => { detachSource(line.id); setOpen(false); }}>Bron loskoppelen</button>}
+        <button type="button" className="danger" onClick={() => { deleteLine(line.id); setOpen(false); }}>Verwijderen</button>
+      </div>,
+      document.body
+    ) : null;
+
+    return <>
+      <button ref={buttonRef} type="button" className="lineActionsTrigger" title="Regelacties" aria-expanded={open} onClick={event => { event.stopPropagation(); toggle(); }}>⋮</button>
+      {menu}
+    </>;
+  };
 
   const toggleBulkLine = (lineId: number, checked: boolean) => {
     setSelectedLineIds(current => checked ? Array.from(new Set([...current, lineId])) : current.filter(id => id !== lineId));
