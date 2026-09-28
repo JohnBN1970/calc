@@ -88,7 +88,7 @@ type ProjectContext = {
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
-const lineDirect = (line: Line) => line.quantity * (line.labour + line.material + line.equipment + line.subcontracting + line.other);
+const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
 
 const classificationScheme: ClassificationScheme = "custom";
 const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
@@ -1163,7 +1163,7 @@ function App() {
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
         <div className="grid">
-          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Norm</b><b>Totaal uren</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
+          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Norm</b><b>Totaal uren</b><b>Uurprijs</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
@@ -1195,7 +1195,14 @@ function App() {
                 <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
               </select>
               <input className="cell" value={line.unit} onChange={e => patchLine(line.id, { unit: e.target.value })} />
-              <NumberCell value={line.quantity} onChange={quantity => patchLine(line.id, { quantity })} />
+              <NumberCell value={line.quantity} onChange={quantity => {
+                const patch: Partial<Line> = { quantity };
+                if (line.labourHoursInputMode === "norm" && line.labourNorm != null) patch.labourTotalHours = quantity * line.labourNorm;
+                else if (line.labourHoursInputMode === "total_hours" && quantity > 0 && line.labourTotalHours != null) patch.labourNorm = line.labourTotalHours / quantity;
+                patchLine(line.id, patch);
+              }} />
+              <NumberCell value={line.labourNorm ?? 0} onChange={labourNorm => patchLine(line.id, { labourNorm, labourTotalHours: line.quantity * labourNorm, labourHoursInputMode: "norm" })} />
+              <NumberCell value={line.labourTotalHours ?? 0} onChange={labourTotalHours => patchLine(line.id, { labourTotalHours, labourNorm: line.quantity > 0 ? labourTotalHours / line.quantity : line.labourNorm, labourHoursInputMode: "total_hours" })} />
               <NumberCell value={line.labour} onChange={labour => patchLine(line.id, { labour })} />
               <NumberCell value={line.material} onChange={material => patchLine(line.id, { material })} />
               <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
