@@ -111,3 +111,13 @@
 .sourceVisualFallback small{color:#7a858e;font-size:10px}
 
 .sourceVisualCrop canvas{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:#fff;border:1px solid #dfe4e8;border-radius:7px}
+
+.lineTotalCell{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
+.lineActions{position:relative;display:inline-block;z-index:4}
+.lineActions>summary{list-style:none;cursor:pointer;border:0;border-radius:5px;padding:2px 7px;font-size:18px;line-height:1;background:transparent;color:#59646d}
+.lineActions>summary::-webkit-details-marker{display:none}.lineActions>summary:hover{background:rgba(0,0,0,.06)}
+.lineActionsMenu{position:absolute;right:0;top:calc(100% + 4px);min-width:220px;padding:6px;background:#fff;border:1px solid #d7dde1;border-radius:7px;box-shadow:0 10px 28px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:2px;z-index:20}
+.lineActionsMenu button,.lineActionsMenu label{border:0;background:#fff;color:#273039;text-align:left;padding:8px 9px;border-radius:5px;font:inherit;font-size:12px;cursor:pointer}
+.lineActionsMenu button:hover{background:#f1f4f6}.lineActionsMenu button.danger{color:#9b2c2c}.lineActionsMenu button.danger:hover{background:#fff0f0}
+.lineActionsMenu label{cursor:default;font-weight:700}.lineActionsMenu select{display:block;width:100%;margin-top:5px;padding:6px;border:1px solid #d5dce1;border-radius:5px;background:#fff;font:inherit;font-size:11px}
+.chapter,.paragraph{position:relative}.chapter>.lineActions,.paragraph>.lineActions{margin-left:auto;margin-right:8px}
