@@ -18,6 +18,9 @@ type LineInput = {
   description: string;
   unit?: string;
   quantity?: number | null;
+  labourNorm?: number | null;
+  labourTotalHours?: number | null;
+  labourHoursInputMode?: "norm" | "total_hours" | null;
   labourUnitCost?: number;
   materialUnitCost?: number;
   equipmentUnitCost?: number;
@@ -471,11 +474,11 @@ app.put("/api/workbench/current", async (req, res) => {
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
-          line.quantity ?? null, labour, material, equipment, subcontracting, other,
+          line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode, labour, material, equipment, subcontracting, other,
           priceSourceType,
           line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
           line.sourceReference ? String(line.sourceReference).slice(0, 255) : null,
