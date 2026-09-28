@@ -121,3 +121,5 @@
 .lineActionsMenu button:hover{background:#f1f4f6}.lineActionsMenu button.danger{color:#9b2c2c}.lineActionsMenu button.danger:hover{background:#fff0f0}
 .lineActionsMenu label{cursor:default;font-weight:700}.lineActionsMenu select{display:block;width:100%;margin-top:5px;padding:6px;border:1px solid #d5dce1;border-radius:5px;background:#fff;font:inherit;font-size:11px}
 .chapter,.paragraph{position:relative}.chapter>.lineActions,.paragraph>.lineActions{margin-left:auto;margin-right:8px}
+
+.buildMark{font-size:9px;font-weight:700;color:#8a949c;margin-left:4px;vertical-align:middle}
