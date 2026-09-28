@@ -468,7 +468,8 @@ app.put("/api/workbench/current", async (req, res) => {
         throw new Error("Unknown price source type.");
       }
       if (!["chapter", "paragraph", "note", "option"].includes(line.lineType)) {
-        directCost += quantity * (labour + material + equipment + subcontracting + other);
+        const labourCost = (labourTotalHours ?? 0) * labour;
+        directCost += labourCost + quantity * (material + equipment + subcontracting + other);
       }
       const parentId = line.parentId != null ? (temporaryIds.get(line.parentId) ?? null) : null;
       const [insert] = await connection.execute<ResultSetHeader>(
