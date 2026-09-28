@@ -121,3 +121,11 @@
 .lineActionsMenu button:hover{background:#f1f4f6}.lineActionsMenu button.danger{color:#9b2c2c}.lineActionsMenu button.danger:hover{background:#fff0f0}
 .lineActionsMenu label{cursor:default;font-weight:700}.lineActionsMenu select{display:block;width:100%;margin-top:5px;padding:6px;border:1px solid #d5dce1;border-radius:5px;background:#fff;font:inherit;font-size:11px}
 .chapter,.paragraph{position:relative}.chapter>.lineActions,.paragraph>.lineActions{margin-left:auto;margin-right:8px}
+
+.bulkBar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #dfe4e8;background:#f7f9fa;position:sticky;top:0;z-index:5;font-size:12px}
+.bulkBar strong{margin-right:6px}.bulkBar button,.bulkBar select{border:1px solid #d4dbe0;background:#fff;border-radius:5px;padding:6px 8px;font:inherit}.bulkBar button{cursor:pointer}.bulkBar button.danger{color:#9b2c2c}.bulkBar label{display:flex;align-items:center;gap:6px}
+.bulkGrid .row{grid-template-columns:32px var(--grid-columns, 1fr)}
+.bulkGrid .row.head,.bulkGrid .row.data{grid-template-columns:32px 70px minmax(230px,2fr) 100px 70px 75px repeat(5,minmax(95px,1fr)) 115px}
+.bulkCheck{display:flex;align-items:center;justify-content:center}.bulkCheck input{width:15px;height:15px;cursor:pointer}
+.row.data.is-bulk-selected{background:#f2f5f7}
+.bulkStructure{display:grid!important;grid-template-columns:32px 70px 28px minmax(0,1fr) auto!important}
