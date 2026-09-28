@@ -21,3 +21,4 @@ jobs:
           ! grep -R --line-number --fixed-strings "INSERT INTO calculations" apps/api/src
           grep -q "retiredLegacyMigrations" apps/api/src/migrationRunner.ts
           grep -q "010_runtime_infrastructure.sql" <(find database -maxdepth 1 -type f -printf '%f\n')
+          ! grep -R --line-number --fixed-strings "/api/workbench/v1/" apps/api/src apps/web/src
