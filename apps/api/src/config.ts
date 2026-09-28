@@ -13,7 +13,7 @@ export const config = {
     port: Number(process.env.MYSQL_PORT ?? 3306),
     database: process.env.MYSQL_DATABASE ?? "u213420663_calc",
     user: process.env.MYSQL_USER ?? "u213420663_calc",
-    password: required("MYSQL_PASSWORD")
+    password: process.env.MYSQL_PASSWORD ?? ""
   },
   office: {
     baseUrl: (() => { const value = required("OFFICE_API_BASE_URL"); return value.endsWith("/") ? value.slice(0, -1) : value; })(),
