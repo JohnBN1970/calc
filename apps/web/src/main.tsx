@@ -1019,6 +1019,7 @@ function App() {
                 <input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
                 <span>▾</span>
                 <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                <LineActions line={line} />
               </div>;
             }
             return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
@@ -1049,7 +1050,7 @@ function App() {
               <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
               <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
               <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
-              <strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong>
+              <div className="lineTotalCell"><strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong><LineActions line={line} /></div>
             </div>;
           })}
           <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
