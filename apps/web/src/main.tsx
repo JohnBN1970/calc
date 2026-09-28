@@ -15,6 +15,9 @@ type Line = {
   description: string;
   unit: string;
   quantity: number;
+  labourNorm: number | null;
+  labourTotalHours: number | null;
+  labourHoursInputMode: "norm" | "total_hours" | null;
   labour: number;
   material: number;
   equipment: number;
@@ -341,6 +344,9 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     description: String(raw.description ?? ""),
     unit: String(raw.unit ?? ""),
     quantity: Number(raw.quantity ?? 0),
+    labourNorm: raw.labour_norm == null ? null : Number(raw.labour_norm),
+    labourTotalHours: raw.labour_total_hours == null ? null : Number(raw.labour_total_hours),
+    labourHoursInputMode: raw.labour_hours_input_mode === "norm" || raw.labour_hours_input_mode === "total_hours" ? raw.labour_hours_input_mode : null,
     labour: Number(raw.labour_unit_cost ?? 0),
     material: Number(raw.material_unit_cost ?? 0),
     equipment: Number(raw.equipment_unit_cost ?? 0),
@@ -456,6 +462,7 @@ function App() {
       description: lineType === "chapter" ? "Nieuw hoofdstuk" : lineType === "paragraph" ? "Nieuwe paragraaf" : "",
       unit: lineType === "item" ? "st" : "",
       quantity: lineType === "item" ? 1 : 0,
+      labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
       sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
@@ -728,6 +735,7 @@ function App() {
       description: article.description,
       unit: article.unit,
       quantity: 1,
+      labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
       labour: 0,
       material: Number(article.net_price ?? 0),
       equipment: 0,
@@ -839,7 +847,7 @@ function App() {
         chapterId = id--;
         structural.push({
           id: chapterId, parentId: null, lineType: "chapter", code: "", description: structureTarget.group,
-          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          unit: "", quantity: 0, labourNorm: null, labourTotalHours: null, labourHoursInputMode: null, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
           sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
@@ -854,7 +862,7 @@ function App() {
         paragraphId = id--;
         structural.push({
           id: paragraphId, parentId: chapterId, lineType: "paragraph", code: "", description: structureTarget.paragraph,
-          unit: "", quantity: 0, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+          unit: "", quantity: 0, labourNorm: null, labourTotalHours: null, labourHoursInputMode: null, labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
           priceSourceType: "manual", officeSourceId: null, sourceReference: null, sourceSupplier: null,
           sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
         });
@@ -942,6 +950,7 @@ function App() {
       description: quoteProposal.target.description || candidate.text || quoteProposal.filename,
       unit: quoteProposal.target.unit || "st",
       quantity: quoteProposal.target.quantity && quoteProposal.target.quantity > 0 ? quoteProposal.target.quantity : 1,
+      labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
       labour: 0,
       material: 0,
       equipment: 0,
@@ -987,6 +996,9 @@ function App() {
             description: line.description,
             unit: line.unit,
             quantity: line.quantity,
+            labourNorm: line.labourNorm,
+            labourTotalHours: line.labourTotalHours,
+            labourHoursInputMode: line.labourHoursInputMode,
             labourUnitCost: line.labour,
             materialUnitCost: line.material,
             equipmentUnitCost: line.equipment,
@@ -1148,7 +1160,7 @@ function App() {
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
         <div className="grid">
-          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
+          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Norm</b><b>Totaal uren</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
