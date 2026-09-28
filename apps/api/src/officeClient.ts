@@ -35,7 +35,7 @@ export async function fetchOfficeProjectContext(projectId: number): Promise<Offi
   if (!Number.isInteger(projectId) || projectId <= 0) {
     throw new Error("Invalid Office project id.");
   }
-  const path = `/api/workbench/v1/projects/${projectId}/calculation-context`;
+  const path = `/api/workbench/v2/projects/${projectId}/calculation-context`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
@@ -89,7 +89,7 @@ export async function searchOfficeArticles(params: {
   if (params.supplier) search.set("supplier", params.supplier);
   if (params.category) search.set("category", params.category);
   search.set("limit", String(Math.max(10, Math.min(100, params.limit ?? 40))));
-  const path = `/api/workbench/v1/articles?${search.toString()}`;
+  const path = `/api/workbench/v2/articles?${search.toString()}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
