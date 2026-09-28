@@ -375,6 +375,7 @@ function App() {
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
+  const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
@@ -400,6 +401,7 @@ function App() {
     const markupAmount = Number(data.version?.markup_amount ?? 0);
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    setSelectedLineIds([]);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     setAuthorized(true);
@@ -581,6 +583,78 @@ function App() {
       <button type="button" className="danger" onClick={() => deleteLine(line.id)}>Verwijderen</button>
     </div>
   </details>;
+
+  const toggleBulkLine = (lineId: number, checked: boolean) => {
+    setSelectedLineIds(current => checked ? Array.from(new Set([...current, lineId])) : current.filter(id => id !== lineId));
+  };
+
+  const bulkDuplicate = () => {
+    if (selectedLineIds.length === 0) return;
+    const selected = new Set(selectedLineIds);
+    let id = nextId;
+    const next: Line[] = [];
+    const copies: number[] = [];
+    for (const line of lines) {
+      next.push(line);
+      if (selected.has(line.id)) {
+        const copy = { ...line, id: id-- };
+        next.push(copy);
+        copies.push(copy.id);
+      }
+    }
+    setNextId(id);
+    setLines(next);
+    setSelectedLineIds(copies);
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkMoveToParent = (parentId: number | null) => {
+    if (selectedLineIds.length === 0) return;
+    setLines(current => current.map(line => selectedLineIds.includes(line.id) ? { ...line, parentId } : line));
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkDetachSource = () => {
+    if (selectedLineIds.length === 0) return;
+    setLines(current => current.map(line => selectedLineIds.includes(line.id) ? {
+      ...line,
+      priceSourceType: "manual" as PriceSourceType,
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourcePositionBounds: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceTextRegions: null,
+      sourceOfferSummary: null
+    } : line));
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkDelete = () => {
+    if (selectedLineIds.length === 0) return;
+    const ids = new Set(selectedLineIds);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const line of lines) {
+        if (line.parentId != null && ids.has(line.parentId) && !ids.has(line.id)) {
+          ids.add(line.id);
+          changed = true;
+        }
+      }
+    }
+    if (!window.confirm(`${ids.size} geselecteerde regel(s) verwijderen?`)) return;
+    setLines(current => current.filter(line => !ids.has(line.id)));
+    setSelectedLineIds([]);
+    setSelectedLineId(current => current != null && ids.has(current) ? null : current);
+    setStatus("Concept — niet opgeslagen");
+  };
 
   const searchArticles = async () => {
     setArticleSearchStatus("Zoeken in Office…");
@@ -1011,19 +1085,39 @@ function App() {
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
         </div>}
 
+        {selectedLineIds.length > 0 && <div className="bulkBar">
+          <strong>{selectedLineIds.length} geselecteerd</strong>
+          <button type="button" onClick={bulkDuplicate}>Dupliceren</button>
+          <label>Verplaatsen naar
+            <select defaultValue="__choose" onChange={event => {
+              if (event.target.value === "__choose") return;
+              bulkMoveToParent(event.target.value === "" ? null : Number(event.target.value));
+              event.currentTarget.value = "__choose";
+            }}>
+              <option value="__choose">Kies…</option>
+              <option value="">Geen bovenliggend niveau</option>
+              {lines.filter(parent => parent.lineType === "chapter" || parent.lineType === "paragraph").map(parent =>
+                <option key={parent.id} value={parent.id}>{parent.lineType === "chapter" ? "H · " : "P · "}{parent.description}</option>
+              )}
+            </select>
+          </label>
+          <button type="button" onClick={bulkDetachSource}>Bron loskoppelen</button>
+          <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
+          <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
+        </div>}
         <div className="grid">
-          <div className="row head"><b>Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
+          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Arbeid</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
-                <input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+                <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
                 <span>▾</span>
                 <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
                 <LineActions line={line} />
               </div>;
             }
-            return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
-              <input className="cell" value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} />
+            return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}${selectedLineIds.includes(line.id) ? " is-bulk-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
+              <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
               <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
                 {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
