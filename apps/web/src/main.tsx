@@ -375,6 +375,7 @@ function App() {
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
+  const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
@@ -400,6 +401,7 @@ function App() {
     const markupAmount = Number(data.version?.markup_amount ?? 0);
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    setSelectedLineIds([]);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     setAuthorized(true);
@@ -581,6 +583,67 @@ function App() {
       <button type="button" className="danger" onClick={() => deleteLine(line.id)}>Verwijderen</button>
     </div>
   </details>;
+
+  const toggleBulkLine = (lineId: number, checked: boolean) => {
+    setSelectedLineIds(current => checked ? Array.from(new Set([...current, lineId])) : current.filter(id => id !== lineId));
+  };
+
+  const bulkMoveToParent = (parentId: number | null) => {
+    if (selectedLineIds.length === 0) return;
+    setLines(current => current.map(line => selectedLineIds.includes(line.id) ? { ...line, parentId } : line));
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkDelete = () => {
+    if (selectedLineIds.length === 0) return;
+    const ids = new Set(selectedLineIds);
+    // Selecting a structure level also removes its descendants, consistently
+    // with the single-line delete action.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const line of lines) if (line.parentId != null && ids.has(line.parentId) && !ids.has(line.id)) {
+        ids.add(line.id); changed = true;
+      }
+    }
+    if (!window.confirm(`${ids.size} geselecteerde regel(s) verwijderen?`)) return;
+    setLines(current => current.filter(line => !ids.has(line.id)));
+    setSelectedLineIds([]);
+    setSelectedLineId(current => current != null && ids.has(current) ? null : current);
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkDetachSource = () => {
+    if (selectedLineIds.length === 0) return;
+    setLines(current => current.map(line => selectedLineIds.includes(line.id) ? {
+      ...line,
+      priceSourceType: "manual" as PriceSourceType,
+      officeSourceId: null, sourceReference: null, sourceSupplier: null, sourceUnitPrice: null,
+      sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null,
+      sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null,
+      sourceTextRegions: null, sourceOfferSummary: null
+    } : line));
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const bulkDuplicate = () => {
+    if (selectedLineIds.length === 0) return;
+    let id = nextId;
+    const selected = new Set(selectedLineIds);
+    const next: Line[] = [];
+    const newIds: number[] = [];
+    for (const line of lines) {
+      next.push(line);
+      if (selected.has(line.id)) {
+        const copy = { ...line, id: id-- };
+        next.push(copy); newIds.push(copy.id);
+      }
+    }
+    setNextId(id);
+    setLines(next);
+    setSelectedLineIds(newIds);
+    setStatus("Concept — niet opgeslagen");
+  };
 
   const searchArticles = async () => {
     setArticleSearchStatus("Zoeken in Office…");
