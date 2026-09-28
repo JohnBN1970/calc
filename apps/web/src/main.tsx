@@ -916,7 +916,7 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="mark">B</span><strong>BREBO</strong><span>Calculatie</span></div>
       <nav><a href="#">Office</a><a className="active" href="#">Calculatie</a><a href="https://mjop.brebobv.nl">MJOP</a><a href="https://planning.brebobv.nl">Planning</a></nav>
-      <div className="user">BREBO</div>
+      <div className="user" title="Calc frontend build 2026.09.28-r1">BREBO <small className="buildMark">r1</small></div>
     </header>
 
     <main>
