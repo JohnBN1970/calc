@@ -2,7 +2,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
-import { db } from "./db.js";
 import { config } from "./config.js";
 import { fetchOfficeCalculationWorkspaceState, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, sendOfficeCalculationCommand, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
@@ -163,13 +162,8 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
-app.get("/api/health", async (_req, res) => {
-  try {
-    await db.query("SELECT 1");
-    res.json({ status: "ok", database: "connected", service: "brebo-calc" });
-  } catch {
-    res.status(503).json({ status: "degraded", database: "unavailable", service: "brebo-calc" });
-  }
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", service: "brebo-calc", authority: "office" });
 });
 
 app.post("/api/launch/consume", async (req, res) => {
@@ -190,16 +184,20 @@ app.post("/api/launch/consume", async (req, res) => {
   }
 
   try {
-    await db.execute(
-      "INSERT INTO launch_nonces (nonce, expires_at) VALUES (?, FROM_UNIXTIME(?))",
-      [launch.nonce, launch.exp]
-    );
-  } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "ER_DUP_ENTRY") {
-      res.status(409).json({ error: "Deze Calculatie-link is al gebruikt." });
-      return;
-    }
-    throw error;
+    await sendOfficeCalculationCommand({
+      method: "POST",
+      path: "/api/workbench/v2/launch/consume",
+      actorId: launch.actor_id,
+      payload: {
+        nonce: launch.nonce,
+        exp: launch.exp,
+        calculation_id: launch.calculation_id,
+        project_id: launch.project_id
+      }
+    });
+  } catch {
+    res.status(409).json({ error: "Deze Calculatie-link is al gebruikt of verlopen." });
+    return;
   }
 
   const now = Math.floor(Date.now() / 1000);
