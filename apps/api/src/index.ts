@@ -455,6 +455,9 @@ app.put("/api/workbench/current", async (req, res) => {
         throw new Error("Unknown line type.");
       }
       const quantity = numeric(line.quantity);
+      const labourNorm = line.labourNorm == null ? null : numeric(line.labourNorm);
+      const labourTotalHours = line.labourTotalHours == null ? null : numeric(line.labourTotalHours);
+      const labourHoursInputMode = line.labourHoursInputMode === "norm" || line.labourHoursInputMode === "total_hours" ? line.labourHoursInputMode : null;
       const labour = numeric(line.labourUnitCost);
       const material = numeric(line.materialUnitCost);
       const equipment = numeric(line.equipmentUnitCost);
@@ -471,6 +474,7 @@ app.put("/api/workbench/current", async (req, res) => {
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO calculation_lines
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
+           labour_norm, labour_total_hours, labour_hours_input_mode,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
