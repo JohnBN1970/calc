@@ -123,7 +123,7 @@ export async function uploadSupplierQuoteToOffice(input: {
     suggested: { value: number; score: number; line_no: number; text: string } | null;
   };
 }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes`;
   const headers = signedHeaders("POST", path, input.bytes);
   headers["Content-Type"] = input.mimeType;
   headers["X-BREBO-Calculation-Id"] = String(input.calculationId);
@@ -152,7 +152,7 @@ export async function fetchSupplierQuotePositionVisual(input: {
   fileId: number;
   page: number;
 }): Promise<{ bytes: Uint8Array; contentType: string }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
@@ -168,7 +168,7 @@ export async function fetchSupplierQuotePreview(input: {
   calculationId: number;
   fileId: number;
 }): Promise<{ bytes: Uint8Array; contentType: string; contentDisposition: string | null }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
