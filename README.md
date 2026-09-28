@@ -29,7 +29,7 @@ De interface mag zelfstandig evolueren, maar financiële uitkomsten en domeinbes
 
 De historische tabellen `calculations`, `calculation_versions` en `calculation_lines` zijn **legacy opslag** en maken geen deel meer uit van de actieve calculatieketen. Ze worden nog niet destructief verwijderd zolang migratie/rollbackcontrole loopt. Nieuwe runtimecode mag deze tabellen niet als calculatiebron of rekenbron gebruiken.
 
-Lokale opslag in Calc is alleen toegestaan voor sessies, replaybescherming, cache en tijdelijke migratiehulpmiddelen.
+De actieve Calc-runtime gebruikt geen lokale database voor calculatiestate, sessies of launch-replaybescherming. Launch-consumptie wordt door Office geclaimd. De lokale databaseconfiguratie blijft uitsluitend beschikbaar voor tijdelijke legacy-migratie/rollbackhulpmiddelen.
 
 De historische migrations 001-009 blijven in de repository als audit-/rollbackhistorie, maar worden niet meer uitgevoerd door de actieve migration runner. Verse Calc-runtimes bouwen dus geen lokale calculatie-, versie- of regeltabellen meer op. Alleen runtime-infrastructuur zoals launch/replaybescherming wordt aangemaakt.
 
