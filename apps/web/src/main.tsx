@@ -460,6 +460,128 @@ function App() {
     setStatus("Concept — niet opgeslagen");
   };
 
+  const freshId = () => {
+    const id = nextId;
+    setNextId(id - 1);
+    return id;
+  };
+
+  const insertRelative = (lineId: number, where: "above" | "below") => {
+    const source = lines.find(line => line.id === lineId);
+    if (!source) return;
+    const id = freshId();
+    const created: Line = {
+      ...source,
+      id,
+      code: "",
+      description: "",
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourcePositionBounds: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceTextRegions: null,
+      sourceOfferSummary: null
+    };
+    const index = lines.findIndex(line => line.id === lineId);
+    const at = where === "above" ? index : index + 1;
+    setLines(current => [...current.slice(0, at), created, ...current.slice(at)]);
+    setSelectedLineId(id);
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const duplicateLine = (lineId: number) => {
+    const source = lines.find(line => line.id === lineId);
+    if (!source) return;
+    const id = freshId();
+    const copy: Line = { ...source, id };
+    const index = lines.findIndex(line => line.id === lineId);
+    setLines(current => [...current.slice(0, index + 1), copy, ...current.slice(index + 1)]);
+    setSelectedLineId(id);
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const deleteLine = (lineId: number) => {
+    const source = lines.find(line => line.id === lineId);
+    if (!source) return;
+    const childIds = new Set<number>([lineId]);
+    if (source.lineType === "chapter") {
+      lines.filter(line => line.parentId === lineId).forEach(line => {
+        childIds.add(line.id);
+        if (line.lineType === "paragraph") lines.filter(child => child.parentId === line.id).forEach(child => childIds.add(child.id));
+      });
+    } else if (source.lineType === "paragraph") {
+      lines.filter(line => line.parentId === lineId).forEach(line => childIds.add(line.id));
+    }
+    const count = childIds.size;
+    if (count > 1 && !window.confirm(`Dit verwijdert ook ${count - 1} onderliggende regel(s). Doorgaan?`)) return;
+    setLines(current => current.filter(line => !childIds.has(line.id)));
+    setSelectedLineId(current => current != null && childIds.has(current) ? null : current);
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const moveLine = (lineId: number, direction: -1 | 1) => {
+    const index = lines.findIndex(line => line.id === lineId);
+    if (index < 0) return;
+    const target = index + direction;
+    if (target < 0 || target >= lines.length) return;
+    setLines(current => {
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+    setStatus("Concept — niet opgeslagen");
+  };
+
+  const detachSource = (lineId: number) => {
+    patchLine(lineId, {
+      priceSourceType: "manual",
+      officeSourceId: null,
+      sourceReference: null,
+      sourceSupplier: null,
+      sourceUnitPrice: null,
+      sourcePriceDate: null,
+      sourceDocumentId: null,
+      sourceDetails: null,
+      sourceVisualPage: null,
+      sourcePositionBounds: null,
+      sourceVisualCrop: null,
+      sourceVisualSearchRegion: null,
+      sourceTextRegions: null,
+      sourceOfferSummary: null
+    });
+  };
+
+  const moveToParent = (lineId: number, parentId: number | null) => {
+    patchLine(lineId, { parentId });
+  };
+
+  const LineActions = ({ line }: { line: Line }) => <details className="lineActions" onClick={event => event.stopPropagation()}>
+    <summary title="Regelacties">⋮</summary>
+    <div className="lineActionsMenu">
+      <button type="button" onClick={() => insertRelative(line.id, "above")}>Regel erboven invoegen</button>
+      <button type="button" onClick={() => insertRelative(line.id, "below")}>Regel eronder invoegen</button>
+      <button type="button" onClick={() => duplicateLine(line.id)}>Dupliceren</button>
+      <button type="button" onClick={() => moveLine(line.id, -1)}>Omhoog</button>
+      <button type="button" onClick={() => moveLine(line.id, 1)}>Omlaag</button>
+      {line.lineType !== "chapter" && <label>Verplaatsen naar
+        <select value={line.parentId ?? ""} onChange={event => moveToParent(line.id, event.target.value === "" ? null : Number(event.target.value))}>
+          <option value="">Geen bovenliggend niveau</option>
+          {lines.filter(parent => parent.lineType === "chapter" || parent.lineType === "paragraph").filter(parent => parent.id !== line.id).map(parent => <option key={parent.id} value={parent.id}>{parent.lineType === "chapter" ? "H · " : "P · "}{parent.description}</option>)}
+        </select>
+      </label>}
+      {line.sourceDocumentId && <button type="button" onClick={() => detachSource(line.id)}>Bron loskoppelen</button>}
+      <button type="button" className="danger" onClick={() => deleteLine(line.id)}>Verwijderen</button>
+    </div>
+  </details>;
+
   const searchArticles = async () => {
     setArticleSearchStatus("Zoeken in Office…");
     try {
