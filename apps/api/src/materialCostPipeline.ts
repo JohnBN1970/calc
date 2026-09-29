@@ -19,6 +19,12 @@ export type MaterialCostPipelineResult={
   recipeUnit:string;
   physicalConsumption:number;
   contentUnit:string;
+  articleRef:string;
+  supplierRef:string|null;
+  sourceRef:string|null;
+  selectedForDate:string|null;
+  packageDescription:string;
+  packagePrice:number;
   purchasedQuantity:number;
   packageCount:number;
   orderUnitCount:number;
@@ -39,6 +45,12 @@ export function calculateMaterialCostPipeline(input:MaterialCostPipelineInput):M
     recipeUnit:input.recipeUnit,
     physicalConsumption,
     contentUnit:cost.contentUnit,
+    articleRef:cost.articleRef,
+    supplierRef:cost.supplierRef,
+    sourceRef:cost.sourceRef,
+    selectedForDate:cost.selectedForDate,
+    packageDescription:cost.packageDescription,
+    packagePrice:cost.packagePrice,
     purchasedQuantity:cost.purchasedQuantity,
     packageCount:cost.packageCount,
     orderUnitCount:cost.orderUnitCount,
