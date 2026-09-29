@@ -1241,7 +1241,21 @@ function App() {
               code: <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id,event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id,{code:e.target.value})} /></div>,
               description: <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id,{description:e.target.value})} />
-                {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button type="button" className="priceSourceBadge" title={line.sourceReference ? `Offerte: ${line.sourceReference}` : "Offerte openen"} onClick={event => {event.stopPropagation();window.open(`/api/quotes/${line.sourceDocumentId}/preview`,"_blank","noopener,noreferrer");}}>Offerte</button>}
+                {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && (() => {
+                  const sameSource = lines.filter(candidate => candidate.priceSourceType === "supplier_quote" && candidate.sourceDocumentId === line.sourceDocumentId);
+                  const selectedFromSource = sameSource.filter(candidate => selectedLineIds.includes(candidate.id)).length;
+                  const sourceTag = `Offerte #${line.sourceDocumentId}`;
+                  return <button type="button" className="priceSourceBadge" title={line.sourceReference ? `${sourceTag}: ${line.sourceReference} — klik om alle ${sameSource.length} regels uit deze bron te selecteren` : `${sourceTag} — klik om alle bronregels te selecteren`} onClick={event => {
+                    event.stopPropagation();
+                    const ids = sameSource.map(candidate => candidate.id);
+                    setSelectedLineIds(current => selectedFromSource === sameSource.length
+                      ? current.filter(id => !ids.includes(id))
+                      : Array.from(new Set([...current, ...ids])));
+                    setStatus(selectedFromSource === sameSource.length
+                      ? `${sourceTag}: selectie opgeheven`
+                      : `${sameSource.length} regels uit ${sourceTag} geselecteerd`);
+                  }}>{sourceTag}</button>;
+                })()}
                 {(line.sourceDetails || (line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion)) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}><summary>Details uit bronofferte</summary><div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields=parseSourceDetails(line.sourceDetails); return fields.length>0 ? <dl className="detailFields">{fields.map(([key,value],index)=><React.Fragment key={key+"-"+index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div></details>}
               </div>,
               type: <select className="cell" value={line.lineType} onChange={e => patchLine(line.id,{lineType:e.target.value as LineType})}><option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option></select>,
