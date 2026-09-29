@@ -195,14 +195,6 @@ app.post("/api/launch/consume", async (req, res) => {
     return;
   }
 
-  const [allocations] = await db.execute<RowDataPacket[]>(
-    `SELECT source_line_id, target_line_id, allocation_method, share, amount
-       FROM calculation_line_allocations
-      WHERE version_id = ?
-      ORDER BY source_line_id, target_line_id`,
-    [version.id]
-  );
-
   let officeContext;
   try {
     officeContext = await fetchOfficeProjectContext(launch.project_id);
@@ -407,6 +399,14 @@ app.get("/api/workbench/current", async (req, res) => {
        FROM calculation_lines
       WHERE version_id = ?
       ORDER BY sort_order, id`,
+    [version.id]
+  );
+
+  const [allocations] = await db.execute<RowDataPacket[]>(
+    `SELECT source_line_id, target_line_id, allocation_method, share, amount
+       FROM calculation_line_allocations
+      WHERE version_id = ?
+      ORDER BY source_line_id, target_line_id`,
     [version.id]
   );
 
