@@ -56,7 +56,8 @@ function expandRequirements(requirements: CuttingRequirement[]): Array<{ lengthM
   const pieces: Array<{ lengthMm:number; groupRef?:string|null }> = [];
   for (const req of requirements) {
     const lengthMm = positive(req.lengthMm, "lengthMm");
-    const quantity = Math.floor(positive(req.quantity, "quantity"));
+    const quantity = positive(req.quantity, "quantity");
+    if (!Number.isInteger(quantity)) throw new Error("quantity must be a positive integer.");
     for (let i = 0; i < quantity; i++) pieces.push({ lengthMm, groupRef:req.groupRef });
   }
   return pieces.sort((a,b) => b.lengthMm - a.lengthMm);
@@ -86,7 +87,8 @@ export function createCuttingPlan(requirements: CuttingRequirement[], profile: C
       const bar = bars[i];
       const extra = piece.lengthMm + (bar.cutsMm.length > 0 ? kerf : 0);
       const remainder = bar.stockLengthMm - bar.usedMm - extra;
-      if (remainder >= 0 && remainder < bestRemainder) {
+      const epsilonMm = 1e-6;
+      if (remainder >= -epsilonMm && remainder < bestRemainder) {
         bestBarIndex = i;
         bestRemainder = remainder;
       }
@@ -96,7 +98,7 @@ export function createCuttingPlan(requirements: CuttingRequirement[], profile: C
       const bar = bars[bestBarIndex];
       bar.usedMm += piece.lengthMm + (bar.cutsMm.length > 0 ? kerf : 0);
       bar.cutsMm.push(piece.lengthMm);
-      bar.remnantMm = bar.stockLengthMm - bar.usedMm;
+      bar.remnantMm = Math.max(0, bar.stockLengthMm - bar.usedMm);
       continue;
     }
 
