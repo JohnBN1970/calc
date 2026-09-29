@@ -5,6 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
+import { calculateTakeoff } from "./takeoff.js";
 import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -177,6 +178,18 @@ app.get("/api/health", async (_req, res) => {
     res.json({ status: "ok", database: "connected", service: "brebo-calc" });
   } catch {
     res.status(503).json({ status: "degraded", database: "unavailable", service: "brebo-calc" });
+  }
+});
+
+app.post("/api/takeoff/preview", (req, res) => {
+  if (!requireSession(req, res)) return;
+  try {
+    const widthMm = Number(req.body?.widthMm);
+    const heightMm = Number(req.body?.heightMm);
+    const quantity = req.body?.quantity == null ? 1 : Number(req.body.quantity);
+    res.json(calculateTakeoff({ widthMm, heightMm, quantity }));
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Ongeldige geometrie." });
   }
 });
 
