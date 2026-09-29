@@ -4,6 +4,7 @@ import { calculatePackagedMaterialCost, type PackagePrice } from "./materialCost
 export type MaterialCostPipelineInput={
   recipeRef:string;
   recipeLineRef:string;
+  positionRef:string;
   description:string;
   grossRecipeQuantity:number;
   recipeUnit:string;
@@ -14,6 +15,7 @@ export type MaterialCostPipelineInput={
 export type MaterialCostPipelineResult={
   recipeRef:string;
   recipeLineRef:string;
+  positionRef:string;
   description:string;
   grossRecipeQuantity:number;
   recipeUnit:string;
@@ -34,12 +36,13 @@ export type MaterialCostPipelineResult={
 };
 
 export function calculateMaterialCostPipeline(input:MaterialCostPipelineInput):MaterialCostPipelineResult{
-  if(!input.recipeRef.trim()||!input.recipeLineRef.trim()||!input.description.trim())throw new Error("Material pipeline identity is incomplete.");
+  if(!input.recipeRef.trim()||!input.recipeLineRef.trim()||!input.positionRef.trim()||!input.description.trim())throw new Error("Material pipeline identity is incomplete.");
   const physicalConsumption=convertMaterialConsumption(input.grossRecipeQuantity,input.consumptionRule);
   const cost=calculatePackagedMaterialCost(physicalConsumption,input.packagePrice);
   return{
     recipeRef:input.recipeRef,
     recipeLineRef:input.recipeLineRef,
+    positionRef:input.positionRef,
     description:input.description,
     grossRecipeQuantity:input.grossRecipeQuantity,
     recipeUnit:input.recipeUnit,
