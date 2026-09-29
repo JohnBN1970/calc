@@ -38,6 +38,37 @@ type Line = {
   sourceTextRegions: VisualCrop[] | null;
   sourceOfferSummary: string | null;
 };
+type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"total";
+type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
+const defaultColumns: ColumnSetting[] = [
+  { key:"code", label:"Code", width:90, visible:true },
+  { key:"description", label:"Omschrijving", width:300, visible:true },
+  { key:"type", label:"Type", width:110, visible:true },
+  { key:"unit", label:"Eenh.", width:65, visible:true },
+  { key:"quantity", label:"Aantal", width:75, visible:true },
+  { key:"norm", label:"Norm", width:90, visible:true },
+  { key:"hours", label:"Totaal uren", width:100, visible:true },
+  { key:"hourlyRate", label:"Uurprijs", width:100, visible:true },
+  { key:"material", label:"Materiaal", width:105, visible:true },
+  { key:"equipment", label:"Materieel", width:105, visible:true },
+  { key:"subcontracting", label:"OA", width:100, visible:true },
+  { key:"other", label:"Overig", width:100, visible:true },
+  { key:"total", label:"Totaal", width:125, visible:true }
+];
+const columnPrefsKey = "brebo.calc.columns.v1";
+function loadColumnSettings(): ColumnSetting[] {
+  try {
+    const raw = localStorage.getItem(columnPrefsKey);
+    if (!raw) return defaultColumns;
+    const parsed = JSON.parse(raw) as ColumnSetting[];
+    const byKey = new Map(parsed.map(item => [item.key,item]));
+    return defaultColumns.map(def => {
+      const saved = byKey.get(def.key);
+      return saved ? { ...def, visible: saved.visible !== false, width: Math.max(55, Math.min(600, Number(saved.width) || def.width)) } : def;
+    }).sort((a,b) => parsed.findIndex(x=>x.key===a.key)-parsed.findIndex(x=>x.key===b.key));
+  } catch { return defaultColumns; }
+}
+
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
 type VisualCrop = { x: number; y: number; width: number; height: number };
 type QuoteLine = { position: string; quantity: number; unit: string; description: string; details?: string; detail_fields?: Record<string,string>; offer_summary?: string; source_page?: number | null; source_position_bounds?: VisualCrop | null; source_visual_crop?: VisualCrop | null; source_visual_search_region?: VisualCrop | null; source_text_regions?: VisualCrop[] | null; unit_price: number; line_total: number; line_no: number };
@@ -387,6 +418,8 @@ function App() {
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
+  const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(() => loadColumnSettings());
+  const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
@@ -394,6 +427,21 @@ function App() {
     const markupAmount = direct * (markupPct / 100);
     return { direct, markupAmount, sales: direct + markupAmount };
   }, [lines, markupPct]);
+  const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
+  const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
+  useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
+
+  const patchColumn = (key: ColumnKey, patch: Partial<ColumnSetting>) => setColumnSettings(current => current.map(column => column.key === key ? { ...column, ...patch } : column));
+  const moveColumn = (key: ColumnKey, direction: -1|1) => setColumnSettings(current => {
+    const index = current.findIndex(column => column.key === key);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= current.length) return current;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  });
+  const resetColumns = () => setColumnSettings(defaultColumns);
+
 
   const loadWorkbench = async () => {
     const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
@@ -1078,10 +1126,22 @@ function App() {
           <div className="commandDivider" />
           <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
         </div>
 
+        {columnSettingsOpen && <div className="columnSettingsPanel">
+          <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
+          <div className="columnSettingsList">
+            {columnSettings.map((column,index) => <div className="columnSettingRow" key={column.key}>
+              <label><input type="checkbox" checked={column.visible} onChange={event => patchColumn(column.key,{visible:event.target.checked})} />{column.label}</label>
+              <label className="columnWidth">Breedte <input type="number" min="55" max="600" step="5" value={column.width} onChange={event => patchColumn(column.key,{width:Math.max(55,Math.min(600,Number(event.target.value)||55))})} /> px</label>
+              <button type="button" disabled={index===0} onClick={() => moveColumn(column.key,-1)}>↑</button>
+              <button type="button" disabled={index===columnSettings.length-1} onClick={() => moveColumn(column.key,1)}>↓</button>
+            </div>)}
+          </div>
+        </div>}
         {priceWorkspaceOpen && <div className="priceWorkspace">
           <div className="priceWorkspaceHead">
             <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
@@ -1163,7 +1223,11 @@ function App() {
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
         <div className="grid">
-          <div className="row head"><b className="codeHead"><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />Code</b><b>Omschrijving</b><b>Type</b><b>Eenh.</b><b>Aantal</b><b>Norm</b><b>Totaal uren</b><b>Uurprijs</b><b>Materiaal</b><b>Materieel</b><b>OA</b><b>Overig</b><b>Totaal</b></div>
+          <div className="row head configurableRow" style={{gridTemplateColumns}}>
+            {visibleColumns.map(column => column.key === "code"
+              ? <b className="codeHead" key={column.key}><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />{column.label}</b>
+              : <b key={column.key}>{column.label}</b>)}
+          </div>
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
@@ -1173,42 +1237,32 @@ function App() {
                 <LineActions line={line} />
               </div>;
             }
-            return <div className={`row data type-${line.lineType}${selectedLineId === line.id ? " is-selected" : ""}${selectedLineIds.includes(line.id) ? " is-bulk-selected" : ""}`} key={line.id} onClick={() => { setSelectedLineId(line.id); setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`); }}>
-              <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
-              <div className="descWrap">
-                <input className="cell desc" value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
-                {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button
-                  type="button"
-                  className="priceSourceBadge"
-                  title={line.sourceReference ? `Offerte: ${line.sourceReference}` : "Offerte openen"}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    window.open(`/api/quotes/${line.sourceDocumentId}/preview`, "_blank", "noopener,noreferrer");
-                  }}
-                >Offerte</button>}
-                {(line.sourceDetails || (line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion)) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}>
-                  <summary>Details uit bronofferte</summary>
-                  <div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields = parseSourceDetails(line.sourceDetails); return fields.length > 0 ? <dl className="detailFields">{fields.map(([key,value],index) => <React.Fragment key={key + "-" + index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div>
-                </details>}
-              </div>
-              <select className="cell" value={line.lineType} onChange={e => patchLine(line.id, { lineType: e.target.value as LineType })}>
-                <option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option>
-              </select>
-              <input className="cell" value={line.unit} onChange={e => patchLine(line.id, { unit: e.target.value })} />
-              <NumberCell value={line.quantity} onChange={quantity => {
-                const patch: Partial<Line> = { quantity };
-                if (line.labourHoursInputMode === "norm" && line.labourNorm != null) patch.labourTotalHours = quantity * line.labourNorm;
-                else if (line.labourHoursInputMode === "total_hours" && quantity > 0 && line.labourTotalHours != null) patch.labourNorm = line.labourTotalHours / quantity;
-                patchLine(line.id, patch);
-              }} />
-              <NumberCell value={line.labourNorm ?? 0} onChange={labourNorm => patchLine(line.id, { labourNorm, labourTotalHours: line.quantity * labourNorm, labourHoursInputMode: "norm" })} />
-              <NumberCell value={line.labourTotalHours ?? 0} onChange={labourTotalHours => patchLine(line.id, { labourTotalHours, labourNorm: line.quantity > 0 ? labourTotalHours / line.quantity : line.labourNorm, labourHoursInputMode: "total_hours" })} />
-              <NumberCell value={line.labour} onChange={labour => patchLine(line.id, { labour })} />
-              <NumberCell value={line.material} onChange={material => patchLine(line.id, { material })} />
-              <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id, { equipment })} />
-              <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id, { subcontracting })} />
-              <NumberCell value={line.other} onChange={other => patchLine(line.id, { other })} />
-              <div className="lineTotalCell"><strong>{line.lineType === "note" ? "—" : money.format(lineDirect(line))}</strong><LineActions line={line} /></div>
+            const cells: Record<ColumnKey, React.ReactNode> = {
+              code: <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id,event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id,{code:e.target.value})} /></div>,
+              description: <div className="descWrap">
+                <input className="cell desc" value={line.description} onChange={e => patchLine(line.id,{description:e.target.value})} />
+                {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && <button type="button" className="priceSourceBadge" title={line.sourceReference ? `Offerte: ${line.sourceReference}` : "Offerte openen"} onClick={event => {event.stopPropagation();window.open(`/api/quotes/${line.sourceDocumentId}/preview`,"_blank","noopener,noreferrer");}}>Offerte</button>}
+                {(line.sourceDetails || (line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion)) || line.sourceOfferSummary) && <details className="calcLineDetails" onClick={event => event.stopPropagation()}><summary>Details uit bronofferte</summary><div className="sourceDetailPanel">{line.sourceVisualPage && (line.sourceVisualCrop || line.sourceVisualSearchRegion) && line.sourceDocumentId && <SourceVisual fileId={line.sourceDocumentId} page={line.sourceVisualPage} crop={line.sourceVisualCrop} searchRegion={line.sourceVisualSearchRegion} textRegions={line.sourceTextRegions} anchor={line.sourcePositionBounds} onDetected={detected => patchLine(line.id,{sourceVisualCrop:detected})} label={`Bronbeeld ${line.code || "offerteregel"}`} />}<div className="sourceDetailContent">{line.sourceDetails && (() => { const fields=parseSourceDetails(line.sourceDetails); return fields.length>0 ? <dl className="detailFields">{fields.map(([key,value],index)=><React.Fragment key={key+"-"+index}><dt>{key}</dt><dd>{value}</dd></React.Fragment>)}</dl> : <pre>{line.sourceDetails}</pre>; })()}{line.sourceOfferSummary && <div className="offerSummary"><small>CONCEPT OFFERTEOMSCHRIJVING</small><textarea value={line.sourceOfferSummary} onChange={e => patchLine(line.id,{sourceOfferSummary:e.target.value})} /></div>}</div></div></details>}
+              </div>,
+              type: <select className="cell" value={line.lineType} onChange={e => patchLine(line.id,{lineType:e.target.value as LineType})}><option value="item">Regel</option><option value="allowance">Stelpost</option><option value="adjustable">Verrekenbaar</option><option value="option">Optie</option><option value="note">Notitie</option></select>,
+              unit: <input className="cell" value={line.unit} onChange={e => patchLine(line.id,{unit:e.target.value})} />,
+              quantity: <NumberCell value={line.quantity} onChange={quantity => {
+                const patch: Partial<Line> = {quantity};
+                if(line.labourHoursInputMode==="norm" && line.labourNorm!=null) patch.labourTotalHours=quantity*line.labourNorm;
+                else if(line.labourHoursInputMode==="total_hours" && quantity>0 && line.labourTotalHours!=null) patch.labourNorm=line.labourTotalHours/quantity;
+                patchLine(line.id,patch);
+              }} />,
+              norm: <NumberCell value={line.labourNorm ?? 0} onChange={labourNorm => patchLine(line.id,{labourNorm,labourTotalHours:line.quantity*labourNorm,labourHoursInputMode:"norm"})} />,
+              hours: <NumberCell value={line.labourTotalHours ?? 0} onChange={labourTotalHours => patchLine(line.id,{labourTotalHours,labourNorm:line.quantity>0?labourTotalHours/line.quantity:line.labourNorm,labourHoursInputMode:"total_hours"})} />,
+              hourlyRate: <NumberCell value={line.labour} onChange={labour => patchLine(line.id,{labour})} />,
+              material: <NumberCell value={line.material} onChange={material => patchLine(line.id,{material})} />,
+              equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
+              subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
+              other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
+              total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(lineDirect(line))}</strong><LineActions line={line} /></div>
+            };
+            return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
+              {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
           <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
