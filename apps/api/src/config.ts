@@ -16,7 +16,15 @@ export const config = {
     password: required("MYSQL_PASSWORD")
   },
   office: {
-    baseUrl: (() => { const value = required("OFFICE_API_BASE_URL"); return value.endsWith("/") ? value.slice(0, -1) : value; })(),
+    baseUrl: (() => {
+    const value = required("OFFICE_API_BASE_URL");
+    const normalized = value.endsWith("/") ? value.slice(0, -1) : value;
+    // office.brebobv.nl was the pre-separation placeholder. Production Office
+    // is served from sboffice.brebobv.nl; keep old Hostinger envs compatible.
+    return normalized === "https://office.brebobv.nl"
+      ? "https://sboffice.brebobv.nl"
+      : normalized;
+  })(),
     sharedSecret: required("BREBO_CALC_SHARED_SECRET")
   },
   corsOrigin: process.env.CORS_ORIGIN ?? "https://calculatie.brebobv.nl",
