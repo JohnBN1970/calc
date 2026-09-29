@@ -60,13 +60,16 @@ export function runCalculationPipeline(input:CalculationPipelineInput):Calculati
   const structureByPosition=new Map<string,string>();
 
   for(const position of input.positions){
-    if(!position.positionRef.trim()||!position.structureRef.trim()) throw new Error("Position identity is incomplete.");
-    if(structureByPosition.has(position.positionRef)) throw new Error(`Duplicate positionRef ${position.positionRef}.`);
-    if(!structureRefs.has(position.structureRef)) throw new Error(`Unknown structureRef ${position.structureRef} for position ${position.positionRef}.`);
-    structureByPosition.set(position.positionRef,position.structureRef);
+    const positionRef=position.positionRef.trim();
+    const structureRef=position.structureRef.trim();
+    if(!positionRef||!structureRef) throw new Error("Position identity is incomplete.");
+    if(position.positionRef!==positionRef||position.structureRef!==structureRef) throw new Error("Position and structure references must be canonical without surrounding whitespace.");
+    if(structureByPosition.has(positionRef)) throw new Error(`Duplicate positionRef ${positionRef}.`);
+    if(!structureRefs.has(structureRef)) throw new Error(`Unknown structureRef ${structureRef} for position ${positionRef}.`);
+    structureByPosition.set(positionRef,structureRef);
 
     const takeoff=calculateAssemblyTakeoff(position.outer,position.parts??[],position.joints??[]);
-    generated.push(...generateCalculationLines(position.positionRef,takeoff,position.recipeLines));
+    generated.push(...generateCalculationLines(positionRef,takeoff,position.recipeLines));
   }
 
   const lineByIdentity=new Map(generated.map(line=>[identity(line.recipeRef,line.recipeLineRef,line.positionRef),line]));
@@ -97,12 +100,21 @@ export function runCalculationPipeline(input:CalculationPipelineInput):Calculati
     if(!planKeys.has(key)) throw new Error(`Missing material plan for ${line.recipeRef}/${line.recipeLineRef} at position ${line.positionRef}.`);
   }
 
-  const zeroDemand=generated.filter(line=>line.quantity===0).map(line=>({
-    recipeRef:line.recipeRef,recipeLineRef:line.recipeLineRef,positionRef:line.positionRef,
-    description:line.description,grossRecipeQuantity:0,recipeUnit:line.unit,physicalConsumption:0,
-    contentUnit:line.unit,purchasedQuantity:0,packageCount:0,orderUnitCount:0,packagingRemainder:0,
-    totalMaterialCost:0,effectiveCostPerRecipeUnit:0
-  }));
+  const planByKey=new Map(input.materialPlans.map(plan=>[identity(plan.recipeRef,plan.recipeLineRef,plan.positionRef),plan]));
+  const zeroDemand=generated.filter(line=>line.quantity===0).map(line=>{
+    const plan=planByKey.get(identity(line.recipeRef,line.recipeLineRef,line.positionRef));
+    if(!plan) throw new Error(`Missing material plan for zero-demand line ${line.recipeRef}/${line.recipeLineRef} at position ${line.positionRef}.`);
+    const price=plan.packagePrice;
+    return {
+      recipeRef:line.recipeRef,recipeLineRef:line.recipeLineRef,positionRef:line.positionRef,
+      description:line.description,grossRecipeQuantity:0,recipeUnit:line.unit,physicalConsumption:0,
+      contentUnit:price.contentUnit,articleRef:price.articleRef,supplierRef:price.supplierRef?.trim()||null,
+      sourceRef:price.sourceRef?.trim()||null,selectedForDate:price.selectedForDate?.trim()||null,
+      packageDescription:price.packageDescription,packagePrice:price.packagePrice,
+      purchasedQuantity:0,packageCount:0,orderUnitCount:0,packagingRemainder:0,
+      totalMaterialCost:0,effectiveCostPerRecipeUnit:0
+    };
+  });
   materialCosts.push(...zeroDemand);
 
   const generatedKeys=new Set(lineByIdentity.keys());
