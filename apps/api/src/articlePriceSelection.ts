@@ -14,7 +14,15 @@ export type ArticlePriceCandidate={
 export type SelectedArticlePrice=ArticlePriceCandidate&{selectedForDate:string};
 
 function dateOnly(value:string,name:string):string{
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error(`${name} must be YYYY-MM-DD.`);
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if(!match)throw new Error(`${name} must be YYYY-MM-DD.`);
+  const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+  const parsed=new Date(Date.UTC(year,month-1,day));
+  if(
+    parsed.getUTCFullYear()!==year||
+    parsed.getUTCMonth()!==month-1||
+    parsed.getUTCDate()!==day
+  )throw new Error(`${name} must be a valid calendar date.`);
   return value;
 }
 function positive(v:number,n:string){if(!Number.isFinite(v)||v<=0)throw new Error(`${n} must be positive.`);return v}
