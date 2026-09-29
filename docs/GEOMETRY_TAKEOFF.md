@@ -39,3 +39,17 @@ Recipes must choose an explicit takeoff basis. They must not assume that every m
 Geometry must remain source-neutral. It may later originate from Office document recognition, drawings, window schedules, Sparingsmeter or manual input without changing downstream recipe logic.
 
 Cutting-list optimisation is deliberately outside this first layer.
+
+
+## Coupled window assemblies
+
+A coupled window or facade position is one geometry assembly with an outer envelope, zero or more parts and zero or more internal joints.
+
+The outer envelope drives external takeoff such as perimeter sealant, compriband and reveals. Parts retain their own width, height and local x/y position. Internal joints are stored separately and drive products such as coupling profiles or coupling fasteners.
+
+Example: three parts with a total outer envelope of 3300 x 2400 mm and two vertical joints of 2400 mm produce:
+
+- external perimeter: 11.40 m
+- internal joint length: 4.80 m
+
+Internal joints are never added to external perimeter implicitly. A recipe must explicitly select the required basis.
