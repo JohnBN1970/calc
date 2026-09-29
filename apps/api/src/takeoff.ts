@@ -55,3 +55,45 @@ export function takeoffBasisValue(result: TakeoffResult, basis: TakeoffBasis): n
     case "height": return result.heightTotalM;
   }
 }
+
+
+export type AssemblyPart = GeometryInput & {
+  ref: string;
+  xMm: number;
+  yMm: number;
+};
+
+export type AssemblyJoint = {
+  ref: string;
+  lengthMm: number;
+  quantity?: number;
+};
+
+export type AssemblyTakeoffResult = TakeoffResult & {
+  partAreaM2: number;
+  internalJointM: number;
+  partCount: number;
+  jointCount: number;
+};
+
+export function calculateAssemblyTakeoff(
+  outer: GeometryInput,
+  parts: AssemblyPart[] = [],
+  joints: AssemblyJoint[] = []
+): AssemblyTakeoffResult {
+  const result = calculateTakeoff(outer);
+  const partAreaM2 = parts.reduce((total, part) => total + calculateTakeoff(part).areaM2, 0);
+  const internalJointM = joints.reduce((total, joint) => {
+    const lengthM = positive(joint.lengthMm, "joint.lengthMm") / 1000;
+    const quantity = positive(joint.quantity ?? 1, "joint.quantity");
+    return total + lengthM * quantity;
+  }, 0);
+
+  return {
+    ...result,
+    partAreaM2: parts.length ? partAreaM2 : result.areaM2,
+    internalJointM,
+    partCount: parts.length || 1,
+    jointCount: joints.length
+  };
+}
