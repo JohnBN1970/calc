@@ -73,13 +73,14 @@ export function runCalculationPipeline(input:CalculationPipelineInput):Calculati
   if(lineByIdentity.size!==generated.length) throw new Error("Generated calculation lines are not uniquely identifiable per position.");
 
   const planKeys=new Set<string>();
-  const materialCosts=input.materialPlans.map(plan=>{
+  const materialCosts=input.materialPlans.flatMap(plan=>{
     const key=identity(plan.recipeRef,plan.recipeLineRef,plan.positionRef);
     if(planKeys.has(key)) throw new Error(`Duplicate material plan for ${plan.recipeRef}/${plan.recipeLineRef} at position ${plan.positionRef}.`);
     planKeys.add(key);
     const line=lineByIdentity.get(key);
     if(!line) throw new Error(`Material plan has no generated calculation line for ${plan.recipeRef}/${plan.recipeLineRef} at position ${plan.positionRef}.`);
-    return calculateMaterialCostPipeline({
+    if(line.quantity===0) return [];
+    return [calculateMaterialCostPipeline({
       recipeRef:line.recipeRef,
       recipeLineRef:line.recipeLineRef,
       positionRef:line.positionRef,
@@ -88,12 +89,26 @@ export function runCalculationPipeline(input:CalculationPipelineInput):Calculati
       recipeUnit:line.unit,
       consumptionRule:plan.consumptionRule,
       packagePrice:plan.packagePrice
-    });
+    })];
   });
 
   for(const line of generated){
     const key=identity(line.recipeRef,line.recipeLineRef,line.positionRef);
     if(!planKeys.has(key)) throw new Error(`Missing material plan for ${line.recipeRef}/${line.recipeLineRef} at position ${line.positionRef}.`);
+  }
+
+  const zeroDemand=generated.filter(line=>line.quantity===0).map(line=>({
+    recipeRef:line.recipeRef,recipeLineRef:line.recipeLineRef,positionRef:line.positionRef,
+    description:line.description,grossRecipeQuantity:0,recipeUnit:line.unit,physicalConsumption:0,
+    contentUnit:line.unit,purchasedQuantity:0,packageCount:0,orderUnitCount:0,packagingRemainder:0,
+    totalMaterialCost:0,effectiveCostPerRecipeUnit:0
+  }));
+  materialCosts.push(...zeroDemand);
+
+  const generatedKeys=new Set(lineByIdentity.keys());
+  for(const component of input.directCostComponents){
+    const key=identity(component.recipeRef,component.recipeLineRef,component.positionRef);
+    if(!generatedKeys.has(key)) throw new Error(`Direct cost component has no generated calculation line for ${component.recipeRef}/${component.recipeLineRef} at position ${component.positionRef}.`);
   }
 
   const materialCosted=attachMaterialCosts(generated,materialCosts);
@@ -107,6 +122,15 @@ export function runCalculationPipeline(input:CalculationPipelineInput):Calculati
   });
 
   const tree=buildCalculationStructure(input.structure,structuredLines);
+  const reachedNodes=new Set<string>();
+  const visit=(nodes:typeof tree):void=>{for(const item of nodes){reachedNodes.add(item.node.ref);visit(item.children);}};
+  visit(tree);
+  if(reachedNodes.size!==input.structure.length){
+    const omitted=input.structure.filter(node=>!reachedNodes.has(node.ref)).map(node=>node.ref);
+    throw new Error(`Calculation structure contains unreachable or cyclic nodes: ${omitted.join(", ")}.`);
+  }
+  const reachedLineCount=tree.reduce((sum,node)=>sum+node.totals.lineCount,0);
+  if(reachedLineCount!==structuredLines.length) throw new Error("Not every calculation line was included in the structure roll-up.");
   const directCost=tree.reduce((sum,node)=>sum+node.totals.totalDirectCost,0);
   const pricing=buildSalesPrice(directCost,input.salesPriceComponents);
 
