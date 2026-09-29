@@ -5,6 +5,7 @@ export type DirectCostKind = "equipment" | "subcontract" | "other";
 export type DirectCostComponent = {
   recipeRef: string;
   recipeLineRef: string;
+  positionRef: string;
   kind: DirectCostKind;
   description: string;
   amount: number;
@@ -21,8 +22,8 @@ export type FullyCostedGeneratedCalculationLine = DirectCostedGeneratedCalculati
   };
 };
 
-function key(recipeRef:string, recipeLineRef:string):string {
-  return `${recipeRef}\u0000${recipeLineRef}`;
+function key(recipeRef:string, recipeLineRef:string, positionRef:string):string {
+  return `${recipeRef}\u0000${recipeLineRef}\u0000${positionRef}`;
 }
 
 export function attachDirectCostComponents(
@@ -31,14 +32,15 @@ export function attachDirectCostComponents(
 ): FullyCostedGeneratedCalculationLine[] {
   const byLine=new Map<string,DirectCostComponent[]>();
   for(const component of components){
-    if(!component.recipeRef.trim()||!component.recipeLineRef.trim()||!component.description.trim()) throw new Error("Direct cost component identity is incomplete.");
+    if(!component.recipeRef.trim()||!component.recipeLineRef.trim()||!component.positionRef.trim()||!component.description.trim()) throw new Error("Direct cost component identity is incomplete.");
     if(!["equipment","subcontract","other"].includes(component.kind)) throw new Error("Invalid direct cost component kind.");
-    if(!Number.isFinite(component.amount)||component.amount<0) throw new Error(`Invalid direct cost amount for ${component.recipeRef}/${component.recipeLineRef}.`);
-    const k=key(component.recipeRef,component.recipeLineRef);
+    if(!Number.isFinite(component.amount)||component.amount<0) throw new Error(`Invalid direct cost amount for ${component.recipeRef}/${component.recipeLineRef} at position ${component.positionRef}.`);
+    const k=key(component.recipeRef,component.recipeLineRef,component.positionRef);
     byLine.set(k,[...(byLine.get(k)??[]),component]);
   }
   return lines.map(line=>{
-    const directCostComponents=byLine.get(key(line.recipeRef,line.recipeLineRef))??[];
+    if(!line.positionRef.trim()) throw new Error(`Missing positionRef for direct-costed line ${line.recipeRef}/${line.recipeLineRef}.`);
+    const directCostComponents=byLine.get(key(line.recipeRef,line.recipeLineRef,line.positionRef))??[];
     const equipmentCost=directCostComponents.filter(x=>x.kind==="equipment").reduce((s,x)=>s+x.amount,0);
     const subcontractCost=directCostComponents.filter(x=>x.kind==="subcontract").reduce((s,x)=>s+x.amount,0);
     const otherDirectCost=directCostComponents.filter(x=>x.kind==="other").reduce((s,x)=>s+x.amount,0);
