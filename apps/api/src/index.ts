@@ -205,7 +205,9 @@ app.post("/api/launch/consume", async (req, res) => {
   let officeContext;
   try {
     officeContext = await fetchOfficeProjectContext(launch.project_id);
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc project context fetch failed:", detail);
     res.status(502).json({ error: "Projectcontext kon niet uit BREBO Office worden opgehaald." });
     return;
   }
