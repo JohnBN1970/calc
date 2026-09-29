@@ -20,30 +20,36 @@ export type CostedGeneratedCalculationLine = GeneratedCalculationLine & {
   };
 };
 
-function key(recipeRef:string, recipeLineRef:string):string {
-  return `${recipeRef}\u0000${recipeLineRef}`;
+function key(recipeRef:string, recipeLineRef:string, positionRef:string):string {
+  return `${recipeRef}\u0000${recipeLineRef}\u0000${positionRef}`;
 }
 
 export function attachMaterialCosts(
   lines: GeneratedCalculationLine[],
   costs: MaterialCostPipelineResult[]
 ): CostedGeneratedCalculationLine[] {
-  const byRecipeLine = new Map<string, MaterialCostPipelineResult>();
+  const byRecipeLineAndPosition = new Map<string, MaterialCostPipelineResult>();
   for (const cost of costs) {
-    const k=key(cost.recipeRef,cost.recipeLineRef);
-    if (byRecipeLine.has(k)) {
-      throw new Error(`Multiple material cost results for ${cost.recipeRef}/${cost.recipeLineRef}; explicit disambiguation is required.`);
+    if (!cost.positionRef.trim()) {
+      throw new Error(`Missing positionRef for material cost ${cost.recipeRef}/${cost.recipeLineRef}.`);
     }
-    byRecipeLine.set(k,cost);
+    const k=key(cost.recipeRef,cost.recipeLineRef,cost.positionRef);
+    if (byRecipeLineAndPosition.has(k)) {
+      throw new Error(`Multiple material cost results for ${cost.recipeRef}/${cost.recipeLineRef} at position ${cost.positionRef}; explicit disambiguation is required.`);
+    }
+    byRecipeLineAndPosition.set(k,cost);
   }
 
   return lines.map(line => {
-    const cost=byRecipeLine.get(key(line.recipeRef,line.recipeLineRef));
+    if (!line.positionRef.trim()) {
+      throw new Error(`Missing positionRef for generated calculation line ${line.recipeRef}/${line.recipeLineRef}.`);
+    }
+    const cost=byRecipeLineAndPosition.get(key(line.recipeRef,line.recipeLineRef,line.positionRef));
     if (!cost) {
-      throw new Error(`Missing material cost result for ${line.recipeRef}/${line.recipeLineRef}.`);
+      throw new Error(`Missing material cost result for ${line.recipeRef}/${line.recipeLineRef} at position ${line.positionRef}.`);
     }
     if (Math.abs(cost.grossRecipeQuantity-line.quantity)>1e-9) {
-      throw new Error(`Quantity mismatch for ${line.recipeRef}/${line.recipeLineRef}.`);
+      throw new Error(`Quantity mismatch for ${line.recipeRef}/${line.recipeLineRef} at position ${line.positionRef}.`);
     }
     return {
       ...line,
