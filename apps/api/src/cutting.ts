@@ -1,7 +1,12 @@
+export type ProductionMode = "workshop" | "site" | "either";
+
 export type CuttingRequirement = {
   lengthMm: number;
   quantity: number;
   groupRef?: string | null;
+  positionRef?: string | null;
+  destinationRef?: string | null;
+  productionMode?: ProductionMode;
 };
 
 export type CuttingProfile = {
@@ -20,8 +25,17 @@ export type CutBar = {
   remnantMm: number;
 };
 
+export type ProductionBundle = {
+  groupRef: string;
+  productionMode: ProductionMode;
+  pieceCount: number;
+  piecesMm: number[];
+  label: string;
+};
+
 export type CuttingPlan = {
   bars: CutBar[];
+  bundles: ProductionBundle[];
   totalStockMm: number;
   totalUsedMm: number;
   totalWasteMm: number;
@@ -107,5 +121,24 @@ export function createCuttingPlan(requirements: CuttingRequirement[], profile: C
   const totalWasteMm = bars.reduce((sum,b)=>sum + (b.remnantMm < minReusable ? b.remnantMm : 0),0);
   const reusableRemnantMm = bars.reduce((sum,b)=>sum + (b.remnantMm >= minReusable ? b.remnantMm : 0),0);
 
-  return { bars, totalStockMm, totalUsedMm, totalWasteMm, reusableRemnantMm };
+  const bundleMap = new Map<string, ProductionBundle>();
+  for (const req of requirements) {
+    const groupRef = req.groupRef?.trim() || req.destinationRef?.trim() || req.positionRef?.trim() || "UNGROUPED";
+    const mode = req.productionMode ?? "either";
+    const key = `${mode}:${groupRef}`;
+    const current = bundleMap.get(key) ?? {
+      groupRef,
+      productionMode: mode,
+      pieceCount: 0,
+      piecesMm: [],
+      label: `${groupRef} | ${mode === "workshop" ? "WERKPLAATS" : mode === "site" ? "BOUWPLAATS" : "TE BEPALEN"}`
+    };
+    for (let i = 0; i < req.quantity; i++) current.piecesMm.push(req.lengthMm);
+    current.pieceCount += req.quantity;
+    bundleMap.set(key, current);
+  }
+
+  const bundles = [...bundleMap.values()].sort((a,b) => a.groupRef.localeCompare(b.groupRef));
+
+  return { bars, bundles, totalStockMm, totalUsedMm, totalWasteMm, reusableRemnantMm };
 }
