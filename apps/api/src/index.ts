@@ -9,6 +9,7 @@ import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSuppl
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
+type AllocationInput = { sourceLineId:number; targetLineId:number; method:"quantity"|"value"|"manual"; share:number; amount:number };
 type LineInput = {
   id?: number;
   parentId?: number | null;
@@ -395,6 +396,11 @@ app.get("/api/workbench/current", async (req, res) => {
     [version.id]
   );
 
+  const [allocations] = await db.execute<RowDataPacket[]>(
+    `SELECT source_line_id, target_line_id, allocation_method, share, amount FROM calculation_line_allocations WHERE version_id = ? ORDER BY source_line_id, target_line_id`,
+    [version.id]
+  );
+
   let officeContext;
   try {
     officeContext = await fetchOfficeProjectContext(session.officeProjectId);
@@ -408,7 +414,8 @@ app.get("/api/workbench/current", async (req, res) => {
     calculation: calculations[0],
     version,
     project: officeContext.project,
-    lines
+    lines,
+    allocations
   });
 });
 
@@ -422,7 +429,8 @@ app.put("/api/workbench/current", async (req, res) => {
     return;
   }
   const lines = req.body.lines as LineInput[];
-  if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000) {
+  const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
+  if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
   }
@@ -501,6 +509,16 @@ app.put("/api/workbench/current", async (req, res) => {
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);
+    }
+
+    for (const allocation of allocations) {
+      const sourceId = temporaryIds.get(Number(allocation.sourceLineId));
+      const targetId = temporaryIds.get(Number(allocation.targetLineId));
+      if (!sourceId || !targetId || sourceId === targetId || !["quantity","value","manual"].includes(allocation.method)) continue;
+      await connection.execute(
+        `INSERT INTO calculation_line_allocations (version_id, source_line_id, target_line_id, allocation_method, share, amount) VALUES (?, ?, ?, ?, ?, ?)`,
+        [version.id, sourceId, targetId, allocation.method, numeric(allocation.share), numeric(allocation.amount)]
+      );
     }
 
     const markupAmount = directCost * (markupPct / 100);
