@@ -88,6 +88,7 @@ type QuoteProposal = {
 };
 
 type CostCarrier = "labour" | "material" | "equipment" | "subcontracting" | "other";
+type LineAllocation = { sourceLineId:number; targetLineId:number; method:"quantity"|"value"|"manual"; share:number; amount:number };
 
 type ArticleSearchItem = {
   article_id: number;
@@ -414,6 +415,7 @@ function App() {
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
+  const [allocations, setAllocations] = useState<LineAllocation[]>([]);
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
@@ -478,6 +480,9 @@ function App() {
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
     setSelectedLineIds([]);
+    setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
+      sourceLineId:Number(row.source_line_id), targetLineId:Number(row.target_line_id), method:String(row.allocation_method) as LineAllocation["method"], share:Number(row.share ?? 0), amount:Number(row.amount ?? 0)
+    })) : []);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     setAuthorized(true);
@@ -516,6 +521,21 @@ function App() {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
     setStatus("Concept — niet opgeslagen");
   };
+
+  const incomingAllocation = (lineId:number) => allocations.filter(item => item.targetLineId === lineId).reduce((sum,item)=>sum+item.amount,0);
+  const outgoingAllocation = (lineId:number) => allocations.filter(item => item.sourceLineId === lineId).reduce((sum,item)=>sum+item.amount,0);
+  const effectiveLineDirect = (line:Line) => lineDirect(line) - outgoingAllocation(line.id) + incomingAllocation(line.id);
+  const allocateLine = (sourceLineId:number, method:"quantity"|"value") => {
+    const source=lines.find(line=>line.id===sourceLineId); if(!source)return;
+    const targets=lines.filter(line=>selectedLineIds.includes(line.id)&&line.id!==sourceLineId&&isCostLine(line)&&line.lineType!=="option");
+    if(!targets.length){setStatus("Selecteer eerst minimaal één doelregel voor de verdeling.");return;}
+    const sourceAmount=lineDirect(source); if(sourceAmount<=0){setStatus("Deze kostenregel heeft geen bedrag om te verdelen.");return;}
+    const weights=targets.map(line=>method==="quantity"?Math.max(0,line.quantity):Math.max(0,lineDirect(line)));
+    const totalWeight=weights.reduce((sum,value)=>sum+value,0); if(totalWeight<=0){setStatus("De geselecteerde doelregels hebben geen bruikbare verdeelbasis.");return;}
+    let allocated=0; const next=targets.map((line,index)=>{const share=weights[index]/totalWeight;const amount=index===targets.length-1?sourceAmount-allocated:Math.round(sourceAmount*share*10000)/10000;allocated+=amount;return{sourceLineId,targetLineId:line.id,method,share,amount} as LineAllocation;});
+    setAllocations(current=>[...current.filter(item=>item.sourceLineId!==sourceLineId),...next]); setStatus(`${source.description||"Kostenregel"} verdeeld over ${targets.length} regel(s). Nog opslaan.`);
+  };
+  const clearAllocation=(sourceLineId:number)=>{setAllocations(current=>current.filter(item=>item.sourceLineId!==sourceLineId));setStatus("Kostenverdeling opgeheven — nog opslaan");};
 
   const addLine = (lineType: LineType) => {
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
@@ -691,6 +711,11 @@ function App() {
           </select>
         </label>}
         {line.sourceDocumentId && <button type="button" onClick={() => { detachSource(line.id); setOpen(false); }}>Bron loskoppelen</button>}
+        {isCostLine(line) && <>
+          <button type="button" onClick={() => { allocateLine(line.id,"value"); setOpen(false); }}>Verdelen op inkoopwaarde</button>
+          <button type="button" onClick={() => { allocateLine(line.id,"quantity"); setOpen(false); }}>Verdelen op aantal</button>
+          {outgoingAllocation(line.id) > 0 && <button type="button" onClick={() => { clearAllocation(line.id); setOpen(false); }}>Verdeling opheffen</button>}
+        </>}
         <button type="button" className="danger" onClick={() => { deleteLine(line.id); setOpen(false); }}>Verwijderen</button>
       </div>,
       document.body
@@ -1059,6 +1084,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           markupPct,
+          allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
             parentId: line.parentId,
@@ -1296,7 +1322,7 @@ function App() {
               equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
               subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
               other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
-              total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(lineDirect(line))}</strong><LineActions line={line} /></div>
+              total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
             return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
