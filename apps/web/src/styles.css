@@ -138,3 +138,6 @@
 .columnSettingRow{display:grid;grid-template-columns:minmax(100px,1fr) 120px 34px 34px;gap:6px;align-items:center;padding:6px 8px;background:#fff;border:1px solid #e1e6ea;border-radius:6px;font-size:12px}
 .columnSettingRow label{display:flex;align-items:center;gap:6px}.columnSettingRow .columnWidth{justify-content:flex-end;color:#65717a}.columnSettingRow input[type=number]{width:55px;padding:4px;border:1px solid #d5dce1;border-radius:4px}
 .columnSettingRow button{padding:4px 7px;background:#fff;color:#273039;border:1px solid #d5dce1}.columnSettingRow button:disabled{opacity:.35}
+
+.lineTotalCell{position:relative}
+.lineTotalCell strong[title]{cursor:help}
