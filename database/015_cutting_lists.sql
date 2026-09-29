@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS calculation_cutting_profiles (
   min_reusable_remnant_mm DECIMAL(19,4) NOT NULL DEFAULT 300,
   max_practical_stock_length_mm DECIMAL(19,4) NULL,
   practical_waste_tolerance_pct DECIMAL(9,4) NOT NULL DEFAULT 3,
+  production_mode ENUM('workshop','site','either') NOT NULL DEFAULT 'either',
+  preferred_stock_length_mm DECIMAL(19,4) NULL,
+  bundle_by ENUM('position','dwelling','facade','work_package','none') NOT NULL DEFAULT 'position',
+  label_required TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (id),
@@ -16,7 +20,8 @@ CREATE TABLE IF NOT EXISTS calculation_cutting_profiles (
   CONSTRAINT chk_cutting_trim CHECK (end_trim_mm >= 0),
   CONSTRAINT chk_cutting_remnant CHECK (min_reusable_remnant_mm >= 0),
   CONSTRAINT chk_cutting_max_practical CHECK (max_practical_stock_length_mm IS NULL OR max_practical_stock_length_mm > 0),
-  CONSTRAINT chk_cutting_waste_tolerance CHECK (practical_waste_tolerance_pct >= 0 AND practical_waste_tolerance_pct <= 1000)
+  CONSTRAINT chk_cutting_waste_tolerance CHECK (practical_waste_tolerance_pct >= 0 AND practical_waste_tolerance_pct <= 1000),
+  CONSTRAINT chk_cutting_preferred_stock CHECK (preferred_stock_length_mm IS NULL OR preferred_stock_length_mm > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS calculation_cutting_requirements (
