@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS calculation_generated_line_sources (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  version_id BIGINT UNSIGNED NOT NULL,
+  line_id BIGINT UNSIGNED NOT NULL,
+  geometry_id BIGINT UNSIGNED NULL,
+  position_ref VARCHAR(255) NOT NULL,
+  recipe_ref VARCHAR(128) NOT NULL,
+  recipe_line_ref VARCHAR(128) NOT NULL,
+  takeoff_basis ENUM('area','perimeter','two_sides_plus_head','width','height','part_area','internal_joint') NOT NULL,
+  factor DECIMAL(19,6) NOT NULL DEFAULT 1,
+  waste_pct DECIMAL(9,4) NOT NULL DEFAULT 0,
+  generated_quantity DECIMAL(19,6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (id),
+  KEY idx_generated_source_line (version_id,line_id),
+  KEY idx_generated_source_position (version_id,position_ref),
+  CONSTRAINT fk_generated_source_version FOREIGN KEY (version_id) REFERENCES calculation_versions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_generated_source_line FOREIGN KEY (line_id) REFERENCES calculation_lines(id) ON DELETE CASCADE,
+  CONSTRAINT chk_generated_source_quantity CHECK (generated_quantity >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
