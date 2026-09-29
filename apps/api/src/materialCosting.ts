@@ -1,5 +1,8 @@
 export type PackagePrice = {
   articleRef: string;
+  supplierRef?: string | null;
+  sourceRef?: string | null;
+  selectedForDate?: string | null;
   packageDescription: string;
   contentPerPackage: number;
   contentUnit: string;
@@ -8,6 +11,12 @@ export type PackagePrice = {
 };
 
 export type MaterialCostResult = {
+  articleRef: string;
+  supplierRef: string | null;
+  sourceRef: string | null;
+  selectedForDate: string | null;
+  packageDescription: string;
+  packagePrice: number;
   requiredQuantity: number;
   contentUnit: string;
   packageCount: number;
@@ -33,7 +42,15 @@ export function calculatePackagedMaterialCost(requiredQuantity:number,price:Pack
   const purchasedQuantity=packageCount*content;
   const totalMaterialCost=packageCount*packagePrice;
 
+  if(!price.articleRef.trim()||!price.packageDescription.trim())throw new Error("Package price identity is incomplete.");
+
   return {
+    articleRef:price.articleRef,
+    supplierRef:price.supplierRef?.trim()||null,
+    sourceRef:price.sourceRef?.trim()||null,
+    selectedForDate:price.selectedForDate?.trim()||null,
+    packageDescription:price.packageDescription,
+    packagePrice,
     requiredQuantity:required,
     contentUnit:price.contentUnit,
     packageCount,
