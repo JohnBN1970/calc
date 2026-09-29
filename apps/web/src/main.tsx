@@ -442,6 +442,27 @@ function App() {
   });
   const resetColumns = () => setColumnSettings(defaultColumns);
 
+  const startColumnResize = (event: React.PointerEvent, key: ColumnKey) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const column = columnSettings.find(item => item.key === key);
+    if (!column) return;
+    const startX = event.clientX;
+    const startWidth = column.width;
+    const move = (moveEvent: PointerEvent) => {
+      const width = Math.max(55, Math.min(600, startWidth + moveEvent.clientX - startX));
+      patchColumn(key, { width });
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      document.body.classList.remove("is-column-resizing");
+    };
+    document.body.classList.add("is-column-resizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  };
+
 
   const loadWorkbench = async () => {
     const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
@@ -1224,9 +1245,11 @@ function App() {
         </div>}
         <div className="grid">
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
-            {visibleColumns.map(column => column.key === "code"
-              ? <b className="codeHead" key={column.key}><input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />{column.label}</b>
-              : <b key={column.key}>{column.label}</b>)}
+            {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
+              {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />}
+              <span>{column.label}</span>
+              <span className="columnResizeHandle" role="separator" aria-orientation="vertical" title="Sleep om kolombreedte te wijzigen" onPointerDown={event => startColumnResize(event,column.key)} />
+            </b>)}
           </div>
           {lines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
