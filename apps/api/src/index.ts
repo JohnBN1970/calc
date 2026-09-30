@@ -7,6 +7,7 @@ import { db } from "./db.js";
 import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
+import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -387,6 +388,26 @@ app.get("/api/workbench/current/calculation-context", async (req, res) => {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
     console.error("BREBO Calc calculation context fetch failed:", detail);
     res.status(502).json({ error: `Calculatiecontext kon niet uit BREBO Office worden opgehaald: ${detail}` });
+  }
+});
+
+app.get("/api/workbench/current/concept", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const snapshot = await fetchCalculationContextSnapshot(session.officeCalculationId);
+    if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
+      res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
+      return;
+    }
+    const concept = buildConceptFromOfficeContext(snapshot);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json(concept);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende conceptfout";
+    console.error("BREBO Calc concept build failed:", detail);
+    res.status(502).json({ error: `Conceptcalculatie kon niet uit de Office-context worden opgebouwd: ${detail}` });
   }
 });
 
