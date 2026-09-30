@@ -1,0 +1,92 @@
+import type { CalculationConcept, CalculationConceptPosition } from "./calculationConcept.js";
+
+export type RecipeProposalRule = {
+  recipeRef: string;
+  label: string;
+  priority: number;
+  requiresReviewedGeometry?: boolean;
+  descriptionIncludes?: string[];
+  descriptionExcludes?: string[];
+  minWidthMm?: number;
+  maxWidthMm?: number;
+  minHeightMm?: number;
+  maxHeightMm?: number;
+};
+
+export type RecipeProposal = {
+  positionRef: string;
+  recipeRef: string;
+  label: string;
+  priority: number;
+  confidence: number;
+  reasons: string[];
+  reviewRequired: boolean;
+};
+
+function normalize(value: string | null): string {
+  return (value ?? "").trim().toLocaleLowerCase("nl-NL");
+}
+
+function matches(position: CalculationConceptPosition, rule: RecipeProposalRule): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const description = normalize(position.description);
+
+  if (rule.requiresReviewedGeometry && position.reviewStatus !== "reviewed") return { ok: false, reasons: [] };
+
+  if (rule.descriptionIncludes?.length) {
+    const hits = rule.descriptionIncludes.filter(term => description.includes(normalize(term)));
+    if (!hits.length) return { ok: false, reasons: [] };
+    reasons.push(`omschrijving bevat: ${hits.join(", ")}`);
+  }
+
+  if (rule.descriptionExcludes?.some(term => description.includes(normalize(term)))) return { ok: false, reasons: [] };
+
+  if (rule.minWidthMm != null && position.widthMm < rule.minWidthMm) return { ok: false, reasons: [] };
+  if (rule.maxWidthMm != null && position.widthMm > rule.maxWidthMm) return { ok: false, reasons: [] };
+  if (rule.minHeightMm != null && position.heightMm < rule.minHeightMm) return { ok: false, reasons: [] };
+  if (rule.maxHeightMm != null && position.heightMm > rule.maxHeightMm) return { ok: false, reasons: [] };
+
+  reasons.push(`geometrie ${position.widthMm}×${position.heightMm} mm`);
+  if (position.reviewStatus === "reviewed") reasons.push("bronfeiten zijn gereviewd");
+  else reasons.push("bronfeiten zijn nog proposed");
+
+  return { ok: true, reasons };
+}
+
+export function proposeRecipesForConcept(
+  concept: CalculationConcept,
+  rules: RecipeProposalRule[]
+): RecipeProposal[] {
+  const proposals: RecipeProposal[] = [];
+
+  for (const position of concept.positions) {
+    for (const rule of rules) {
+      if (!rule.recipeRef.trim() || !rule.label.trim()) throw new Error("Recipe proposal rule identity is incomplete.");
+      if (!Number.isFinite(rule.priority)) throw new Error(`Invalid recipe proposal priority for ${rule.recipeRef}.`);
+
+      const match = matches(position, rule);
+      if (!match.ok) continue;
+
+      const evidenceScore = position.reviewStatus === "reviewed" ? 0.85 : 0.65;
+      const descriptionScore = rule.descriptionIncludes?.length ? 0.10 : 0;
+      const confidence = Math.min(0.99, evidenceScore + descriptionScore);
+
+      proposals.push({
+        positionRef: position.positionRef,
+        recipeRef: rule.recipeRef,
+        label: rule.label,
+        priority: rule.priority,
+        confidence,
+        reasons: match.reasons,
+        reviewRequired: true
+      });
+    }
+  }
+
+  return proposals.sort((a, b) =>
+    a.positionRef.localeCompare(b.positionRef) ||
+    b.priority - a.priority ||
+    b.confidence - a.confidence ||
+    a.recipeRef.localeCompare(b.recipeRef)
+  );
+}

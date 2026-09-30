@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
+import { proposeRecipesForConcept, type RecipeProposalRule } from "./recipeProposal.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -408,6 +409,36 @@ app.get("/api/workbench/current/concept", async (req, res) => {
     const detail = error instanceof Error ? error.message : "Onbekende conceptfout";
     console.error("BREBO Calc concept build failed:", detail);
     res.status(502).json({ error: `Conceptcalculatie kon niet uit de Office-context worden opgebouwd: ${detail}` });
+  }
+});
+
+app.post("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  if (!Array.isArray(req.body?.rules)) {
+    res.status(400).json({ error: "Receptvoorstelregels ontbreken." });
+    return;
+  }
+
+  try {
+    const snapshot = await fetchCalculationContextSnapshot(session.officeCalculationId);
+    if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
+      res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
+      return;
+    }
+    const concept = buildConceptFromOfficeContext(snapshot);
+    const proposals = proposeRecipesForConcept(concept, req.body.rules as RecipeProposalRule[]);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-recipe-proposals-v1",
+      sourceDocumentSetId: concept.sourceDocumentSetId,
+      proposalCount: proposals.length,
+      proposals
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende receptvoorstelfout";
+    res.status(422).json({ error: detail });
   }
 });
 
