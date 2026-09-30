@@ -123,7 +123,7 @@ export async function uploadSupplierQuoteToOffice(input: {
     suggested: { value: number; score: number; line_no: number; text: string } | null;
   };
 }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes`;
   const headers = signedHeaders("POST", path, input.bytes);
   headers["Content-Type"] = input.mimeType;
   headers["X-BREBO-Calculation-Id"] = String(input.calculationId);
@@ -152,7 +152,7 @@ export async function fetchSupplierQuotePositionVisual(input: {
   fileId: number;
   page: number;
 }): Promise<{ bytes: Uint8Array; contentType: string }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
@@ -168,7 +168,7 @@ export async function fetchSupplierQuotePreview(input: {
   calculationId: number;
   fileId: number;
 }): Promise<{ bytes: Uint8Array; contentType: string; contentDisposition: string | null }> {
-  const path = `/api/workbench/v1/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
     headers: signedHeaders("GET", path),
@@ -183,4 +183,55 @@ export async function fetchSupplierQuotePreview(input: {
     contentType: response.headers.get("content-type") ?? "application/octet-stream",
     contentDisposition: response.headers.get("content-disposition")
   };
+}
+
+
+export type OfficeCalculationDocumentSetResponse = {
+  contract: "brebo-calculation-document-set-v1";
+  set: {
+    id: number;
+    project_id: number;
+    calculation_id: number;
+    status: string;
+    [key: string]: unknown;
+  };
+};
+
+export async function proposeCalculationDocumentSet(input: {
+  calculationId: number;
+  projectId: number;
+}): Promise<OfficeCalculationDocumentSetResponse> {
+  if (!Number.isInteger(input.calculationId) || input.calculationId <= 0) {
+    throw new Error("Invalid Office calculation id.");
+  }
+  if (!Number.isInteger(input.projectId) || input.projectId <= 0) {
+    throw new Error("Invalid Office project id.");
+  }
+
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/document-set/propose`;
+  const body = JSON.stringify({ project_id: input.projectId });
+  const headers = signedHeaders("POST", path, body);
+  headers["Content-Type"] = "application/json";
+
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "POST",
+    headers,
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 1000);
+    throw new Error(`Office document-set proposal failed with status ${response.status}: ${detail || response.statusText}`);
+  }
+
+  const payload = await response.json() as OfficeCalculationDocumentSetResponse;
+  if (
+    payload.contract !== "brebo-calculation-document-set-v1" ||
+    Number(payload.set?.calculation_id) !== input.calculationId ||
+    Number(payload.set?.project_id) !== input.projectId
+  ) {
+    throw new Error("Office returned an invalid calculation document-set contract.");
+  }
+  return payload;
 }
