@@ -7,7 +7,7 @@ import { db } from "./db.js";
 import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
-import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -350,6 +350,24 @@ app.get("/api/quotes/:fileId/visual/:page", async (req, res) => {
     res.send(Buffer.from(visual.bytes));
   } catch {
     res.status(502).json({ error: "Offerteafbeelding kon niet uit BREBO Office worden opgehaald." });
+  }
+});
+
+app.post("/api/workbench/current/document-set/propose", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const proposal = await proposeCalculationDocumentSet({
+      calculationId: session.officeCalculationId,
+      projectId: session.officeProjectId
+    });
+    res.setHeader("Cache-Control", "no-store, private");
+    res.status(201).json(proposal);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc document-set proposal failed:", detail);
+    res.status(502).json({ error: `Documentselectie kon niet door BREBO Office worden opgebouwd: ${detail}` });
   }
 });
 
