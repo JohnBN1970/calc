@@ -235,3 +235,89 @@ export async function proposeCalculationDocumentSet(input: {
   }
   return payload;
 }
+
+
+export type OfficeCalculationContextSnapshot = {
+  contract: "brebo-calculation-context-snapshot-v1";
+  context: {
+    calculation_id: number;
+    project_id: number | null;
+    document_set: {
+      id: number;
+      status: string;
+      selection_version: string;
+      created: number;
+      changed: number;
+    } | null;
+    documents: Array<{
+      item_id: number;
+      document_id: number;
+      title: string;
+      document_type: string | null;
+      document_family: string | null;
+      mime_type: string | null;
+      role: string | null;
+      relevance: number;
+      selection_source: string;
+      review_status: string;
+      exclusion_reason: string | null;
+    }>;
+    facts: Array<{
+      id: number;
+      document_id: number;
+      fact_type: string;
+      position_ref: string | null;
+      value_text: string | null;
+      value_number: number | null;
+      unit: string | null;
+      source_page: number | null;
+      source_fragment: string | null;
+      extraction_method: string | null;
+      confidence: number;
+      review_status: string;
+    }>;
+    takeoff: Array<{
+      id: number;
+      position_ref: string;
+      quantity: number;
+      width_mm: number | null;
+      height_mm: number | null;
+      area_m2: number | null;
+      perimeter_m: number | null;
+      top_m: number | null;
+      bottom_m: number | null;
+      left_m: number | null;
+      right_m: number | null;
+    }>;
+    review: {
+      has_context: boolean;
+      proposed_documents: number;
+      proposed_facts: number;
+      unresolved: string[];
+    };
+  };
+};
+
+export async function fetchCalculationContextSnapshot(calculationId: number): Promise<OfficeCalculationContextSnapshot> {
+  if (!Number.isInteger(calculationId) || calculationId <= 0) {
+    throw new Error("Invalid Office calculation id.");
+  }
+  const path = `/api/workbench/v2/calculations/${calculationId}/calculation-context`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    throw new Error(`Office calculation context request failed with status ${response.status}.`);
+  }
+  const payload = await response.json() as OfficeCalculationContextSnapshot;
+  if (
+    payload.contract !== "brebo-calculation-context-snapshot-v1" ||
+    Number(payload.context?.calculation_id) !== calculationId
+  ) {
+    throw new Error("Office returned an invalid calculation context snapshot.");
+  }
+  return payload;
+}
