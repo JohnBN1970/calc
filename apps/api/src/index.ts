@@ -17,6 +17,7 @@ import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
+import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -655,6 +656,91 @@ app.post("/api/session/logout", (req, res) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
   res.status(204).end();
+});
+
+async function currentCalcVersionId(calculationId:number):Promise<number> {
+  const [versions]=await db.execute<RowDataPacket[]>(
+    "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+    [calculationId]
+  );
+  if(!versions[0]) throw new Error("Calculatie heeft geen versie.");
+  return Number(versions[0].id);
+}
+
+app.get("/api/workbench/current/subcalculations", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-subcalculations-v1",versionId,subcalculations});
+  } catch(error) {
+    res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden geladen."});
+  }
+});
+
+app.post("/api/workbench/current/subcalculations", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const id=await createCalcSubcalculation({
+      versionId,
+      ref:String(req.body?.ref??""),
+      description:String(req.body?.description??""),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({subcalculationId:id});
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."});
+  }
+});
+
+app.post("/api/workbench/current/subcalculations/:id/scopes", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    const subcalculationId=Number(req.params.id);
+    if(!subcalculations.some(item=>item.id===subcalculationId)) {
+      res.status(404).json({error:"Deelcalculatie hoort niet bij deze Calc-versie."});
+      return;
+    }
+    const id=await addCalcSubcalculationScope({
+      subcalculationId,
+      scopeType:String(req.body?.scopeType??"custom") as any,
+      scopeRef:String(req.body?.scopeRef??""),
+      includeDescendants:Boolean(req.body?.includeDescendants??false),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({scopeId:id});
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Scope kon niet worden toegevoegd."});
+  }
+});
+
+app.put("/api/workbench/current/subcalculations/:id/lines/:lineId", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    const subcalculationId=Number(req.params.id);
+    if(!subcalculations.some(item=>item.id===subcalculationId)) {
+      res.status(404).json({error:"Deelcalculatie hoort niet bij deze Calc-versie."});
+      return;
+    }
+    await setManualLineMembership({
+      subcalculationId,
+      lineId:Number(req.params.lineId),
+      included:Boolean(req.body?.included)
+    });
+    res.status(204).end();
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Deelcalculatieregel kon niet worden bijgewerkt."});
+  }
 });
 
 app.get("/api/recipes", async (req, res) => {
