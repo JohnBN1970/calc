@@ -276,6 +276,26 @@ export type OfficeCalculationContextSnapshot = {
       confidence: number;
       review_status: string;
     }>;
+    components: Array<{
+      id: number;
+      document_id: number | null;
+      position_ref: string;
+      component_ref: string;
+      parent_component_ref: string | null;
+      component_type: string | null;
+      classification_ref: string | null;
+      description: string | null;
+      quantity: number;
+      width_mm: number | null;
+      height_mm: number | null;
+      area_m2: number | null;
+      perimeter_m: number | null;
+      source_page: number | null;
+      source_fragment: string | null;
+      extraction_method: string | null;
+      confidence: number;
+      review_status: string;
+    }>;
     takeoff: Array<{
       id: number;
       position_ref: string;
@@ -293,6 +313,7 @@ export type OfficeCalculationContextSnapshot = {
       has_context: boolean;
       proposed_documents: number;
       proposed_facts: number;
+      proposed_components?: number;
       unresolved: string[];
     };
   };
