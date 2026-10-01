@@ -19,6 +19,16 @@ export type OfficeAuthoritativeRecipeLine = {
   priceSourceRef: string | null;
   unitCost: number | null;
   isCustom: boolean;
+  packaging: {
+    baseUnit: string;
+    useUnit: string | null;
+    orderUnit: string | null;
+    conversionFactor: number;
+    minimumOrder: number;
+    quantityFrom: number;
+    netPrice: number;
+    priceDate: string;
+  } | null;
   snapshotHash: string;
 };
 
@@ -51,6 +61,16 @@ export function officeAuthoritativeRecipeLines(workspace: OfficeWorkspaceState):
       priceSourceRef: line.price_source_ref,
       unitCost: line.unit_cost == null ? null : finiteNumber(line.unit_cost, "unit_cost"),
       isCustom: Number(line.is_custom) === 1,
+      packaging: line.packaging ? {
+        baseUnit: line.packaging.base_unit,
+        useUnit: line.packaging.use_unit,
+        orderUnit: line.packaging.order_unit,
+        conversionFactor: finiteNumber(line.packaging.conversion_factor, "conversion_factor"),
+        minimumOrder: finiteNumber(line.packaging.minimum_order, "minimum_order"),
+        quantityFrom: finiteNumber(line.packaging.quantity_from, "quantity_from"),
+        netPrice: finiteNumber(line.packaging.net_price, "net_price"),
+        priceDate: line.packaging.price_date
+      } : null,
       snapshotHash: recipe.snapshot_hash
     };
   }));
@@ -71,6 +91,7 @@ export type OfficeCostingInputLine = {
   priceSourceRef: string | null;
   officeUnitCost: number | null;
   wastePct: number;
+  packaging: OfficeAuthoritativeRecipeLine["packaging"];
   snapshotHash: string;
 };
 
@@ -89,6 +110,7 @@ export function officeCostingInputLines(workspace: OfficeWorkspaceState): Office
     priceSourceRef: line.priceSourceRef,
     officeUnitCost: line.unitCost,
     wastePct: line.wastePct,
+    packaging: line.packaging,
     snapshotHash: line.snapshotHash
   }));
 }
