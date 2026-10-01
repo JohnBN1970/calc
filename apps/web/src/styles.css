@@ -163,3 +163,10 @@
 .costRollupBar{display:flex;gap:8px;overflow-x:auto;margin-top:12px}.costRollupBar>div{min-width:145px}.costRollupBar strong{display:block;font-size:15px}.costRollupBar small{display:block;color:#7a858d;font-size:10px;margin-top:3px}.costRollupBar .costRollupTotal{margin-left:auto;border-color:#adb7bf;background:#fbfcfc}
 @media(max-width:1200px){.recipeColumns{grid-template-columns:1fr 1fr}.recipePanel:last-child{grid-column:1/-1}.recipeSummary{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.recipeColumns,.recipeSummary{grid-template-columns:1fr}.recipePanel:last-child{grid-column:auto}.costRollupBar{display:grid;grid-template-columns:1fr 1fr}.costRollupBar .costRollupTotal{margin-left:0}}
+
+
+.recipeControls{display:flex;align-items:end;gap:12px;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:#fff;border:1px solid #dfe4e8;border-radius:7px}
+.recipeControls label{display:flex;flex-direction:column;gap:4px;min-width:300px}.recipeControls label span{font-size:11px;font-weight:700;color:#707b84}.recipeControls select{padding:8px 9px;border:1px solid #ccd3d9;border-radius:5px;background:#fff;font:inherit}
+.recipeActionStatus{font-size:12px;color:#68737c}
+.recipeProposalCard button{margin-top:8px;padding:6px 9px;font-size:11px}.recipeProposalCard button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:760px){.recipeControls{align-items:stretch;flex-direction:column}.recipeControls label{min-width:0}}
