@@ -8,7 +8,7 @@ import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
-import { proposeRecipesForConcept, type RecipeProposalRule } from "./recipeProposal.js";
+import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -428,27 +428,27 @@ app.get("/api/workbench/current/recipe-catalog", async (req, res) => {
   }
 });
 
-app.post("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
+app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
-  if (!Array.isArray(req.body?.rules)) {
-    res.status(400).json({ error: "Receptvoorstelregels ontbreken." });
-    return;
-  }
-
   try {
-    const snapshot = await fetchCalculationContextSnapshot(session.officeCalculationId);
+    const [snapshot, catalog] = await Promise.all([
+      fetchCalculationContextSnapshot(session.officeCalculationId),
+      fetchOfficeRecipeCatalog()
+    ]);
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
     const concept = buildConceptFromOfficeContext(snapshot);
-    const proposals = proposeRecipesForConcept(concept, req.body.rules as RecipeProposalRule[]);
+    const rules = proposalRulesFromOfficeCatalog(catalog);
+    const proposals = proposeRecipesForConcept(concept, rules);
     res.setHeader("Cache-Control", "no-store, private");
     res.json({
       contract: "brebo-calc-recipe-proposals-v1",
       sourceDocumentSetId: concept.sourceDocumentSetId,
+      sourceCatalogVersion: catalog.catalog.catalog_version,
       proposalCount: proposals.length,
       proposals
     });
