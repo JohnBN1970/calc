@@ -166,6 +166,50 @@ type WorkbenchAggregate = {
   readiness: unknown;
 };
 
+type CalcRecipe = {
+  id:number;
+  recipeId:number;
+  recipeKey:string;
+  name:string;
+  description:string|null;
+  versionNo:number;
+  status:"draft"|"published"|"archived";
+  applicability:Record<string,unknown>|null;
+  lines:Array<{
+    id:number;
+    lineRef:string;
+    sortOrder:number;
+    costKind:"material"|"labour"|"equipment"|"subcontracting"|"other";
+    description:string;
+    unit:string|null;
+    quantitySourceType:string|null;
+    quantitySourceRef:string|null;
+    costSourceType:string|null;
+    costSourceRef:string|null;
+    takeoffBasis:"area"|"perimeter"|"two_sides_plus_head"|"width"|"height"|"part_area"|"internal_joint"|"fixed";
+    factor:number;
+    wastePct:number;
+    fixedQuantity:number|null;
+  }>;
+};
+
+type CalcSubcalculation = {
+  id:number;
+  versionId:number;
+  ref:string;
+  description:string;
+  dimensionType:string;
+  dimensionRef:string|null;
+  sortOrder:number;
+  scopes:Array<{
+    id:number;
+    scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position"|"structure"|"recipe"|"custom";
+    scopeRef:string;
+    includeDescendants:boolean;
+    sortOrder:number;
+  }>;
+};
+
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
@@ -459,6 +503,20 @@ function App() {
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
+  const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
+  const [subcalculationOpen, setSubcalculationOpen] = useState(false);
+  const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
+  const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
+  const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
+  const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
+  const [recipeLineDraft, setRecipeLineDraft] = useState({
+    lineRef:"", description:"", costKind:"material", unit:"st", takeoffBasis:"fixed",
+    quantitySourceType:"", quantitySourceRef:"", costSourceType:"article", costSourceRef:"",
+    factor:1, wastePct:0, fixedQuantity:1
+  });
+  const [subcalcDraft, setSubcalcDraft] = useState({ ref:"", description:"" });
+  const [subcalcScopeDraft, setSubcalcScopeDraft] = useState({ subcalculationId:0, scopeType:"position", scopeRef:"" });
+  const [managementStatus, setManagementStatus] = useState("");
   const [aggregate, setAggregate] = useState<WorkbenchAggregate | null>(null);
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
@@ -521,6 +579,90 @@ function App() {
   };
 
 
+  const loadRecipeLibrary = async () => {
+    const response = await fetch("/api/recipes", { headers:{Accept:"application/json"} });
+    if(!response.ok) throw new Error("Receptbibliotheek kon niet worden geladen.");
+    const payload = await response.json() as {recipes:CalcRecipe[]};
+    setRecipes(Array.isArray(payload.recipes)?payload.recipes:[]);
+    setSelectedRecipeVersionId(current => current ?? payload.recipes?.[0]?.id ?? null);
+  };
+
+  const loadSubcalculations = async () => {
+    const response = await fetch("/api/workbench/current/subcalculations", { headers:{Accept:"application/json"} });
+    if(!response.ok) throw new Error("Deelcalculaties konden niet worden geladen.");
+    const payload = await response.json() as {subcalculations:CalcSubcalculation[]};
+    setSubcalculations(Array.isArray(payload.subcalculations)?payload.subcalculations:[]);
+  };
+
+  const createRecipe = async () => {
+    setManagementStatus("Recept aanmaken…");
+    try {
+      const response = await fetch("/api/recipes", {
+        method:"POST", headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(recipeDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Recept kon niet worden aangemaakt."));
+      setRecipeDraft({recipeKey:"",name:"",description:""});
+      await loadRecipeLibrary();
+      setManagementStatus("Recept aangemaakt in Calc.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Recept kon niet worden aangemaakt."); }
+  };
+
+  const addRecipeLine = async () => {
+    if(!selectedRecipeVersionId){setManagementStatus("Kies eerst een recept.");return;}
+    setManagementStatus("Receptregel toevoegen…");
+    try {
+      const response=await fetch(`/api/recipes/${selectedRecipeVersionId}/lines`,{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({
+          ...recipeLineDraft,
+          quantitySourceType:recipeLineDraft.quantitySourceType||null,
+          quantitySourceRef:recipeLineDraft.quantitySourceRef||null,
+          costSourceType:recipeLineDraft.costSourceType||null,
+          costSourceRef:recipeLineDraft.costSourceRef||null,
+          fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null
+        })
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Receptregel kon niet worden toegevoegd."));
+      setRecipeLineDraft(current=>({...current,lineRef:"",description:"",costSourceRef:"",quantitySourceRef:""}));
+      await loadRecipeLibrary();
+      setManagementStatus("Receptregel toegevoegd.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden toegevoegd."); }
+  };
+
+  const createSubcalculation = async () => {
+    setManagementStatus("Deelcalculatie aanmaken…");
+    try {
+      const response=await fetch("/api/workbench/current/subcalculations",{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(subcalcDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Deelcalculatie kon niet worden aangemaakt."));
+      setSubcalcDraft({ref:"",description:""});
+      await loadSubcalculations();
+      setManagementStatus("Deelcalculatie aangemaakt.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."); }
+  };
+
+  const addSubcalculationScope = async () => {
+    if(!subcalcScopeDraft.subcalculationId){setManagementStatus("Kies eerst een deelcalculatie.");return;}
+    setManagementStatus("Scope toevoegen…");
+    try {
+      const response=await fetch(`/api/workbench/current/subcalculations/${subcalcScopeDraft.subcalculationId}/scopes`,{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({scopeType:subcalcScopeDraft.scopeType,scopeRef:subcalcScopeDraft.scopeRef})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Scope kon niet worden toegevoegd."));
+      setSubcalcScopeDraft(current=>({...current,scopeRef:""}));
+      await loadSubcalculations();
+      setManagementStatus("Scope toegevoegd.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Scope kon niet worden toegevoegd."); }
+  };
+
   const loadWorkbench = async () => {
     const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
@@ -579,6 +721,7 @@ function App() {
           window.history.replaceState({}, "", "/");
         }
         await loadWorkbench();
+        await Promise.all([loadRecipeLibrary(),loadSubcalculations()]);
       } catch (error) {
         setAuthorized(false);
         setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
