@@ -143,6 +143,19 @@ type WorkbenchAggregate = {
     reasons: string[];
     reviewRequired: boolean;
   }>;
+  takeoffs: Array<{
+    id: number;
+    position_ref: string;
+    quantity: number;
+    width_mm: number | null;
+    height_mm: number | null;
+    area_m2: number | null;
+    perimeter_m: number | null;
+    top_m: number | null;
+    bottom_m: number | null;
+    left_m: number | null;
+    right_m: number | null;
+  }>;
   structure: Array<{
     node_key: string;
     parent_key: string | null;
@@ -488,6 +501,7 @@ function App() {
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
   const [aggregate, setAggregate] = useState<WorkbenchAggregate | null>(null);
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
+  const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
@@ -634,6 +648,7 @@ function App() {
           positionRef: proposal.positionRef,
           recipeVersionId: Number(proposal.recipeRef),
           paragraphKey: recipeParagraphKey,
+          takeoffId: selectedTakeoffByPosition[proposal.positionRef] ?? undefined,
           passes: 1,
           parameters: {}
         })
@@ -1331,11 +1346,15 @@ function App() {
             </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
-              <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map(position =>
-                <div className="conceptPosition" key={position.positionRef}><div><strong>{position.positionRef}</strong><span>{position.quantity} × {position.widthMm} × {position.heightMm} mm</span></div><span className={"reviewBadge " + position.reviewStatus}>{position.reviewStatus}</span>{position.description && <p>{position.description}</p>}{position.warnings.map((warning,index)=><small key={index}>{warning}</small>)}</div>
-              )}</div>
+              <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map((position,index) => {
+                const candidates = aggregate.takeoffs.filter(row => row.position_ref.trim() === position.positionRef);
+                const selectedTakeoffId = selectedTakeoffByPosition[position.positionRef];
+                return <div className="conceptPosition" key={`${position.positionRef}-${index}`}><div><strong>{position.positionRef}</strong><span>{position.quantity} × {position.widthMm} × {position.heightMm} mm</span></div><span className={"reviewBadge " + position.reviewStatus}>{position.reviewStatus}</span>{position.description && <p>{position.description}</p>}{position.warnings.map((warning,warningIndex)=><small key={warningIndex}>{warning}</small>)}
+                  {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
+                </div>;
+              })}</div>
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
-                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
+                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
               <div className="recipePanel"><h3>Berekende regels</h3>{aggregate.generatedLines.length === 0 ? <p className="muted">Nog geen recepten geplaatst.</p> : aggregate.generatedLines.map(line =>
                 <div className="generatedLineCard" key={line.recipeLineId}><div><strong>{line.description}</strong><span>{line.recipeName}</span></div><b>{line.activeQuantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit ?? ""}</b><small>{line.lineType}{line.unitCost == null ? " · prijs ontbreekt" : ` · ${money.format(line.unitCost)} / ${line.unit ?? "eenh."}`}</small></div>
