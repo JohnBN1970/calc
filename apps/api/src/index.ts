@@ -647,6 +647,17 @@ app.post("/api/workbench/current/pipeline/preview", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
+  // Legacy preview only: recipe quantities are authoritative in Office.
+  // Refuse recipe-bearing input so Calc can never become a second recipe engine.
+  if (Array.isArray(req.body?.positions) && req.body.positions.some((position: any) =>
+    Array.isArray(position?.recipeLines) && position.recipeLines.length > 0
+  )) {
+    res.status(409).json({
+      error: "Lokale receptberekening is uitgeschakeld. Gebruik Office recipe instances via /api/workbench/current/generated-lines."
+    });
+    return;
+  }
+
   const body = req.body as Partial<Omit<CalculationPipelineInput, "calculationId" | "versionNo" | "establishedAt">>;
   if (
     !Array.isArray(body.positions) ||
