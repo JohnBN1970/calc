@@ -118,6 +118,73 @@ type ProjectContext = {
   buildings: Array<{ id: number; title: string }>;
 };
 
+type WorkbenchAggregate = {
+  contract: "brebo-calc-workbench-aggregate-v1";
+  officeVersion: string;
+  catalogVersion: string;
+  editable: boolean;
+  concept: {
+    positions: Array<{
+      positionRef: string;
+      quantity: number;
+      widthMm: number;
+      heightMm: number;
+      description: string | null;
+      reviewStatus: "reviewed" | "proposed";
+      warnings: string[];
+    }>;
+    unresolved: string[];
+  };
+  recipeProposals: Array<{
+    positionRef: string;
+    recipeRef: string;
+    label: string;
+    confidence: number;
+    reasons: string[];
+    reviewRequired: boolean;
+  }>;
+  placedRecipes: Array<{
+    id: number;
+    name: string;
+    paragraph_key: string;
+    quantity: number | string;
+    unit: string | null;
+  }>;
+  generatedLines: Array<{
+    recipeInstanceId: number;
+    recipeLineId: number;
+    paragraphKey: string;
+    recipeName: string;
+    lineKey: string;
+    lineType: string;
+    description: string;
+    unit: string | null;
+    activeQuantity: number;
+    unitCost: number | null;
+  }>;
+  costRollup: {
+    complete: boolean;
+    missingPriceCount: number;
+    baseCostTotal: number;
+    additionalCostTotal: number;
+    grandTotal: number;
+    byLineType: Record<string,{lineCount:number;baseCost:number;additionalCost:number;totalCost:number}>;
+  };
+  salesPriceResult: null | {
+    priced_direct_cost?: number;
+    commercial_result?: {
+      direct_cost?: number;
+      general_cost?: number;
+      risk?: number;
+      profit?: number;
+      single_margin?: number;
+      commercial_adjustment?: number;
+      sales_price?: number;
+    };
+  };
+  readiness: unknown;
+};
+
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
@@ -410,6 +477,8 @@ function App() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
+  const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
+  const [aggregate, setAggregate] = useState<WorkbenchAggregate | null>(null);
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
@@ -429,6 +498,15 @@ function App() {
     const markupAmount = direct * (markupPct / 100);
     return { direct, markupAmount, sales: direct + markupAmount };
   }, [lines, markupPct]);
+
+  const aggregateFinancials = useMemo(() => {
+    const commercial = aggregate?.salesPriceResult?.commercial_result;
+    const direct = Number(commercial?.direct_cost ?? aggregate?.costRollup.grandTotal ?? 0);
+    const sales = Number(commercial?.sales_price ?? 0);
+    const markupAmount = sales > 0 ? sales - direct : 0;
+    return { direct, sales, markupAmount };
+  }, [aggregate]);
+  const displayedTotals = aggregate ? aggregateFinancials : totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
   useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -478,6 +556,13 @@ function App() {
     const direct = Number(data.version?.direct_cost ?? 0);
     const markupAmount = Number(data.version?.markup_amount ?? 0);
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
+    try {
+      const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
+      if (aggregateResponse.ok) setAggregate(await aggregateResponse.json() as WorkbenchAggregate);
+      else setAggregate(null);
+    } catch {
+      setAggregate(null);
+    }
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
@@ -1157,10 +1242,10 @@ function App() {
       </div>
 
       <section className="kpis">
-        <div><span>Directe kostprijs</span><strong>{money.format(totals.direct)}</strong></div>
-        <div><span>Opslag op inkoop</span><strong><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</strong></div>
-        <div><span>Opslagbedrag</span><strong>{money.format(totals.markupAmount)}</strong></div>
-        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(totals.sales)}</strong></div>
+        <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
+        <div><span>{aggregate ? "Commerciële methode" : "Opslag op inkoop"}</span><strong>{aggregate ? (aggregate.salesPriceResult ? "Office" : "—") : <><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</>}</strong></div>
+        <div><span>{aggregate ? "Opslagen/correcties" : "Opslagbedrag"}</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
+        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
       <section className="workbench">
@@ -1171,12 +1256,43 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
-          <button className="command commandSecondary" type="button" title="Recepten"><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Concept, recepten en Office-berekening" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
         </div>
+
+        {recipeWorkspaceOpen && <div className="recipeWorkspace">
+          <div className="recipeWorkspaceHead">
+            <div><span className="eyebrow">OFFICE-GEDREVEN CALCULATIE</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-versie ${aggregate.officeVersion} · catalogus ${aggregate.catalogVersion.slice(0,12)}…` : "Office-context wordt nog niet geleverd."}</p></div>
+            <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
+            <div className="recipeSummary">
+              <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
+              <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
+              <div><span>Geplaatste recepten</span><strong>{aggregate.placedRecipes.length}</strong></div>
+              <div><span>Prijsstatus</span><strong>{aggregate.costRollup.complete ? "Compleet" : `${aggregate.costRollup.missingPriceCount} prijs(en) ontbreken`}</strong></div>
+            </div>
+            {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
+            <div className="recipeColumns">
+              <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map(position =>
+                <div className="conceptPosition" key={position.positionRef}><div><strong>{position.positionRef}</strong><span>{position.quantity} × {position.widthMm} × {position.heightMm} mm</span></div><span className={"reviewBadge " + position.reviewStatus}>{position.reviewStatus}</span>{position.description && <p>{position.description}</p>}{position.warnings.map((warning,index)=><small key={index}>{warning}</small>)}</div>
+              )}</div>
+              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
+                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}</div>
+              )}</div>
+              <div className="recipePanel"><h3>Berekende regels</h3>{aggregate.generatedLines.length === 0 ? <p className="muted">Nog geen recepten geplaatst.</p> : aggregate.generatedLines.map(line =>
+                <div className="generatedLineCard" key={line.recipeLineId}><div><strong>{line.description}</strong><span>{line.recipeName}</span></div><b>{line.activeQuantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit ?? ""}</b><small>{line.lineType}{line.unitCost == null ? " · prijs ontbreekt" : ` · ${money.format(line.unitCost)} / ${line.unit ?? "eenh."}`}</small></div>
+              )}</div>
+            </div>
+            <div className="costRollupBar">
+              {Object.entries(aggregate.costRollup.byLineType).map(([type,row]) => <div key={type}><span>{type}</span><strong>{money.format(row.totalCost)}</strong><small>{row.lineCount} regel(s)</small></div>)}
+              <div className="costRollupTotal"><span>Direct totaal</span><strong>{money.format(aggregate.costRollup.grandTotal)}</strong><small>{aggregate.costRollup.additionalCostTotal ? `incl. ${money.format(aggregate.costRollup.additionalCostTotal)} aanvullend` : "geen aanvullende kosten"}</small></div>
+            </div>
+          </>}
+        </div>}
 
         {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
