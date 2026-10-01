@@ -143,6 +143,14 @@ type WorkbenchAggregate = {
     reasons: string[];
     reviewRequired: boolean;
   }>;
+  structure: Array<{
+    node_key: string;
+    parent_key: string | null;
+    node_type: string;
+    depth: number;
+    code: string | null;
+    label: string;
+  }>;
   placedRecipes: Array<{
     id: number;
     name: string;
@@ -479,6 +487,8 @@ function App() {
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
   const [aggregate, setAggregate] = useState<WorkbenchAggregate | null>(null);
+  const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
+  const [recipeActionStatus, setRecipeActionStatus] = useState("");
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
@@ -558,7 +568,15 @@ function App() {
     setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     try {
       const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
-      if (aggregateResponse.ok) setAggregate(await aggregateResponse.json() as WorkbenchAggregate);
+      if (aggregateResponse.ok) {
+        const nextAggregate = await aggregateResponse.json() as WorkbenchAggregate;
+        setAggregate(nextAggregate);
+        setRecipeParagraphKey(current => {
+          if (current && nextAggregate.structure.some(node => node.node_key === current)) return current;
+          const paragraph = nextAggregate.structure.find(node => node.node_type === "paragraph");
+          return paragraph?.node_key ?? "";
+        });
+      }
       else setAggregate(null);
     } catch {
       setAggregate(null);
@@ -601,6 +619,35 @@ function App() {
     };
     void boot();
   }, []);
+
+  const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
+    if (!recipeParagraphKey) {
+      setRecipeActionStatus("Kies eerst een Office-paragraaf.");
+      return;
+    }
+    setRecipeActionStatus(`${proposal.label} plaatsen…`);
+    try {
+      const response = await fetch("/api/workbench/current/concept/recipe-proposals/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          positionRef: proposal.positionRef,
+          recipeVersionId: Number(proposal.recipeRef),
+          paragraphKey: recipeParagraphKey,
+          passes: 1,
+          parameters: {}
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden geplaatst."));
+      setRecipeActionStatus(`${proposal.label} geplaatst. Office opnieuw berekend.`);
+      const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
+      if (!aggregateResponse.ok) throw new Error("Nieuwe Office-berekening kon niet worden geladen.");
+      setAggregate(await aggregateResponse.json() as WorkbenchAggregate);
+    } catch (error) {
+      setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden geplaatst.");
+    }
+  };
 
   const patchLine = (id: number, patch: Partial<Line>) => {
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
@@ -1269,6 +1316,13 @@ function App() {
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
           </div>
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
+            <div className="recipeControls">
+              <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
+                <option value="">Kies paragraaf…</option>
+                {aggregate.structure.filter(node => node.node_type === "paragraph").map(node => <option key={node.node_key} value={node.node_key}>{node.code ? `${node.code} · ` : ""}{node.label}</option>)}
+              </select></label>
+              <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-versie is bewerkbaar." : "Office-versie is vergrendeld.")}</span>
+            </div>
             <div className="recipeSummary">
               <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
               <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
@@ -1281,7 +1335,7 @@ function App() {
                 <div className="conceptPosition" key={position.positionRef}><div><strong>{position.positionRef}</strong><span>{position.quantity} × {position.widthMm} × {position.heightMm} mm</span></div><span className={"reviewBadge " + position.reviewStatus}>{position.reviewStatus}</span>{position.description && <p>{position.description}</p>}{position.warnings.map((warning,index)=><small key={index}>{warning}</small>)}</div>
               )}</div>
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
-                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}</div>
+                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
               <div className="recipePanel"><h3>Berekende regels</h3>{aggregate.generatedLines.length === 0 ? <p className="muted">Nog geen recepten geplaatst.</p> : aggregate.generatedLines.map(line =>
                 <div className="generatedLineCard" key={line.recipeLineId}><div><strong>{line.description}</strong><span>{line.recipeName}</span></div><b>{line.activeQuantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit ?? ""}</b><small>{line.lineType}{line.unitCost == null ? " · prijs ontbreekt" : ` · ${money.format(line.unitCost)} / ${line.unit ?? "eenh."}`}</small></div>
