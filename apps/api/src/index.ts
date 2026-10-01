@@ -546,6 +546,62 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/placed-recipes", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const recipes = (workspace.recipes ?? []).map(recipe => ({
+      id: Number(recipe.id),
+      recipeId: recipe.recipe_id == null ? null : Number(recipe.recipe_id),
+      recipeVersionId: recipe.recipe_version_id == null ? null : Number(recipe.recipe_version_id),
+      name: recipe.name,
+      paragraphKey: recipe.paragraph_key,
+      quantity: Number(recipe.quantity),
+      unit: recipe.unit,
+      snapshotHash: recipe.snapshot_hash,
+      parameters: (recipe.parameters ?? []).map(parameter => ({
+        key: parameter.parameter_key,
+        value: parameter.value,
+        calculatedValue: parameter.calculated_value
+      })),
+      lines: (recipe.lines ?? []).map(line => {
+        const calculatedQuantity = Number(line.calculated_quantity ?? 0);
+        const manualQuantity = line.manual_quantity == null ? null : Number(line.manual_quantity);
+        return {
+          id: Number(line.id),
+          key: line.line_key,
+          type: line.line_type,
+          description: line.description,
+          unit: line.unit,
+          calculatedQuantity,
+          manualQuantity,
+          activeQuantity: manualQuantity ?? calculatedQuantity,
+          wastePct: Number(line.waste_pct ?? 0),
+          materialRef: line.material_ref,
+          priceSourceRef: line.price_source_ref,
+          unitCost: line.unit_cost == null ? null : Number(line.unit_cost),
+          isCustom: Number(line.is_custom) === 1
+        };
+      })
+    }));
+
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-placed-recipes-v1",
+      officeVersion: String(workspace.version.version),
+      editable: workspace.editable,
+      recipeCount: recipes.length,
+      recipes
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Geplaatste recepten konden niet uit Office worden opgehaald: ${detail}` });
+  }
+});
+
 app.get("/api/articles/search", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
