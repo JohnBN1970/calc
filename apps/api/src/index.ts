@@ -8,15 +8,17 @@ import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
-import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
+import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./officeRecipeLines.js";
 import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
 import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
-import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
+import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult } from "./officeClient.js";
+import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
+import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -430,39 +432,34 @@ app.get("/api/workbench/current/concept", async (req, res) => {
 app.get("/api/workbench/current/recipe-catalog", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
-
   try {
-    const catalog = await fetchOfficeRecipeCatalog();
+    const recipes = await listCalcRecipes();
     res.setHeader("Cache-Control", "no-store, private");
-    res.json(catalog);
+    res.json({ contract: "brebo-calc-recipe-catalog-v1", recipes });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    console.error("BREBO Calc recipe catalog fetch failed:", detail);
-    res.status(502).json({ error: `Receptcatalogus kon niet uit BREBO Office worden opgehaald: ${detail}` });
+    const detail = error instanceof Error ? error.message : "Onbekende Calc-fout";
+    res.status(500).json({ error: `Calc-receptcatalogus kon niet worden geladen: ${detail}` });
   }
 });
 
 app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
-
   try {
-    const [snapshot, catalog] = await Promise.all([
+    const [snapshot, recipes] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      fetchOfficeRecipeCatalog()
+      listCalcRecipes()
     ]);
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
     const concept = buildConceptFromOfficeContext(snapshot);
-    const rules = proposalRulesFromOfficeCatalog(catalog);
-    const proposals = proposeRecipesForConcept(concept, rules);
+    const proposals = proposeRecipesForConcept(concept, proposalRulesFromCalcRecipes(recipes));
     res.setHeader("Cache-Control", "no-store, private");
     res.json({
-      contract: "brebo-calc-recipe-proposals-v1",
+      contract: "brebo-calc-recipe-proposals-v2",
       sourceDocumentSetId: concept.sourceDocumentSetId,
-      sourceCatalogVersion: catalog.catalog.catalog_version,
       proposalCount: proposals.length,
       proposals
     });
@@ -472,7 +469,6 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   }
 });
 
-
 app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
@@ -480,20 +476,16 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   const positionRef = String(req.body?.positionRef ?? "").trim();
   const recipeVersionId = Number(req.body?.recipeVersionId);
   const requestedTakeoffId = req.body?.takeoffId == null ? null : Number(req.body.takeoffId);
-  const passes = req.body?.passes == null ? 1 : Number(req.body.passes);
-  const parameters = (req.body?.parameters && typeof req.body.parameters === "object" && !Array.isArray(req.body.parameters))
-    ? req.body.parameters as Record<string,string|number>
-    : {};
 
-  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || (requestedTakeoffId !== null && (!Number.isInteger(requestedTakeoffId) || requestedTakeoffId <= 0)) || !Number.isFinite(passes) || passes <= 0) {
+  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || (requestedTakeoffId !== null && (!Number.isInteger(requestedTakeoffId) || requestedTakeoffId <= 0))) {
     res.status(400).json({ error: "Ongeldige receptacceptatie." });
     return;
   }
 
   try {
-    const [snapshot, catalog] = await Promise.all([
+    const [snapshot, recipes] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      fetchOfficeRecipeCatalog()
+      listCalcRecipes()
     ]);
 
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
@@ -526,36 +518,34 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       [takeoff] = matchingTakeoffs;
     }
 
-    const recipe = catalog.catalog.recipes.find(item => item.version_id === recipeVersionId);
-    if (!recipe || !recipe.applicability) {
-      res.status(409).json({ error: "Receptversie staat niet als toepasbaar in de actuele Office-catalogus." });
+    const recipe = recipes.find(item => item.id === recipeVersionId);
+    if (!recipe) {
+      res.status(409).json({ error: "Calc-receptversie bestaat niet." });
       return;
     }
 
     const concept = buildConceptFromOfficeContext(snapshot);
-    const proposals = proposeRecipesForConcept(concept, proposalRulesFromOfficeCatalog(catalog));
+    const proposals = proposeRecipesForConcept(concept, proposalRulesFromCalcRecipes(recipes));
     if (!proposals.some(item => item.positionRef === positionRef && Number(item.recipeRef) === recipeVersionId)) {
-      res.status(409).json({ error: "Dit recept is niet voorgesteld voor deze positie op basis van de actuele Office-regels." });
+      res.status(409).json({ error: "Dit Calc-recept is niet toepasbaar op deze positie." });
       return;
     }
 
-    const generated = generateCalcLinesFromOfficeRecipe({
-      catalog,
-      recipeVersionId,
-      takeoff,
-      passes,
-      parameterValues: parameters
-    });
+    const sourceRequests = calcRecipeSourceRequests(recipe);
+    const resolution = sourceRequests.length
+      ? await resolveOfficeCalcSources({ projectId: session.officeProjectId, sources: sourceRequests })
+      : { contract: "brebo-office-calc-source-resolution-v1" as const, project_id: session.officeProjectId, results: [] };
+
+    const generated = generateCalcOwnedRecipeLines({ recipe, takeoff, resolution });
 
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json({
-      contract: "brebo-calc-generated-recipe-lines-v1",
+      contract: "brebo-calc-generated-recipe-lines-v2",
       positionRef,
       takeoffId: takeoff.id,
       recipeVersionId,
-      recipeName: generated.recipeName,
-      catalogVersion: catalog.catalog.catalog_version,
-      lines: generated.lines
+      recipeName: recipe.name,
+      lines: generated
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende receptgeneratiefout";
@@ -656,21 +646,165 @@ app.post("/api/session/logout", (req, res) => {
   res.status(204).end();
 });
 
+async function currentCalcVersionId(calculationId:number):Promise<number> {
+  const [versions]=await db.execute<RowDataPacket[]>(
+    "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+    [calculationId]
+  );
+  if(!versions[0]) throw new Error("Calculatie heeft geen versie.");
+  return Number(versions[0].id);
+}
+
+app.get("/api/workbench/current/subcalculations", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-subcalculations-v1",versionId,subcalculations});
+  } catch(error) {
+    res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden geladen."});
+  }
+});
+
+app.post("/api/workbench/current/subcalculations", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const id=await createCalcSubcalculation({
+      versionId,
+      ref:String(req.body?.ref??""),
+      description:String(req.body?.description??""),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({subcalculationId:id});
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."});
+  }
+});
+
+app.post("/api/workbench/current/subcalculations/:id/scopes", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    const subcalculationId=Number(req.params.id);
+    if(!subcalculations.some(item=>item.id===subcalculationId)) {
+      res.status(404).json({error:"Deelcalculatie hoort niet bij deze Calc-versie."});
+      return;
+    }
+    const id=await addCalcSubcalculationScope({
+      subcalculationId,
+      scopeType:String(req.body?.scopeType??"custom") as any,
+      scopeRef:String(req.body?.scopeRef??""),
+      includeDescendants:Boolean(req.body?.includeDescendants??false),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({scopeId:id});
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Scope kon niet worden toegevoegd."});
+  }
+});
+
+app.put("/api/workbench/current/subcalculations/:id/lines/:lineId", async (req, res) => {
+  const session=requireSession(req,res);
+  if(!session) return;
+  try {
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const subcalculations=await listCalcSubcalculations(versionId);
+    const subcalculationId=Number(req.params.id);
+    if(!subcalculations.some(item=>item.id===subcalculationId)) {
+      res.status(404).json({error:"Deelcalculatie hoort niet bij deze Calc-versie."});
+      return;
+    }
+    await setManualLineMembership({
+      subcalculationId,
+      lineId:Number(req.params.lineId),
+      included:Boolean(req.body?.included)
+    });
+    res.status(204).end();
+  } catch(error) {
+    res.status(400).json({error:error instanceof Error?error.message:"Deelcalculatieregel kon niet worden bijgewerkt."});
+  }
+});
+
+app.get("/api/recipes", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const recipes = await listCalcRecipes();
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({ contract: "brebo-calc-recipe-catalog-v1", recipes });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Recepten konden niet worden geladen.";
+    res.status(500).json({ error: detail });
+  }
+});
+
+app.post("/api/recipes", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const recipeId = await createCalcRecipe({
+      recipeKey: String(req.body?.recipeKey ?? ""),
+      name: String(req.body?.name ?? ""),
+      description: req.body?.description == null ? null : String(req.body.description)
+    });
+    res.status(201).json({ recipeId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Recept kon niet worden aangemaakt.";
+    res.status(400).json({ error: detail });
+  }
+});
+
+app.post("/api/recipes/:versionId/lines", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const lineId = await addCalcRecipeLine({
+      recipeVersionId: Number(req.params.versionId),
+      lineRef: String(req.body?.lineRef ?? ""),
+      sortOrder: Number(req.body?.sortOrder ?? 0),
+      costKind: String(req.body?.costKind ?? "") as any,
+      description: String(req.body?.description ?? ""),
+      unit: req.body?.unit == null ? null : String(req.body.unit),
+      quantitySourceType: req.body?.quantitySourceType == null ? null : String(req.body.quantitySourceType),
+      quantitySourceRef: req.body?.quantitySourceRef == null ? null : String(req.body.quantitySourceRef),
+      costSourceType: req.body?.costSourceType == null ? null : String(req.body.costSourceType),
+      costSourceRef: req.body?.costSourceRef == null ? null : String(req.body.costSourceRef),
+      takeoffBasis: String(req.body?.takeoffBasis ?? "fixed") as any,
+      factor: req.body?.factor == null ? 1 : Number(req.body.factor),
+      wastePct: req.body?.wastePct == null ? 0 : Number(req.body.wastePct),
+      fixedQuantity: req.body?.fixedQuantity == null ? null : Number(req.body.fixedQuantity),
+      roundingStep: req.body?.roundingStep == null ? null : Number(req.body.roundingStep),
+      minimumQuantity: req.body?.minimumQuantity == null ? null : Number(req.body.minimumQuantity),
+      metadata: req.body?.metadata && typeof req.body.metadata === "object" ? req.body.metadata : null
+    });
+    res.status(201).json({ lineId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Receptregel kon niet worden toegevoegd.";
+    res.status(400).json({ error: detail });
+  }
+});
+
 app.get("/api/workbench/current/aggregate", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
   try {
-    const [context, catalog, workspace] = await Promise.all([
+    const [context, recipes, workspace] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      fetchOfficeRecipeCatalog(),
+      listCalcRecipes(),
       fetchOfficeWorkspaceState(session.officeCalculationId)
     ]);
     if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
-    const aggregate = buildWorkbenchAggregate({ context, catalog, workspace });
+    const aggregate = buildWorkbenchAggregate({ context, recipes, workspace });
     res.setHeader("Cache-Control", "no-store, private");
     res.json(aggregate);
   } catch (error) {

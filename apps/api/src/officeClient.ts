@@ -583,3 +583,47 @@ export async function publishCalcResult(input:{
   if(!response.ok) throw new Error(payload?.message || `Office Calc-result publication failed with status ${response.status}.`);
   return payload;
 }
+
+
+export type OfficeCalcSourceResolution = {
+  contract: "brebo-office-calc-source-resolution-v1";
+  project_id: number | null;
+  results: Array<{
+    request_index: number;
+    type: string;
+    ref: string;
+    status: "resolved";
+    value: number;
+    unit: string | null;
+    description: string;
+    source: Record<string,unknown>;
+  }>;
+};
+
+export async function resolveOfficeCalcSources(input:{
+  projectId:number;
+  sources:Array<{type:string;ref:string;context?:Record<string,unknown>}>;
+}):Promise<OfficeCalcSourceResolution> {
+  const path="/api/workbench/v2/calc-sources/resolve";
+  const body=JSON.stringify({
+    project_id:input.projectId,
+    sources:input.sources
+  });
+  const headers=signedHeaders("POST",path,body);
+  headers["Content-Type"]="application/json";
+  const response=await fetch(config.office.baseUrl+path,{
+    method:"POST",
+    headers,
+    body,
+    redirect:"error",
+    signal:AbortSignal.timeout(10000)
+  });
+  const text=await response.text();
+  let payload:any={};
+  try{payload=text?JSON.parse(text):{};}catch{}
+  if(!response.ok) throw new Error(payload?.message||`Office Calc source resolution failed with status ${response.status}.`);
+  if(payload?.contract!=="brebo-office-calc-source-resolution-v1"||!Array.isArray(payload?.results)){
+    throw new Error("Office returned an invalid Calc source resolution contract.");
+  }
+  return payload as OfficeCalcSourceResolution;
+}
