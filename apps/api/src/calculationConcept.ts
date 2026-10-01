@@ -43,23 +43,37 @@ export function buildConceptFromOfficeContext(snapshot: OfficeCalculationContext
   const positions: CalculationConceptPosition[] = [];
   const unresolved = [...context.review.unresolved];
 
+  const takeoffsByPosition = new Map<string, typeof context.takeoff>();
   for (const row of context.takeoff) {
     const positionRef = row.position_ref.trim();
     if (!positionRef) {
       unresolved.push("Uittrekstaat bevat een positie zonder referentie.");
       continue;
     }
-    if (!(row.quantity > 0) || !(Number(row.width_mm) > 0) || !(Number(row.height_mm) > 0)) {
+    const rows = takeoffsByPosition.get(positionRef) ?? [];
+    rows.push(row);
+    takeoffsByPosition.set(positionRef, rows);
+  }
+
+  for (const [positionRef, takeoffs] of takeoffsByPosition) {
+    const completeTakeoffs = takeoffs.filter(row =>
+      row.quantity > 0 && Number(row.width_mm) > 0 && Number(row.height_mm) > 0
+    );
+    if (!completeTakeoffs.length) {
       unresolved.push(`Positie ${positionRef} heeft nog geen volledige positieve hoeveelheid/B×H.`);
       continue;
     }
 
+    const row = completeTakeoffs[0];
     const facts = factsByPosition.get(positionRef) ?? [];
     const descriptions = facts.filter(f => f.fact_type === "description" && f.value_text?.trim());
     const prices = facts.filter(f => f.fact_type === "supplier_unit_price" && f.value_number !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
     const warnings: string[] = [];
 
+    if (completeTakeoffs.length > 1) {
+      warnings.push(`${completeTakeoffs.length} geometrische take-offs gevonden; expliciete keuze vereist vóór receptplaatsing.`);
+    }
     const distinctDescriptions = [...new Set(descriptions.map(f => f.value_text!.trim()))];
     if (distinctDescriptions.length > 1) warnings.push("Meerdere bronbeschrijvingen gevonden.");
     const distinctPrices = [...new Set(prices.map(f => Number(f.value_number)))];
