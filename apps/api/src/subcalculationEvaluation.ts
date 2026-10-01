@@ -1,4 +1,5 @@
 import type { RowDataPacket } from "mysql2";
+import type { Pool, PoolConnection } from "mysql2/promise";
 import { db } from "./db.js";
 import { listCalcSubcalculations } from "./calcSubcalculationRepository.js";
 
@@ -21,8 +22,8 @@ function lineAmounts(row:RowDataPacket){
   };
 }
 
-export async function evaluateSubcalculations(versionId:number):Promise<SubcalculationResult[]>{
-  const [lines]=await db.execute<RowDataPacket[]>(`
+export async function evaluateSubcalculations(versionId:number, executor:Pick<Pool|PoolConnection,"execute"> = db):Promise<SubcalculationResult[]>{
+  const [lines]=await executor.execute<RowDataPacket[]>(`
     SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
            equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
       FROM calculation_lines
@@ -31,7 +32,7 @@ export async function evaluateSubcalculations(versionId:number):Promise<Subcalcu
   `,[versionId]);
   const lineById=new Map(lines.map(row=>[Number(row.id),row]));
 
-  const [tags]=await db.execute<RowDataPacket[]>(`
+  const [tags]=await executor.execute<RowDataPacket[]>(`
     SELECT t.line_id,t.scope_type,t.scope_ref
       FROM calculation_line_scope_tags t
       JOIN calculation_lines l ON l.id=t.line_id
@@ -51,7 +52,7 @@ export async function evaluateSubcalculations(versionId:number):Promise<Subcalcu
   const subcalculations=await listCalcSubcalculations(versionId);
   const results:SubcalculationResult[]=[];
   for(const sub of subcalculations){
-    const [manualRows]=await db.execute<RowDataPacket[]>(
+    const [manualRows]=await executor.execute<RowDataPacket[]>(
       "SELECT calculation_line_id FROM calculation_subcalculation_line_memberships WHERE subcalculation_id=?",
       [sub.id]
     );
