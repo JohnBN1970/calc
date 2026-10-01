@@ -18,6 +18,7 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
+import { createTailCostComponent, evaluateTailCosts, listTailCostComponents } from "./tailCostRepository.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -654,6 +655,48 @@ async function currentCalcVersionId(calculationId:number):Promise<number> {
   if(!versions[0]) throw new Error("Calculatie heeft geen versie.");
   return Number(versions[0].id);
 }
+
+app.get("/api/workbench/current/tail-costs", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const components=await listTailCostComponents(versionId);
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-tail-costs-v1",versionId,components});
+  }catch(error){res.status(500).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden geladen."});}
+});
+
+app.post("/api/workbench/current/tail-costs", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const id=await createTailCostComponent({
+      versionId,
+      componentKey:String(req.body?.componentKey??""),
+      description:String(req.body?.description??""),
+      basis:String(req.body?.basis??"percentage") as any,
+      value:Number(req.body?.value??0),
+      baseScope:String(req.body?.baseScope??"direct_cost") as any,
+      baseRef:req.body?.baseRef==null?null:String(req.body.baseRef),
+      quantity:req.body?.quantity==null?null:Number(req.body.quantity),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({tailCostComponentId:id});
+  }catch(error){res.status(400).json({error:error instanceof Error?error.message:"Staartkostencomponent kon niet worden aangemaakt."});}
+});
+
+app.post("/api/workbench/current/tail-costs/evaluate", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const components=await listTailCostComponents(versionId);
+    const directCost=Number(req.body?.directCost??0);
+    if(!Number.isFinite(directCost)||directCost<0)throw new Error("Ongeldige directe kost.");
+    const evaluated=evaluateTailCosts({directCost,components,baseAmounts:req.body?.baseAmounts??{}});
+    const tailCost=evaluated.reduce((sum,row)=>sum+row.amount,0);
+    res.json({contract:"brebo-calc-tail-cost-evaluation-v1",directCost,components:evaluated,tailCost,salesPrice:directCost+tailCost});
+  }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden berekend."});}
+});
 
 app.get("/api/workbench/current/subcalculations", async (req, res) => {
   const session=requireSession(req,res);
