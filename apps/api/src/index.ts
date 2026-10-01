@@ -15,6 +15,7 @@ import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
+import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -901,14 +902,17 @@ app.put("/api/workbench/current", async (req, res) => {
         }
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const verified = verifiedState.calc_result;
-      if (
-        !verified ||
-        verified.content_hash !== published.content_hash ||
-        verified.current_for_office_version !== true
-      ) {
-        throw new Error("Office heeft het Calc-resultaat ontvangen maar niet als actuele calculatieversie bevestigd.");
-      }
+      verifyOfficeCalcResultSync({
+        publishedContentHash: published.content_hash,
+        expectedOfficeVersion: String(officeState.version.version),
+        expectedTotals: {
+          direct_cost: directCost,
+          markup_amount: markupAmount,
+          sales_price: salesPrice
+        },
+        expectedLineCount: lines.length,
+        calcResult: verifiedState.calc_result
+      });
       officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
     } catch(error) {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
