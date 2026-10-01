@@ -516,7 +516,6 @@ function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
-  const [markupPct, setMarkupPct] = useState(30);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -735,9 +734,6 @@ function App() {
     }
     if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
     const data = await response.json();
-    const direct = Number(data.version?.direct_cost ?? 0);
-    const markupAmount = Number(data.version?.markup_amount ?? 0);
-    setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     try {
       const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
       if (aggregateResponse.ok) {
@@ -1549,7 +1545,6 @@ function App() {
       <section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
-        <div><span>Opslagbedrag</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
@@ -1607,7 +1602,7 @@ function App() {
             </div>
             <div className="costRollupBar">
               <div className="costRollupTotal"><span>Calc directe kost</span><strong>{money.format(totals.direct)}</strong><small>som van de zichtbare calculatieregels</small></div>
-              <div><span>Calc opslag</span><strong>{money.format(totals.markupAmount)}</strong><small>{markupPct.toLocaleString("nl-NL",{maximumFractionDigits:2})}%</small></div>
+              <div><span>Calc staartkosten</span><strong>{money.format(totals.markupAmount)}</strong><small>opbouw via Staartkosten</small></div>
               <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
