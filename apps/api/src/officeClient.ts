@@ -418,20 +418,17 @@ export type OfficeWorkspaceState = {
     content_hash: string;
     published_by: number;
     published_at: number;
+    calculation_id: number;
+    office_version: string;
+    calc_version: string;
     current_for_office_version?: boolean;
-    payload: {
-      contract: string;
-      calculation_id: number;
-      office_version: string;
-      calc_version: string;
-      lines: unknown[];
-      totals: {
-        direct_cost: number;
-        markup_amount: number;
-        sales_price: number;
-      };
-      source?: Record<string,unknown>;
+    lines: unknown[];
+    totals: {
+      direct_cost: number;
+      markup_amount: number;
+      sales_price: number;
     };
+    source?: Record<string,unknown>;
   };
   result?: {
     calculation_id?: number;
