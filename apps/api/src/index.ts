@@ -982,6 +982,19 @@ app.put("/api/workbench/current", async (req, res) => {
       return;
     }
 
+    const [preservedMemberships] = await connection.execute<RowDataPacket[]>(`
+      SELECT m.subcalculation_id,m.calculation_line_id,m.membership_source
+        FROM calculation_subcalculation_line_memberships m
+        JOIN calculation_lines l ON l.id=m.calculation_line_id
+       WHERE l.version_id=?
+    `,[version.id]);
+    const [preservedScopeTags] = await connection.execute<RowDataPacket[]>(`
+      SELECT t.line_id,t.scope_type,t.scope_ref,t.source
+        FROM calculation_line_scope_tags t
+        JOIN calculation_lines l ON l.id=t.line_id
+       WHERE l.version_id=? AND t.source<>'generated'
+    `,[version.id]);
+
     await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
 
     let directCost = 0;
@@ -1044,6 +1057,29 @@ app.put("/api/workbench/current", async (req, res) => {
       if (scopeTags.length) {
         await storeLineScopeTags(connection, insert.insertId, scopeTags);
       }
+    }
+
+    for (const membership of preservedMemberships) {
+      const nextLineId = temporaryIds.get(Number(membership.calculation_line_id));
+      if (!nextLineId) continue;
+      await connection.execute(
+        `INSERT INTO calculation_subcalculation_line_memberships
+          (subcalculation_id,calculation_line_id,membership_source)
+         VALUES(?,?,?)
+         ON DUPLICATE KEY UPDATE membership_source=VALUES(membership_source)`,
+        [Number(membership.subcalculation_id),nextLineId,String(membership.membership_source)]
+      );
+    }
+
+    for (const tag of preservedScopeTags) {
+      const nextLineId = temporaryIds.get(Number(tag.line_id));
+      if (!nextLineId) continue;
+      await connection.execute(
+        `INSERT INTO calculation_line_scope_tags(line_id,scope_type,scope_ref,source)
+         VALUES(?,?,?,?)
+         ON DUPLICATE KEY UPDATE source=VALUES(source)`,
+        [nextLineId,String(tag.scope_type),String(tag.scope_ref),String(tag.source)]
+      );
     }
 
     for (const allocation of allocations) {
