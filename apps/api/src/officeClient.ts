@@ -413,6 +413,30 @@ export type OfficeWorkspaceState = {
     [key:string]: unknown;
   };
   editable: boolean;
+  result?: {
+    calculation_id?: number;
+    version?: string;
+    content_hash?: string;
+    status?: string;
+    parameters?: {
+      pricing_mode?: string;
+      commercial_method?: string;
+      general_cost_pct?: number;
+      risk_pct?: number;
+      profit_pct?: number;
+      single_margin_pct?: number;
+      commercial_adjustment?: number;
+      price_date?: string | null;
+      price_level?: string | null;
+    };
+    priced_direct_cost?: number;
+    options_direct_cost?: number;
+    options_sales_price?: number;
+    commercial_factor?: number;
+    commercial_result?: Record<string, unknown>;
+    components?: Record<string, unknown>;
+    source?: string;
+  };
   recipes?: Array<{
     id: number;
     recipe_id: number | null;
