@@ -9,7 +9,7 @@ import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -461,6 +461,87 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende receptvoorstelfout";
+    res.status(422).json({ error: detail });
+  }
+});
+
+
+app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  const positionRef = String(req.body?.positionRef ?? "").trim();
+  const recipeVersionId = Number(req.body?.recipeVersionId);
+  const paragraphKey = String(req.body?.paragraphKey ?? "").trim();
+  const passes = req.body?.passes == null ? 1 : Number(req.body.passes);
+  const parameters = (req.body?.parameters && typeof req.body.parameters === "object" && !Array.isArray(req.body.parameters))
+    ? req.body.parameters as Record<string,string|number>
+    : {};
+
+  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || !Number.isFinite(passes) || passes < 0) {
+    res.status(400).json({ error: "Ongeldige receptacceptatie." });
+    return;
+  }
+
+  try {
+    const [snapshot, catalog, workspace] = await Promise.all([
+      fetchCalculationContextSnapshot(session.officeCalculationId),
+      fetchOfficeRecipeCatalog(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
+    ]);
+
+    if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
+      res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
+      return;
+    }
+    if (!workspace.editable || workspace.version.status !== "draft" || workspace.version.locked_at !== null) {
+      res.status(409).json({ error: "De actuele Office-calculatieversie is niet bewerkbaar." });
+      return;
+    }
+
+    const takeoff = snapshot.context.takeoff.find(row => row.position_ref.trim() === positionRef);
+    if (!takeoff) {
+      res.status(409).json({ error: "Geen geometrische take-off gevonden voor deze positie." });
+      return;
+    }
+
+    const recipe = catalog.catalog.recipes.find(item => item.version_id === recipeVersionId);
+    if (!recipe || !recipe.applicability) {
+      res.status(409).json({ error: "Receptversie staat niet als toepasbaar in de actuele Office-catalogus." });
+      return;
+    }
+
+    const concept = buildConceptFromOfficeContext(snapshot);
+    const proposals = proposeRecipesForConcept(concept, proposalRulesFromOfficeCatalog(catalog));
+    const proposed = proposals.some(item => item.positionRef === positionRef && Number(item.recipeRef) === recipeVersionId);
+    if (!proposed) {
+      res.status(409).json({ error: "Dit recept is niet voorgesteld voor deze positie op basis van de actuele Office-regels." });
+      return;
+    }
+
+    const placed = await placeOfficeRecipeFromTakeoff({
+      calculationId: session.officeCalculationId,
+      version: String(workspace.version.version),
+      paragraphKey,
+      recipeVersionId,
+      takeoffId: takeoff.id,
+      passes,
+      parameters,
+      actorId: session.actorId
+    });
+
+    res.setHeader("Cache-Control", "no-store, private");
+    res.status(201).json({
+      contract: "brebo-calc-recipe-acceptance-v1",
+      positionRef,
+      recipeVersionId,
+      takeoffId: takeoff.id,
+      sourceCatalogVersion: catalog.catalog.catalog_version,
+      officeVersion: String(workspace.version.version),
+      recipeInstanceId: placed.recipe_instance_id
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende receptacceptatiefout";
     res.status(422).json({ error: detail });
   }
 });
