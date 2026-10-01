@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
-import type { TailCostComponent } from "./tailCostRepository.js";
+import type { TailCostComponent } from "./tailCostEngine.js";
 
 const component=(overrides:Partial<TailCostComponent>):TailCostComponent=>({
   id:1,versionId:1,ownerType:"calculation",ownerRef:null,componentKey:"x",description:"X",
