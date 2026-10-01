@@ -55,3 +55,38 @@ export function officeAuthoritativeRecipeLines(workspace: OfficeWorkspaceState):
     };
   }));
 }
+
+
+export type OfficeCostingInputLine = {
+  source: "office_recipe_instance";
+  identity: string;
+  structureRef: string;
+  recipeInstanceId: number;
+  recipeVersionId: number | null;
+  recipeLineRef: string;
+  description: string;
+  unit: string | null;
+  quantity: number;
+  materialRef: string | null;
+  priceSourceRef: string | null;
+  officeUnitCost: number | null;
+  snapshotHash: string;
+};
+
+export function officeCostingInputLines(workspace: OfficeWorkspaceState): OfficeCostingInputLine[] {
+  return officeAuthoritativeRecipeLines(workspace).map(line => ({
+    source: "office_recipe_instance",
+    identity: `${line.recipeInstanceId}:${line.lineKey}`,
+    structureRef: line.paragraphKey,
+    recipeInstanceId: line.recipeInstanceId,
+    recipeVersionId: line.recipeVersionId,
+    recipeLineRef: line.lineKey,
+    description: line.description,
+    unit: line.unit,
+    quantity: line.activeQuantity,
+    materialRef: line.materialRef,
+    priceSourceRef: line.priceSourceRef,
+    officeUnitCost: line.unitCost,
+    snapshotHash: line.snapshotHash
+  }));
+}
