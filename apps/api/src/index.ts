@@ -13,6 +13,7 @@ import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./offic
 import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
 import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
+import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -829,6 +830,29 @@ app.post("/api/session/logout", (req, res) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
   res.status(204).end();
+});
+
+app.get("/api/workbench/current/aggregate", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const [context, catalog, workspace] = await Promise.all([
+      fetchCalculationContextSnapshot(session.officeCalculationId),
+      fetchOfficeRecipeCatalog(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
+    ]);
+    if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
+      res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
+      return;
+    }
+    const aggregate = buildWorkbenchAggregate({ context, catalog, workspace });
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json(aggregate);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Workbench kon niet worden opgebouwd: ${detail}` });
+  }
 });
 
 app.get("/api/workbench/current", async (req, res) => {
