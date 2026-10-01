@@ -399,8 +399,44 @@ export async function fetchOfficeRecipeCatalog(): Promise<OfficeRecipeCatalog> {
 export type OfficeWorkspaceState = {
   contract: "brebo-calculation-workspace-v2";
   calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
-  version: { version: string; status: string; locked_at: string | null; [key:string]: unknown };
+  version: {
+    version: string;
+    status: string;
+    locked_at: string | null;
+    pricing_mode?: string;
+    commercial_method?: string;
+    general_cost_pct?: number | string;
+    risk_pct?: number | string;
+    profit_pct?: number | string;
+    single_margin_pct?: number | string;
+    commercial_adjustment?: number | string;
+    [key:string]: unknown;
+  };
   editable: boolean;
+  result?: {
+    calculation_id?: number;
+    version?: string;
+    content_hash?: string;
+    status?: string;
+    parameters?: {
+      pricing_mode?: string;
+      commercial_method?: string;
+      general_cost_pct?: number;
+      risk_pct?: number;
+      profit_pct?: number;
+      single_margin_pct?: number;
+      commercial_adjustment?: number;
+      price_date?: string | null;
+      price_level?: string | null;
+    };
+    priced_direct_cost?: number;
+    options_direct_cost?: number;
+    options_sales_price?: number;
+    commercial_factor?: number;
+    commercial_result?: Record<string, unknown>;
+    components?: Record<string, unknown>;
+    source?: string;
+  };
   recipes?: Array<{
     id: number;
     recipe_id: number | null;

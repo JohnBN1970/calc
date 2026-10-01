@@ -551,6 +551,30 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
 });
 
 
+app.get("/api/workbench/current/sales-price-result", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    if (!workspace.result) {
+      res.status(409).json({ error: "Office heeft nog geen canoniek verkoopprijsresultaat voor deze calculatie." });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-office-sales-price-result-v1",
+      officeVersion: String(workspace.version.version),
+      editable: workspace.editable,
+      source: workspace.result.source ?? "office_canonical_result",
+      result: workspace.result
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Verkoopprijsresultaat kon niet uit Office worden opgehaald: ${detail}` });
+  }
+});
+
 app.get("/api/workbench/current/cost-rollup", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
