@@ -1302,8 +1302,10 @@ function App() {
           }))
         })
       });
+      const payload = await response.json().catch(() => ({})) as {officeSync?:{ok?:boolean;error?:string}};
       if (!response.ok) throw new Error("Opslaan mislukt");
-      setStatus("Opgeslagen");
+      if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
+      else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
       await loadWorkbench();
     } catch {
       setStatus("Opslaan mislukt");
