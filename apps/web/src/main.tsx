@@ -526,6 +526,7 @@ function App() {
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
   const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
+  const [activeSubcalculationId,setActiveSubcalculationId]=useState<number|null>(null);
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -565,7 +566,33 @@ function App() {
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
   }, [lines, evaluatedTailCosts]);
 
-  const displayedTotals = totals;
+  const activeSubcalculationResult = useMemo(
+    () => activeSubcalculationId == null ? null : subcalculationResults.find(row => row.id === activeSubcalculationId) ?? null,
+    [activeSubcalculationId, subcalculationResults]
+  );
+
+  const workbenchLines = useMemo(() => {
+    if (!activeSubcalculationResult) return lines;
+    const included = new Set(activeSubcalculationResult.lineIds);
+    const lineById = new Map(lines.map(line => [line.id, line]));
+    for (const id of [...included]) {
+      let parentId = lineById.get(id)?.parentId ?? null;
+      while (parentId != null) {
+        if (included.has(parentId)) break;
+        included.add(parentId);
+        parentId = lineById.get(parentId)?.parentId ?? null;
+      }
+    }
+    return lines.filter(line => included.has(line.id));
+  }, [lines, activeSubcalculationResult]);
+
+  const displayedTotals = activeSubcalculationResult
+    ? {
+        direct: activeSubcalculationResult.directCost,
+        markupAmount: activeSubcalculationResult.allocatedTailCost,
+        sales: activeSubcalculationResult.salesPrice
+      }
+    : totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
   useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -692,6 +719,33 @@ function App() {
       await loadRecipeLibrary();
       setManagementStatus("Receptregel toegevoegd.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden toegevoegd."); }
+  };
+
+  const addSelectedLinesToSubcalculation = async (subcalculationId:number) => {
+    if(!subcalculationId) return;
+    const persistedIds=selectedLineIds.filter(id=>id>0);
+    if(persistedIds.length!==selectedLineIds.length){
+      setManagementStatus("Sla nieuwe regels eerst op voordat je ze aan een deelcalculatie koppelt.");
+      return;
+    }
+    setManagementStatus("Regels koppelen aan deelcalculatie…");
+    try{
+      for(const lineId of persistedIds){
+        const response=await fetch(`/api/workbench/current/subcalculations/${subcalculationId}/lines/${lineId}`,{
+          method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({included:true})
+        });
+        if(!response.ok){
+          const payload=await response.json().catch(()=>({}));
+          throw new Error(String(payload.error??`Regel #${lineId} kon niet worden gekoppeld.`));
+        }
+      }
+      await loadSubcalculationResults();
+      setSelectedLineIds([]);
+      setManagementStatus(`${persistedIds.length} regel(s) gekoppeld aan deelcalculatie.`);
+    }catch(error){
+      setManagementStatus(error instanceof Error?error.message:"Regels konden niet worden gekoppeld.");
+    }
   };
 
   const createSubcalculation = async () => {
@@ -1770,6 +1824,19 @@ function App() {
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
         </div>}
 
+        <div className="subcalcWorkmode">
+          <label><span>Weergave</span><select value={activeSubcalculationId ?? ""} onChange={event=>{setActiveSubcalculationId(event.target.value?Number(event.target.value):null);setSelectedLineIds([]);}}>
+            <option value="">Volledige calculatie</option>
+            {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
+          </select></label>
+          {activeSubcalculationResult && <div className="subcalcWorkmodeTotals">
+            <span><small>Direct</small><strong>{money.format(activeSubcalculationResult.directCost)}</strong></span>
+            <span><small>Staartkosten</small><strong>{money.format(activeSubcalculationResult.allocatedTailCost)}</strong></span>
+            <span><small>Verkoop</small><strong>{money.format(activeSubcalculationResult.salesPrice)}</strong></span>
+            <span><small>Regels</small><strong>{activeSubcalculationResult.lineIds.length}</strong></span>
+          </div>}
+        </div>
+
         {selectedLineIds.length > 0 && <div className="bulkBar">
           <strong>{selectedLineIds.length} geselecteerd</strong>
           <button type="button" onClick={bulkDuplicate}>Dupliceren</button>
@@ -1786,6 +1853,12 @@ function App() {
               )}
             </select>
           </label>
+          {subcalculations.length>0 && <label>Toevoegen aan deelcalc
+            <select defaultValue="__choose" onChange={event=>{const value=Number(event.target.value);if(value)void addSelectedLinesToSubcalculation(value);event.currentTarget.value="__choose";}}>
+              <option value="__choose">Kies…</option>
+              {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
+            </select>
+          </label>}
           <button type="button" onClick={bulkDetachSource}>Bron loskoppelen</button>
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
@@ -1793,12 +1866,12 @@ function App() {
         <div className="grid">
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
             {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
-              {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />}
+              {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={workbenchLines.length > 0 && selectedLineIds.length === workbenchLines.length} onChange={event => setSelectedLineIds(event.target.checked ? workbenchLines.map(line => line.id) : [])} />}
               <span>{column.label}</span>
               <span className="columnResizeHandle" role="separator" aria-orientation="vertical" title="Sleep om kolombreedte te wijzigen" onPointerDown={event => startColumnResize(event,column.key)} />
             </b>)}
           </div>
-          {lines.map(line => {
+          {workbenchLines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
                 <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
@@ -1849,7 +1922,7 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
-          <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+          {activeSubcalculationId == null ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button> : <div className="subcalcFilteredNotice">Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan.</div>}
         </div>
       </section>
     </main>
