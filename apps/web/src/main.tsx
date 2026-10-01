@@ -1416,8 +1416,8 @@ function App() {
             <div className="recipeSummary">
               <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
               <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
-              <div><span>Geplaatste recepten</span><strong>{aggregate.placedRecipes.length}</strong></div>
-              <div><span>Prijsstatus</span><strong>{aggregate.costRollup.complete ? "Compleet" : `${aggregate.costRollup.missingPriceCount} prijs(en) ontbreken`}</strong></div>
+              <div><span>Calc-regels uit recept</span><strong>{lines.filter(line => line.priceSourceType === "recipe").length}</strong></div>
+              <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
             </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
@@ -1431,13 +1431,14 @@ function App() {
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
                 <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
-              <div className="recipePanel"><h3>Berekende regels</h3>{aggregate.generatedLines.length === 0 ? <p className="muted">Nog geen recepten geplaatst.</p> : aggregate.generatedLines.map(line =>
-                <div className="generatedLineCard" key={line.recipeLineId}><div><strong>{line.description}</strong><span>{line.recipeName}</span></div><b>{line.activeQuantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit ?? ""}</b><small>{line.lineType}{line.unitCost == null ? " · prijs ontbreekt" : ` · ${money.format(line.unitCost)} / ${line.unit ?? "eenh."}`}</small></div>
+              <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
+                <div className="generatedLineCard" key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Office-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b><small>{money.format(lineDirect(line))} direct</small></div>
               )}</div>
             </div>
             <div className="costRollupBar">
-              {Object.entries(aggregate.costRollup.byLineType).map(([type,row]) => <div key={type}><span>{type}</span><strong>{money.format(row.totalCost)}</strong><small>{row.lineCount} regel(s)</small></div>)}
-              <div className="costRollupTotal"><span>Direct totaal</span><strong>{money.format(aggregate.costRollup.grandTotal)}</strong><small>{aggregate.costRollup.additionalCostTotal ? `incl. ${money.format(aggregate.costRollup.additionalCostTotal)} aanvullend` : "geen aanvullende kosten"}</small></div>
+              <div className="costRollupTotal"><span>Calc directe kost</span><strong>{money.format(totals.direct)}</strong><small>som van de zichtbare calculatieregels</small></div>
+              <div><span>Calc opslag</span><strong>{money.format(totals.markupAmount)}</strong><small>{markupPct.toLocaleString("nl-NL",{maximumFractionDigits:2})}%</small></div>
+              <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
         </div>}
