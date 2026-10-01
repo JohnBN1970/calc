@@ -900,6 +900,15 @@ app.put("/api/workbench/current", async (req, res) => {
           markup_pct: markupPct
         }
       });
+      const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
+      const verified = verifiedState.calc_result;
+      if (
+        !verified ||
+        verified.content_hash !== published.content_hash ||
+        verified.current_for_office_version !== true
+      ) {
+        throw new Error("Office heeft het Calc-resultaat ontvangen maar niet als actuele calculatieversie bevestigd.");
+      }
       officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
     } catch(error) {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
