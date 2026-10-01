@@ -8,8 +8,10 @@ export type CalcRecipeLine = {
   costKind:"material"|"labour"|"equipment"|"subcontracting"|"other";
   description:string;
   unit:string|null;
-  officeSourceType:string|null;
-  officeSourceRef:string|null;
+  quantitySourceType:string|null;
+  quantitySourceRef:string|null;
+  costSourceType:string|null;
+  costSourceRef:string|null;
   takeoffBasis:"area"|"perimeter"|"two_sides_plus_head"|"width"|"height"|"part_area"|"internal_joint"|"fixed";
   factor:number;
   wastePct:number;
@@ -69,8 +71,10 @@ export async function listCalcRecipes():Promise<CalcRecipeVersion[]> {
         costKind:String(line.cost_kind) as CalcRecipeLine["costKind"],
         description:String(line.description),
         unit:line.unit==null?null:String(line.unit),
-        officeSourceType:line.office_source_type==null?null:String(line.office_source_type),
-        officeSourceRef:line.office_source_ref==null?null:String(line.office_source_ref),
+        quantitySourceType:line.quantity_source_type==null?null:String(line.quantity_source_type),
+        quantitySourceRef:line.quantity_source_ref==null?null:String(line.quantity_source_ref),
+        costSourceType:line.cost_source_type==null?null:String(line.cost_source_type),
+        costSourceRef:line.cost_source_ref==null?null:String(line.cost_source_ref),
         takeoffBasis:String(line.takeoff_basis) as CalcRecipeLine["takeoffBasis"],
         factor:Number(line.factor),
         wastePct:Number(line.waste_pct),
@@ -108,7 +112,8 @@ export async function createCalcRecipe(input:{recipeKey:string;name:string;descr
 
 export async function addCalcRecipeLine(input:{
   recipeVersionId:number;lineRef:string;sortOrder:number;costKind:CalcRecipeLine["costKind"];
-  description:string;unit?:string|null;officeSourceType?:string|null;officeSourceRef?:string|null;
+  description:string;unit?:string|null;quantitySourceType?:string|null;quantitySourceRef?:string|null;
+  costSourceType?:string|null;costSourceRef?:string|null;
   takeoffBasis:CalcRecipeLine["takeoffBasis"];factor?:number;wastePct?:number;fixedQuantity?:number|null;
   roundingStep?:number|null;minimumQuantity?:number|null;metadata?:Record<string,unknown>|null;
 }):Promise<number> {
@@ -116,12 +121,14 @@ export async function addCalcRecipeLine(input:{
   if(!input.lineRef.trim()||!input.description.trim()) throw new Error("Receptregel mist identiteit of omschrijving.");
   const [insert]=await db.execute<ResultSetHeader>(`
     INSERT INTO recipe_lines
-      (recipe_version_id,line_ref,sort_order,cost_kind,description,unit,office_source_type,office_source_ref,
-       takeoff_basis,factor,waste_pct,fixed_quantity,rounding_step,minimum_quantity,metadata_json)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      (recipe_version_id,line_ref,sort_order,cost_kind,description,unit,quantity_source_type,quantity_source_ref,
+       cost_source_type,cost_source_ref,takeoff_basis,factor,waste_pct,fixed_quantity,rounding_step,minimum_quantity,metadata_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `,[
     input.recipeVersionId,input.lineRef.trim(),input.sortOrder,input.costKind,input.description.trim(),input.unit??null,
-    input.officeSourceType?.trim()||null,input.officeSourceRef?.trim()||null,input.takeoffBasis,input.factor??1,input.wastePct??0,
+    input.quantitySourceType?.trim()||null,input.quantitySourceRef?.trim()||null,
+    input.costSourceType?.trim()||null,input.costSourceRef?.trim()||null,
+    input.takeoffBasis,input.factor??1,input.wastePct??0,
     input.fixedQuantity??null,input.roundingStep??null,input.minimumQuantity??null,input.metadata?JSON.stringify(input.metadata):null
   ]);
   return insert.insertId;
