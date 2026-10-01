@@ -14,7 +14,8 @@ import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
 import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -477,31 +478,25 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
 
   const positionRef = String(req.body?.positionRef ?? "").trim();
   const recipeVersionId = Number(req.body?.recipeVersionId);
-  const paragraphKey = String(req.body?.paragraphKey ?? "").trim();
   const requestedTakeoffId = req.body?.takeoffId == null ? null : Number(req.body.takeoffId);
   const passes = req.body?.passes == null ? 1 : Number(req.body.passes);
   const parameters = (req.body?.parameters && typeof req.body.parameters === "object" && !Array.isArray(req.body.parameters))
     ? req.body.parameters as Record<string,string|number>
     : {};
 
-  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || (requestedTakeoffId !== null && (!Number.isInteger(requestedTakeoffId) || requestedTakeoffId <= 0)) || !Number.isFinite(passes) || passes <= 0) {
+  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || (requestedTakeoffId !== null && (!Number.isInteger(requestedTakeoffId) || requestedTakeoffId <= 0)) || !Number.isFinite(passes) || passes <= 0) {
     res.status(400).json({ error: "Ongeldige receptacceptatie." });
     return;
   }
 
   try {
-    const [snapshot, catalog, workspace] = await Promise.all([
+    const [snapshot, catalog] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      fetchOfficeRecipeCatalog(),
-      fetchOfficeWorkspaceState(session.officeCalculationId)
+      fetchOfficeRecipeCatalog()
     ]);
 
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
-      return;
-    }
-    if (!workspace.editable || workspace.version.status !== "draft" || workspace.version.locked_at !== null) {
-      res.status(409).json({ error: "De actuele Office-calculatieversie is niet bewerkbaar." });
       return;
     }
 
@@ -510,6 +505,7 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       res.status(409).json({ error: "Geen geometrische take-off gevonden voor deze positie." });
       return;
     }
+
     let takeoff;
     if (requestedTakeoffId !== null) {
       takeoff = matchingTakeoffs.find(row => row.id === requestedTakeoffId);
@@ -537,224 +533,32 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
 
     const concept = buildConceptFromOfficeContext(snapshot);
     const proposals = proposeRecipesForConcept(concept, proposalRulesFromOfficeCatalog(catalog));
-    const proposed = proposals.some(item => item.positionRef === positionRef && Number(item.recipeRef) === recipeVersionId);
-    if (!proposed) {
+    if (!proposals.some(item => item.positionRef === positionRef && Number(item.recipeRef) === recipeVersionId)) {
       res.status(409).json({ error: "Dit recept is niet voorgesteld voor deze positie op basis van de actuele Office-regels." });
       return;
     }
 
-    const placed = await placeOfficeRecipeFromTakeoff({
-      calculationId: session.officeCalculationId,
-      version: String(workspace.version.version),
-      paragraphKey,
+    const generated = generateCalcLinesFromOfficeRecipe({
+      catalog,
       recipeVersionId,
-      takeoffId: takeoff.id,
+      takeoff,
       passes,
-      parameters,
-      actorId: session.actorId
+      parameterValues: parameters
     });
 
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json({
-      contract: "brebo-calc-recipe-acceptance-v1",
+      contract: "brebo-calc-generated-recipe-lines-v1",
       positionRef,
-      recipeVersionId,
       takeoffId: takeoff.id,
-      sourceCatalogVersion: catalog.catalog.catalog_version,
-      officeVersion: String(workspace.version.version),
-      recipeInstanceId: placed.recipe_instance_id
+      recipeVersionId,
+      recipeName: generated.recipeName,
+      catalogVersion: catalog.catalog.catalog_version,
+      lines: generated.lines
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende receptacceptatiefout";
+    const detail = error instanceof Error ? error.message : "Onbekende receptgeneratiefout";
     res.status(422).json({ error: detail });
-  }
-});
-
-
-app.get("/api/workbench/current/sales-price-result", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    if (!workspace.result) {
-      res.status(409).json({ error: "Office heeft nog geen canoniek verkoopprijsresultaat voor deze calculatie." });
-      return;
-    }
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-office-sales-price-result-v1",
-      officeVersion: String(workspace.version.version),
-      editable: workspace.editable,
-      source: workspace.result.source ?? "office_canonical_result",
-      result: workspace.result
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Verkoopprijsresultaat kon niet uit Office worden opgehaald: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/cost-rollup", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const rollup = buildOfficeCostRollup(workspace);
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-office-cost-rollup-v1",
-      ...rollup
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Kostenrollup kon niet worden opgebouwd: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/additional-costs", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const components = evaluateOfficeAdditionalCosts(workspace);
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-additional-costs-v1",
-      officeVersion: String(workspace.version.version),
-      componentCount: components.length,
-      totalAdditionalCost: components.reduce((sum, component) => sum + component.amount, 0),
-      components
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Aanvullende kosten konden niet worden berekend: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/office-direct-costs", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const inputLines = officeCostingInputLines(workspace);
-    const wasteByIdentity = new Map(inputLines.map(line => [line.identity, line.wastePct]));
-    const lines = officeRecipeDirectCostLines(inputLines, wasteByIdentity);
-    const pricedTotal = lines.reduce((sum, line) => sum + (line.totalDirectCost ?? 0), 0);
-    const missingPriceCount = lines.filter(line => line.priceStatus === "missing").length;
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-office-direct-costs-v1",
-      officeVersion: String(workspace.version.version),
-      lineCount: lines.length,
-      missingPriceCount,
-      complete: missingPriceCount === 0,
-      pricedTotal,
-      lines
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Directe kosten konden niet uit Office-receptregels worden opgebouwd: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/costing-input-lines", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const lines = officeCostingInputLines(workspace);
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-costing-input-lines-v1",
-      source: "office_recipe_instances",
-      officeVersion: String(workspace.version.version),
-      editable: workspace.editable,
-      lineCount: lines.length,
-      lines
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Kostenregels konden niet uit Office worden opgebouwd: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/generated-lines", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const lines = officeAuthoritativeRecipeLines(workspace);
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-generated-lines-v2",
-      source: "office_recipe_instances",
-      officeVersion: String(workspace.version.version),
-      editable: workspace.editable,
-      lineCount: lines.length,
-      lines
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Calculatieregels konden niet uit Office worden opgebouwd: ${detail}` });
-  }
-});
-
-app.get("/api/workbench/current/placed-recipes", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  try {
-    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
-    const recipes = (workspace.recipes ?? []).map(recipe => ({
-      id: Number(recipe.id),
-      recipeId: recipe.recipe_id == null ? null : Number(recipe.recipe_id),
-      recipeVersionId: recipe.recipe_version_id == null ? null : Number(recipe.recipe_version_id),
-      name: recipe.name,
-      paragraphKey: recipe.paragraph_key,
-      quantity: Number(recipe.quantity),
-      unit: recipe.unit,
-      snapshotHash: recipe.snapshot_hash,
-      parameters: (recipe.parameters ?? []).map(parameter => ({
-        key: parameter.parameter_key,
-        value: parameter.value,
-        calculatedValue: parameter.calculated_value
-      })),
-      lines: (recipe.lines ?? []).map(line => {
-        const calculatedQuantity = Number(line.calculated_quantity ?? 0);
-        const manualQuantity = line.manual_quantity == null ? null : Number(line.manual_quantity);
-        return {
-          id: Number(line.id),
-          key: line.line_key,
-          type: line.line_type,
-          description: line.description,
-          unit: line.unit,
-          calculatedQuantity,
-          manualQuantity,
-          activeQuantity: manualQuantity ?? calculatedQuantity,
-          wastePct: Number(line.waste_pct ?? 0),
-          materialRef: line.material_ref,
-          priceSourceRef: line.price_source_ref,
-          unitCost: line.unit_cost == null ? null : Number(line.unit_cost),
-          isCustom: Number(line.is_custom) === 1
-        };
-      })
-    }));
-
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json({
-      contract: "brebo-calc-placed-recipes-v1",
-      officeVersion: String(workspace.version.version),
-      editable: workspace.editable,
-      recipeCount: recipes.length,
-      recipes
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    res.status(502).json({ error: `Geplaatste recepten konden niet uit Office worden opgehaald: ${detail}` });
   }
 });
 
