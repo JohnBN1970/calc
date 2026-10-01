@@ -483,7 +483,7 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
     ? req.body.parameters as Record<string,string|number>
     : {};
 
-  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || !Number.isFinite(passes) || passes < 0) {
+  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || !Number.isFinite(passes) || passes <= 0) {
     res.status(400).json({ error: "Ongeldige receptacceptatie." });
     return;
   }
@@ -504,11 +504,20 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       return;
     }
 
-    const takeoff = snapshot.context.takeoff.find(row => row.position_ref.trim() === positionRef);
-    if (!takeoff) {
+    const matchingTakeoffs = snapshot.context.takeoff.filter(row => row.position_ref.trim() === positionRef);
+    if (matchingTakeoffs.length === 0) {
       res.status(409).json({ error: "Geen geometrische take-off gevonden voor deze positie." });
       return;
     }
+    if (matchingTakeoffs.length > 1) {
+      res.status(409).json({
+        error: "Meerdere geometrische take-offs gevonden voor deze positie. Handmatige selectie/review is vereist.",
+        positionRef,
+        takeoffIds: matchingTakeoffs.map(row => row.id)
+      });
+      return;
+    }
+    const [takeoff] = matchingTakeoffs;
 
     const recipe = catalog.catalog.recipes.find(item => item.version_id === recipeVersionId);
     if (!recipe || !recipe.applicability) {
