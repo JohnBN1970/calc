@@ -9,6 +9,7 @@ import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
+import { officeAuthoritativeRecipeLines } from "./officeRecipeLines.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -546,6 +547,28 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/generated-lines", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const lines = officeAuthoritativeRecipeLines(workspace);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-generated-lines-v2",
+      source: "office_recipe_instances",
+      officeVersion: String(workspace.version.version),
+      editable: workspace.editable,
+      lineCount: lines.length,
+      lines
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Calculatieregels konden niet uit Office worden opgebouwd: ${detail}` });
+  }
+});
 
 app.get("/api/workbench/current/placed-recipes", async (req, res) => {
   const session = requireSession(req, res);
