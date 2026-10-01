@@ -2,7 +2,10 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 
 export type TailCostBasis="fixed"|"percentage"|"per_unit";
-export type TailCostBaseScope="direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
+export type TailCostBaseScope=
+  |"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity"
+  |"owner_direct_cost"|"owner_running_total"
+  |"consolidated_direct_cost"|"consolidated_running_total";
 
 export type TailCostOwnerType="calculation"|"subcalculation";
 export type TailCostComponent={
@@ -43,31 +46,40 @@ export async function createTailCostComponent(input:{
 }
 
 export function evaluateTailCosts(input:{
-  directCost:number;
+  ownerDirectCost:number;
+  consolidatedDirectCost:number;
+  consolidatedRunningTotal?:number;
   components:TailCostComponent[];
   baseAmounts?:Record<string,number>;
 }){
-  let runningTotal=input.directCost;
+  let ownerRunningTotal=input.ownerDirectCost;
+  let consolidatedRunningTotal=input.consolidatedRunningTotal ?? input.consolidatedDirectCost;
+
   return input.components.map(component=>{
     let baseAmount:number;
-    if(component.baseScope==="direct_cost")baseAmount=input.directCost;
-    else if(component.baseScope==="running_total")baseAmount=runningTotal;
-    else if(component.baseScope==="quantity" && component.quantity!=null)baseAmount=component.quantity;
+    if(component.baseScope==="owner_direct_cost" || component.baseScope==="direct_cost") baseAmount=input.ownerDirectCost;
+    else if(component.baseScope==="owner_running_total" || component.baseScope==="running_total") baseAmount=ownerRunningTotal;
+    else if(component.baseScope==="consolidated_direct_cost") baseAmount=input.consolidatedDirectCost;
+    else if(component.baseScope==="consolidated_running_total") baseAmount=consolidatedRunningTotal;
+    else if(component.baseScope==="quantity" && component.quantity!=null) baseAmount=component.quantity;
     else {
       const key=`${component.baseScope}:${component.baseRef??""}`;
       const resolved=input.baseAmounts?.[key];
       if(resolved==null||!Number.isFinite(resolved))throw new Error(`Rekenbasis ontbreekt voor ${component.description}.`);
       baseAmount=resolved;
     }
+
     let amount:number;
-    if(component.basis==="fixed")amount=component.value;
-    else if(component.basis==="percentage")amount=baseAmount*(component.value/100);
+    if(component.basis==="fixed") amount=component.value;
+    else if(component.basis==="percentage") amount=baseAmount*(component.value/100);
     else {
       const quantity=component.quantity ?? baseAmount;
       amount=component.value*quantity;
     }
-    runningTotal+=amount;
-    return {...component,baseAmount,amount,runningTotal};
+
+    ownerRunningTotal+=amount;
+    consolidatedRunningTotal+=amount;
+    return {...component,baseAmount,amount,ownerRunningTotal,consolidatedRunningTotal};
   });
 }
 
