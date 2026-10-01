@@ -1498,7 +1498,9 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
-          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Office-brondata gebruiken om Calc-regels te genereren" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
+          <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" title="Deelcalculaties beheren in Calc" onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
