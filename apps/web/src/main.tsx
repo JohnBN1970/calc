@@ -166,6 +166,50 @@ type WorkbenchAggregate = {
   readiness: unknown;
 };
 
+type CalcRecipe = {
+  id:number;
+  recipeId:number;
+  recipeKey:string;
+  name:string;
+  description:string|null;
+  versionNo:number;
+  status:"draft"|"published"|"archived";
+  applicability:Record<string,unknown>|null;
+  lines:Array<{
+    id:number;
+    lineRef:string;
+    sortOrder:number;
+    costKind:"material"|"labour"|"equipment"|"subcontracting"|"other";
+    description:string;
+    unit:string|null;
+    quantitySourceType:string|null;
+    quantitySourceRef:string|null;
+    costSourceType:string|null;
+    costSourceRef:string|null;
+    takeoffBasis:"area"|"perimeter"|"two_sides_plus_head"|"width"|"height"|"part_area"|"internal_joint"|"fixed";
+    factor:number;
+    wastePct:number;
+    fixedQuantity:number|null;
+  }>;
+};
+
+type CalcSubcalculation = {
+  id:number;
+  versionId:number;
+  ref:string;
+  description:string;
+  dimensionType:string;
+  dimensionRef:string|null;
+  sortOrder:number;
+  scopes:Array<{
+    id:number;
+    scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position"|"structure"|"recipe"|"custom";
+    scopeRef:string;
+    includeDescendants:boolean;
+    sortOrder:number;
+  }>;
+};
+
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
@@ -459,6 +503,20 @@ function App() {
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
+  const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
+  const [subcalculationOpen, setSubcalculationOpen] = useState(false);
+  const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
+  const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
+  const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
+  const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
+  const [recipeLineDraft, setRecipeLineDraft] = useState({
+    lineRef:"", description:"", costKind:"material", unit:"st", takeoffBasis:"fixed",
+    quantitySourceType:"", quantitySourceRef:"", costSourceType:"article", costSourceRef:"",
+    factor:1, wastePct:0, fixedQuantity:1
+  });
+  const [subcalcDraft, setSubcalcDraft] = useState({ ref:"", description:"" });
+  const [subcalcScopeDraft, setSubcalcScopeDraft] = useState({ subcalculationId:0, scopeType:"position", scopeRef:"" });
+  const [managementStatus, setManagementStatus] = useState("");
   const [aggregate, setAggregate] = useState<WorkbenchAggregate | null>(null);
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
@@ -521,6 +579,90 @@ function App() {
   };
 
 
+  const loadRecipeLibrary = async () => {
+    const response = await fetch("/api/recipes", { headers:{Accept:"application/json"} });
+    if(!response.ok) throw new Error("Receptbibliotheek kon niet worden geladen.");
+    const payload = await response.json() as {recipes:CalcRecipe[]};
+    setRecipes(Array.isArray(payload.recipes)?payload.recipes:[]);
+    setSelectedRecipeVersionId(current => current ?? payload.recipes?.[0]?.id ?? null);
+  };
+
+  const loadSubcalculations = async () => {
+    const response = await fetch("/api/workbench/current/subcalculations", { headers:{Accept:"application/json"} });
+    if(!response.ok) throw new Error("Deelcalculaties konden niet worden geladen.");
+    const payload = await response.json() as {subcalculations:CalcSubcalculation[]};
+    setSubcalculations(Array.isArray(payload.subcalculations)?payload.subcalculations:[]);
+  };
+
+  const createRecipe = async () => {
+    setManagementStatus("Recept aanmaken…");
+    try {
+      const response = await fetch("/api/recipes", {
+        method:"POST", headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(recipeDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Recept kon niet worden aangemaakt."));
+      setRecipeDraft({recipeKey:"",name:"",description:""});
+      await loadRecipeLibrary();
+      setManagementStatus("Recept aangemaakt in Calc.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Recept kon niet worden aangemaakt."); }
+  };
+
+  const addRecipeLine = async () => {
+    if(!selectedRecipeVersionId){setManagementStatus("Kies eerst een recept.");return;}
+    setManagementStatus("Receptregel toevoegen…");
+    try {
+      const response=await fetch(`/api/recipes/${selectedRecipeVersionId}/lines`,{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({
+          ...recipeLineDraft,
+          quantitySourceType:recipeLineDraft.quantitySourceType||null,
+          quantitySourceRef:recipeLineDraft.quantitySourceRef||null,
+          costSourceType:recipeLineDraft.costSourceType||null,
+          costSourceRef:recipeLineDraft.costSourceRef||null,
+          fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null
+        })
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Receptregel kon niet worden toegevoegd."));
+      setRecipeLineDraft(current=>({...current,lineRef:"",description:"",costSourceRef:"",quantitySourceRef:""}));
+      await loadRecipeLibrary();
+      setManagementStatus("Receptregel toegevoegd.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden toegevoegd."); }
+  };
+
+  const createSubcalculation = async () => {
+    setManagementStatus("Deelcalculatie aanmaken…");
+    try {
+      const response=await fetch("/api/workbench/current/subcalculations",{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(subcalcDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Deelcalculatie kon niet worden aangemaakt."));
+      setSubcalcDraft({ref:"",description:""});
+      await loadSubcalculations();
+      setManagementStatus("Deelcalculatie aangemaakt.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."); }
+  };
+
+  const addSubcalculationScope = async () => {
+    if(!subcalcScopeDraft.subcalculationId){setManagementStatus("Kies eerst een deelcalculatie.");return;}
+    setManagementStatus("Scope toevoegen…");
+    try {
+      const response=await fetch(`/api/workbench/current/subcalculations/${subcalcScopeDraft.subcalculationId}/scopes`,{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({scopeType:subcalcScopeDraft.scopeType,scopeRef:subcalcScopeDraft.scopeRef})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(String(payload.error??"Scope kon niet worden toegevoegd."));
+      setSubcalcScopeDraft(current=>({...current,scopeRef:""}));
+      await loadSubcalculations();
+      setManagementStatus("Scope toegevoegd.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Scope kon niet worden toegevoegd."); }
+  };
+
   const loadWorkbench = async () => {
     const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
@@ -579,6 +721,7 @@ function App() {
           window.history.replaceState({}, "", "/");
         }
         await loadWorkbench();
+        await Promise.all([loadRecipeLibrary(),loadSubcalculations()]);
       } catch (error) {
         setAuthorized(false);
         setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
@@ -1355,7 +1498,9 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
-          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Office-brondata gebruiken om Calc-regels te genereren" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
+          <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" title="Deelcalculaties beheren in Calc" onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
@@ -1405,6 +1550,76 @@ function App() {
           </>}
         </div>}
 
+        {recipeLibraryOpen && <div className="managementWorkspace">
+          <div className="recipeWorkspaceHead">
+            <div><span className="eyebrow">CALC-OWNED</span><h2>Receptbibliotheek</h2><p>Calc bepaalt de samenstelling; Office levert actuele normen, tarieven en prijzen.</p></div>
+            <button className="panelClose" type="button" onClick={() => setRecipeLibraryOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="managementGrid">
+            <section className="managementCard">
+              <h3>Nieuw recept</h3>
+              <label><span>Code</span><input value={recipeDraft.recipeKey} onChange={event=>setRecipeDraft(current=>({...current,recipeKey:event.target.value}))} placeholder="bijv. kozijn-vervangen" /></label>
+              <label><span>Naam</span><input value={recipeDraft.name} onChange={event=>setRecipeDraft(current=>({...current,name:event.target.value}))} placeholder="Kozijn vervangen" /></label>
+              <label><span>Omschrijving</span><textarea value={recipeDraft.description} onChange={event=>setRecipeDraft(current=>({...current,description:event.target.value}))} /></label>
+              <button type="button" onClick={() => void createRecipe()}>Recept aanmaken</button>
+            </section>
+            <section className="managementCard">
+              <h3>Recepten</h3>
+              <div className="managementList">{recipes.length===0?<p className="muted">Nog geen Calc-recepten.</p>:recipes.map(recipe=>
+                <button type="button" className={"managementListItem"+(selectedRecipeVersionId===recipe.id?" is-selected":"")} key={recipe.id} onClick={()=>setSelectedRecipeVersionId(recipe.id)}>
+                  <strong>{recipe.name}</strong><span>{recipe.recipeKey} · v{recipe.versionNo} · {recipe.status}</span><small>{recipe.lines.length} regel(s)</small>
+                </button>
+              )}</div>
+            </section>
+            <section className="managementCard managementWide">
+              <h3>Regel toevoegen aan {recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.name ?? "recept"}</h3>
+              <div className="managementFields">
+                <label><span>Regelcode</span><input value={recipeLineDraft.lineRef} onChange={event=>setRecipeLineDraft(current=>({...current,lineRef:event.target.value}))} /></label>
+                <label><span>Omschrijving</span><input value={recipeLineDraft.description} onChange={event=>setRecipeLineDraft(current=>({...current,description:event.target.value}))} /></label>
+                <label><span>Kostensoort</span><select value={recipeLineDraft.costKind} onChange={event=>setRecipeLineDraft(current=>({...current,costKind:event.target.value}))}><option value="material">Materiaal</option><option value="labour">Arbeid</option><option value="equipment">Materieel</option><option value="subcontracting">OA</option><option value="other">Overig</option></select></label>
+                <label><span>Eenheid</span><input value={recipeLineDraft.unit} onChange={event=>setRecipeLineDraft(current=>({...current,unit:event.target.value}))} /></label>
+                <label><span>Uittrekbasis</span><select value={recipeLineDraft.takeoffBasis} onChange={event=>setRecipeLineDraft(current=>({...current,takeoffBasis:event.target.value}))}><option value="fixed">Vast</option><option value="area">Oppervlak</option><option value="perimeter">Omtrek</option><option value="two_sides_plus_head">2 zijden + bovendorpel</option><option value="width">Breedte</option><option value="height">Hoogte</option><option value="part_area">Vakoppervlak</option><option value="internal_joint">Interne koppeling</option></select></label>
+                <label><span>Factor</span><input type="number" step="0.01" value={recipeLineDraft.factor} onChange={event=>setRecipeLineDraft(current=>({...current,factor:Number(event.target.value)}))} /></label>
+                <label><span>Verlies %</span><input type="number" step="0.1" value={recipeLineDraft.wastePct} onChange={event=>setRecipeLineDraft(current=>({...current,wastePct:Number(event.target.value)}))} /></label>
+                {recipeLineDraft.takeoffBasis==="fixed" && <label><span>Vaste hoeveelheid</span><input type="number" step="0.01" value={recipeLineDraft.fixedQuantity} onChange={event=>setRecipeLineDraft(current=>({...current,fixedQuantity:Number(event.target.value)}))} /></label>}
+                <label><span>Normbron type</span><input value={recipeLineDraft.quantitySourceType} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceType:event.target.value}))} placeholder="norm" /></label>
+                <label><span>Normbron ref</span><input value={recipeLineDraft.quantitySourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceRef:event.target.value}))} placeholder="montage:kozijn_per_m" /></label>
+                <label><span>Kostprijsbron type</span><select value={recipeLineDraft.costSourceType} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceType:event.target.value}))}><option value="">Geen</option><option value="article">Artikel</option><option value="project_labour">Projectarbeid</option><option value="norm">Normwaarde</option></select></label>
+                <label><span>Kostprijsbron ref</span><input value={recipeLineDraft.costSourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceRef:event.target.value}))} placeholder="artikelcode of default" /></label>
+              </div>
+              <button type="button" disabled={!selectedRecipeVersionId} onClick={() => void addRecipeLine()}>Regel toevoegen</button>
+              {selectedRecipeVersionId && <div className="recipeLineList">{(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines??[]).map(line=><div key={line.id}><strong>{line.lineRef} · {line.description}</strong><span>{line.costKind} · {line.takeoffBasis} · factor {line.factor}{line.wastePct ? " · " + line.wastePct + "% verlies" : ""}</span><small>{line.quantitySourceRef ? "norm: " + line.quantitySourceType + ":" + line.quantitySourceRef : "geen normbron"} · {line.costSourceRef ? "prijs: " + line.costSourceType + ":" + line.costSourceRef : "geen kostprijsbron"}</small></div>)}</div>}
+            </section>
+          </div>
+          {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
+        </div>}
+
+        {subcalculationOpen && <div className="managementWorkspace">
+          <div className="recipeWorkspaceHead">
+            <div><span className="eyebrow">CALC-OWNED</span><h2>Deelcalculaties</h2><p>Eén calculatieregel of positie kan in meerdere deelcalculaties tegelijk vallen.</p></div>
+            <button className="panelClose" type="button" onClick={() => setSubcalculationOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="managementGrid">
+            <section className="managementCard">
+              <h3>Nieuwe deelcalculatie</h3>
+              <label><span>Referentie</span><input value={subcalcDraft.ref} onChange={event=>setSubcalcDraft(current=>({...current,ref:event.target.value}))} placeholder="gevel-zuid" /></label>
+              <label><span>Omschrijving</span><input value={subcalcDraft.description} onChange={event=>setSubcalcDraft(current=>({...current,description:event.target.value}))} placeholder="Gevel Zuid" /></label>
+              <button type="button" onClick={() => void createSubcalculation()}>Deelcalculatie aanmaken</button>
+            </section>
+            <section className="managementCard">
+              <h3>Scope toevoegen</h3>
+              <label><span>Deelcalculatie</span><select value={subcalcScopeDraft.subcalculationId} onChange={event=>setSubcalcScopeDraft(current=>({...current,subcalculationId:Number(event.target.value)}))}><option value={0}>Kies…</option>{subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}</select></label>
+              <label><span>Doorsnede</span><select value={subcalcScopeDraft.scopeType} onChange={event=>setSubcalcScopeDraft(current=>({...current,scopeType:event.target.value}))}><option value="position">Positie</option><option value="facade">Gevel</option><option value="dwelling_type">Woningtype</option><option value="dwelling">Woning</option><option value="building_part">Bouwdeel</option><option value="structure">Calculatiestructuur</option><option value="recipe">Recept</option><option value="building">Gebouw</option><option value="custom">Vrij</option></select></label>
+              <label><span>Referentie</span><input value={subcalcScopeDraft.scopeRef} onChange={event=>setSubcalcScopeDraft(current=>({...current,scopeRef:event.target.value}))} placeholder="bijv. N1, Zuid, Type A" /></label>
+              <button type="button" disabled={!subcalcScopeDraft.subcalculationId || !subcalcScopeDraft.scopeRef.trim()} onClick={() => void addSubcalculationScope()}>Scope toevoegen</button>
+            </section>
+            <section className="managementCard managementWide">
+              <h3>Huidige deelcalculaties</h3>
+              {subcalculations.length===0?<p className="muted">Nog geen deelcalculaties.</p>:<div className="subcalcList">{subcalculations.map(item=><div className="subcalcCard" key={item.id}><div><strong>{item.description}</strong><span>{item.ref}</span></div>{item.scopes.length===0?<small>Nog geen scope.</small>:<div className="scopeTags">{item.scopes.map(scope=><span key={scope.id}>{scope.scopeType}: {scope.scopeRef}</span>)}</div>}</div>)}</div>}
+            </section>
+          </div>
+          {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
+        </div>}
         {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
           <div className="columnSettingsList">
