@@ -210,6 +210,18 @@ type CalcSubcalculation = {
   }>;
 };
 
+type CalcSubcalculationResult = {
+  id:number;
+  ref:string;
+  description:string;
+  lineIds:number[];
+  directCost:number;
+  costs:{labour:number;material:number;equipment:number;subcontracting:number;other:number};
+  directShare:number;
+  allocatedTailCost:number;
+  salesPrice:number;
+};
+
 type TailCostComponent={
   id:number;versionId:number;componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
   value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
@@ -514,6 +526,7 @@ function App() {
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
+  const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -637,6 +650,13 @@ function App() {
     setSubcalculations(Array.isArray(payload.subcalculations)?payload.subcalculations:[]);
   };
 
+  const loadSubcalculationResults=async()=>{
+    const response=await fetch("/api/workbench/current/subcalculations/evaluate",{headers:{Accept:"application/json"}});
+    if(!response.ok){setSubcalculationResults([]);return;}
+    const payload=await response.json() as {results:CalcSubcalculationResult[]};
+    setSubcalculationResults(Array.isArray(payload.results)?payload.results:[]);
+  };
+
   const createRecipe = async () => {
     setManagementStatus("Recept aanmaken…");
     try {
@@ -685,7 +705,7 @@ function App() {
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??"Deelcalculatie kon niet worden aangemaakt."));
       setSubcalcDraft({ref:"",description:""});
-      await loadSubcalculations();
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setManagementStatus("Deelcalculatie aangemaakt.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."); }
   };
@@ -701,7 +721,7 @@ function App() {
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??"Scope kon niet worden toegevoegd."));
       setSubcalcScopeDraft(current=>({...current,scopeRef:""}));
-      await loadSubcalculations();
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setManagementStatus("Scope toegevoegd.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Scope kon niet worden toegevoegd."); }
   };
@@ -764,7 +784,7 @@ function App() {
           window.history.replaceState({}, "", "/");
         }
         await loadWorkbench();
-        await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadTailCosts()]);
+        await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadSubcalculationResults(),loadTailCosts()]);
       } catch (error) {
         setAuthorized(false);
         setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
@@ -1487,11 +1507,12 @@ function App() {
           }))
         })
       });
-      const payload = await response.json().catch(() => ({})) as {officeSync?:{ok?:boolean;error?:string}};
+      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string}};
       if (!response.ok) throw new Error("Opslaan mislukt");
       if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
       else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
       await loadWorkbench();
+      await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
     } catch {
       setStatus("Opslaan mislukt");
     }
@@ -1658,7 +1679,7 @@ function App() {
             </section>
             <section className="managementCard managementWide">
               <h3>Huidige deelcalculaties</h3>
-              {subcalculations.length===0?<p className="muted">Nog geen deelcalculaties.</p>:<div className="subcalcList">{subcalculations.map(item=><div className="subcalcCard" key={item.id}><div><strong>{item.description}</strong><span>{item.ref}</span></div>{item.scopes.length===0?<small>Nog geen scope.</small>:<div className="scopeTags">{item.scopes.map(scope=><span key={scope.id}>{scope.scopeType}: {scope.scopeRef}</span>)}</div>}</div>)}</div>}
+              {subcalculations.length===0?<p className="muted">Nog geen deelcalculaties.</p>:<div className="subcalcList">{subcalculations.map(item=>{const result=subcalculationResults.find(row=>row.id===item.id);return <div className="subcalcCard" key={item.id}><div><strong>{item.description}</strong><span>{item.ref}</span></div>{item.scopes.length===0?<small>Nog geen scope.</small>:<div className="scopeTags">{item.scopes.map(scope=><span key={scope.id}>{scope.scopeType}: {scope.scopeRef}</span>)}</div>}<div className="subcalcTotals"><span>Direct <b>{money.format(result?.directCost??0)}</b></span><span>Staartkosten <b>{money.format(result?.allocatedTailCost??0)}</b></span><span>Verkoop <b>{money.format(result?.salesPrice??0)}</b></span><small>{result?.lineIds.length??0} regel(s) · {result?Math.round(result.directShare*1000)/10:0}% van directe kost</small></div></div>})}</div>}
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
