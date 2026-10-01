@@ -1054,7 +1054,7 @@ app.put("/api/workbench/current", async (req, res) => {
 
     const tailComponents = await listTailCostComponents(Number(version.id));
     const baseAmounts:Record<string,number> = {};
-    const subcalculationResults = await evaluateSubcalculations(Number(version.id));
+    const subcalculationResults = await evaluateSubcalculations(Number(version.id), connection);
     for (const result of subcalculationResults) {
       baseAmounts[`subcalculation:${result.ref}`] = result.directCost;
     }
