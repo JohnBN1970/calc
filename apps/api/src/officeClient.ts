@@ -399,7 +399,19 @@ export async function fetchOfficeRecipeCatalog(): Promise<OfficeRecipeCatalog> {
 export type OfficeWorkspaceState = {
   contract: "brebo-calculation-workspace-v2";
   calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
-  version: { version: string; status: string; locked_at: string | null; [key:string]: unknown };
+  version: {
+    version: string;
+    status: string;
+    locked_at: string | null;
+    pricing_mode?: string;
+    commercial_method?: string;
+    general_cost_pct?: number | string;
+    risk_pct?: number | string;
+    profit_pct?: number | string;
+    single_margin_pct?: number | string;
+    commercial_adjustment?: number | string;
+    [key:string]: unknown;
+  };
   editable: boolean;
   recipes?: Array<{
     id: number;
