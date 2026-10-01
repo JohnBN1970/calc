@@ -673,10 +673,19 @@ app.post("/api/workbench/current/tail-costs", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
+    const ownerType=String(req.body?.ownerType??"calculation");
+    const ownerRef=req.body?.ownerRef==null?null:String(req.body.ownerRef).trim();
+    if(ownerType==="subcalculation"){
+      const subcalculations=await listCalcSubcalculations(versionId);
+      if(!ownerRef || !subcalculations.some(item=>item.ref===ownerRef)){
+        res.status(400).json({error:"Kies een geldige deelcalculatie als eigenaar van deze staartkosten."});
+        return;
+      }
+    }
     const id=await createTailCostComponent({
       versionId,
-      ownerType:String(req.body?.ownerType??"calculation") as any,
-      ownerRef:req.body?.ownerRef==null?null:String(req.body.ownerRef),
+      ownerType:ownerType as any,
+      ownerRef,
       componentKey:String(req.body?.componentKey??""),
       description:String(req.body?.description??""),
       basis:String(req.body?.basis??"percentage") as any,
