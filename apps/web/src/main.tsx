@@ -164,45 +164,6 @@ type WorkbenchAggregate = {
     code: string | null;
     label: string;
   }>;
-  placedRecipes: Array<{
-    id: number;
-    name: string;
-    paragraph_key: string;
-    quantity: number | string;
-    unit: string | null;
-  }>;
-  generatedLines: Array<{
-    recipeInstanceId: number;
-    recipeLineId: number;
-    paragraphKey: string;
-    recipeName: string;
-    lineKey: string;
-    lineType: string;
-    description: string;
-    unit: string | null;
-    activeQuantity: number;
-    unitCost: number | null;
-  }>;
-  costRollup: {
-    complete: boolean;
-    missingPriceCount: number;
-    baseCostTotal: number;
-    additionalCostTotal: number;
-    grandTotal: number;
-    byLineType: Record<string,{lineCount:number;baseCost:number;additionalCost:number;totalCost:number}>;
-  };
-  salesPriceResult: null | {
-    priced_direct_cost?: number;
-    commercial_result?: {
-      direct_cost?: number;
-      general_cost?: number;
-      risk?: number;
-      profit?: number;
-      single_margin?: number;
-      commercial_adjustment?: number;
-      sales_price?: number;
-    };
-  };
   readiness: unknown;
 };
 
