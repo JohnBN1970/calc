@@ -15,13 +15,13 @@ import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
-import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
+import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -1152,16 +1152,14 @@ app.put("/api/workbench/current", async (req, res) => {
     let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
     try {
       const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const margin = salesPrice - directCost;
-      const marginPct = salesPrice !== 0 ? (margin / salesPrice) * 100 : 0;
-      const vat = vatRate == null ? 0 : salesPrice * (vatRate / 100);
+      const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
       const commercialSummary = {
-        purchase: directCost,
-        sales: salesPrice,
-        margin,
-        margin_pct: marginPct,
-        vat,
-        vat_rate: vatRate
+        purchase: summary.purchase,
+        sales: summary.sales,
+        margin: summary.margin,
+        margin_pct: summary.marginPct,
+        vat: summary.vat,
+        vat_rate: summary.vatRate
       };
       const published = await publishCalcResult({
         calculationId: session.officeCalculationId,
@@ -1191,10 +1189,8 @@ app.put("/api/workbench/current", async (req, res) => {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
     }
 
-    const margin = salesPrice - directCost;
-    const marginPct = salesPrice !== 0 ? (margin / salesPrice) * 100 : 0;
-    const vat = vatRate == null ? 0 : salesPrice * (vatRate / 100);
-    res.json({ directCost, markupAmount, salesPrice, margin, marginPct, vat, vatRate, officeSync });
+    const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
+    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, officeSync });
   } catch (error) {
     await connection.rollback();
     throw error;
