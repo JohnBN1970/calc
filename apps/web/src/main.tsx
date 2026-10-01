@@ -143,6 +143,24 @@ type WorkbenchAggregate = {
     reasons: string[];
     reviewRequired: boolean;
   }>;
+  components: Array<{
+    id: number;
+    document_id: number | null;
+    position_ref: string;
+    component_ref: string;
+    parent_component_ref: string | null;
+    component_type: string | null;
+    classification_ref: string | null;
+    description: string | null;
+    quantity: number;
+    width_mm: number | null;
+    height_mm: number | null;
+    area_m2: number | null;
+    perimeter_m: number | null;
+    source_page: number | null;
+    confidence: number;
+    review_status: string;
+  }>;
   takeoffs: Array<{
     id: number;
     position_ref: string;
@@ -1350,6 +1368,7 @@ function App() {
                 const candidates = aggregate.takeoffs.filter(row => row.position_ref.trim() === position.positionRef);
                 const selectedTakeoffId = selectedTakeoffByPosition[position.positionRef];
                 return <div className="conceptPosition" key={`${position.positionRef}-${index}`}><div><strong>{position.positionRef}</strong><span>{position.quantity} × {position.widthMm} × {position.heightMm} mm</span></div><span className={"reviewBadge " + position.reviewStatus}>{position.reviewStatus}</span>{position.description && <p>{position.description}</p>}{position.warnings.map((warning,warningIndex)=><small key={warningIndex}>{warning}</small>)}
+                  {aggregate.components.filter(component => component.position_ref.trim() === position.positionRef).length > 0 && <details className="takeoffTree" open><summary>Uittrekstaat · {aggregate.components.filter(component => component.position_ref.trim() === position.positionRef).length} component(en)</summary><div>{aggregate.components.filter(component => component.position_ref.trim() === position.positionRef).map(component => <div className="takeoffComponent" key={component.id} style={{paddingLeft: component.parent_component_ref ? 18 : 0}}><div><b>{component.component_ref}</b>{component.component_type && <span>{component.component_type}</span>}{component.description && <span>{component.description}</span>}</div><small>{component.quantity} × {component.width_mm ?? "—"} × {component.height_mm ?? "—"} mm · {component.area_m2 ?? "—"} m² · omtrek {component.perimeter_m ?? "—"} m · {component.review_status}{component.source_page !== null ? ` · bron p.${component.source_page}` : ""}</small></div>)}</div></details>}
                   {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
                 </div>;
               })}</div>
