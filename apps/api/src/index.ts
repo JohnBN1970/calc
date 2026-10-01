@@ -51,6 +51,7 @@ type LaunchPayload = {
   v: 1;
   calculation_id: number;
   project_id: number;
+  actor_id: number;
   exp: number;
   nonce: string;
 };
@@ -60,6 +61,7 @@ type SessionPayload = {
   calculationId: number;
   officeCalculationId: number;
   officeProjectId: number;
+  actorId: number;
   exp: number;
 };
 
@@ -100,6 +102,8 @@ function parseLaunchToken(token: string): LaunchPayload {
     Number(payload.calculation_id) <= 0 ||
     !Number.isInteger(payload.project_id) ||
     Number(payload.project_id) <= 0 ||
+    !Number.isInteger(payload.actor_id) ||
+    Number(payload.actor_id) <= 0 ||
     !Number.isInteger(payload.exp) ||
     Number(payload.exp) < now ||
     Number(payload.exp) > now + 180 ||
@@ -143,6 +147,8 @@ function sessionFromRequest(req: Request): SessionPayload | null {
       !Number.isInteger(payload.calculationId) ||
       !Number.isInteger(payload.officeCalculationId) ||
       !Number.isInteger(payload.officeProjectId) ||
+      !Number.isInteger(payload.actorId) ||
+      Number(payload.actorId) <= 0 ||
       !Number.isInteger(payload.exp) ||
       Number(payload.exp) < now
     ) return null;
@@ -262,6 +268,7 @@ app.post("/api/launch/consume", async (req, res) => {
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
       officeProjectId: launch.project_id,
+      actorId: launch.actor_id,
       exp: now + SESSION_SECONDS
     });
     res.setHeader("Set-Cookie", sessionCookie(token));
