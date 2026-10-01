@@ -18,6 +18,8 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
+import { evaluateSubcalculations } from "./subcalculationEvaluation.js";
+import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
 import { createTailCostComponent, evaluateTailCosts, listTailCostComponents } from "./tailCostRepository.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
@@ -698,6 +700,33 @@ app.post("/api/workbench/current/tail-costs/evaluate", async (req,res)=>{
   }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden berekend."});}
 });
 
+app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const results=await evaluateSubcalculations(versionId);
+    const [versions]=await db.execute<RowDataPacket[]>(
+      "SELECT direct_cost,markup_amount,sales_price FROM calculation_versions WHERE id=? LIMIT 1",[versionId]
+    );
+    const totalDirect=Number(versions[0]?.direct_cost??0);
+    const totalTail=Number(versions[0]?.markup_amount??0);
+    const evaluated=results.map(result=>{
+      const share=totalDirect>0?result.directCost/totalDirect:0;
+      const allocatedTailCost=totalTail*share;
+      return {
+        ...result,
+        directShare:share,
+        allocatedTailCost,
+        salesPrice:result.directCost+allocatedTailCost
+      };
+    });
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-subcalculation-results-v1",versionId,totalDirect,totalTail,results:evaluated});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden berekend."});
+  }
+});
+
 app.get("/api/workbench/current/subcalculations", async (req, res) => {
   const session=requireSession(req,res);
   if(!session) return;
@@ -1004,6 +1033,13 @@ app.put("/api/workbench/current", async (req, res) => {
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);
+      const scopeTags = generatedScopeTags({
+        priceSourceType,
+        sourceDetails: line.sourceDetails == null ? null : String(line.sourceDetails)
+      });
+      if (scopeTags.length) {
+        await storeLineScopeTags(connection, insert.insertId, scopeTags);
+      }
     }
 
     for (const allocation of allocations) {
@@ -1016,7 +1052,14 @@ app.put("/api/workbench/current", async (req, res) => {
       );
     }
 
-    const markupAmount = directCost * (markupPct / 100);
+    const tailComponents = await listTailCostComponents(Number(version.id));
+    const baseAmounts:Record<string,number> = {};
+    const subcalculationResults = await evaluateSubcalculations(Number(version.id));
+    for (const result of subcalculationResults) {
+      baseAmounts[`subcalculation:${result.ref}`] = result.directCost;
+    }
+    const evaluatedTailCosts = evaluateTailCosts({ directCost, components: tailComponents, baseAmounts });
+    const markupAmount = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
     const salesPrice = directCost + markupAmount;
     await connection.execute(
       "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
@@ -1075,7 +1118,16 @@ app.put("/api/workbench/current", async (req, res) => {
           calculation_id: session.calculationId,
           office_calculation_id: session.officeCalculationId,
           office_project_id: session.officeProjectId,
-          markup_pct: markupPct
+          tail_costs: evaluatedTailCosts.map(row => ({
+            component_key: row.componentKey,
+            description: row.description,
+            basis: row.basis,
+            value: row.value,
+            base_scope: row.baseScope,
+            base_ref: row.baseRef,
+            base_amount: row.baseAmount,
+            amount: row.amount
+          }))
         }
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
