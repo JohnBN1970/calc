@@ -723,9 +723,13 @@ function App() {
 
   const addSelectedLinesToSubcalculation = async (subcalculationId:number) => {
     if(!subcalculationId) return;
-    const persistedIds=selectedLineIds.filter(id=>id>0);
-    if(persistedIds.length!==selectedLineIds.length){
+    const persistedIds=selectedLineIds.filter(id=>id>0 && isCostLine(lines.find(line=>line.id===id) ?? ({lineType:"note"} as Line)));
+    if(selectedLineIds.some(id=>id<0)){
       setManagementStatus("Sla nieuwe regels eerst op voordat je ze aan een deelcalculatie koppelt.");
+      return;
+    }
+    if(persistedIds.length===0){
+      setManagementStatus("Selecteer minimaal één echte calculatieregel.");
       return;
     }
     setManagementStatus("Regels koppelen aan deelcalculatie…");
@@ -745,6 +749,30 @@ function App() {
       setManagementStatus(`${persistedIds.length} regel(s) gekoppeld aan deelcalculatie.`);
     }catch(error){
       setManagementStatus(error instanceof Error?error.message:"Regels konden niet worden gekoppeld.");
+    }
+  };
+
+  const removeSelectedLinesFromActiveSubcalculation = async () => {
+    if(activeSubcalculationId==null) return;
+    const persistedIds=selectedLineIds.filter(id=>id>0 && isCostLine(lines.find(line=>line.id===id) ?? ({lineType:"note"} as Line)));
+    if(persistedIds.length===0){setManagementStatus("Selecteer minimaal één gekoppelde calculatieregel.");return;}
+    setManagementStatus("Regels uit deelcalculatie verwijderen…");
+    try{
+      for(const lineId of persistedIds){
+        const response=await fetch(`/api/workbench/current/subcalculations/${activeSubcalculationId}/lines/${lineId}`,{
+          method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({included:false})
+        });
+        if(!response.ok){
+          const payload=await response.json().catch(()=>({}));
+          throw new Error(String(payload.error??`Regel #${lineId} kon niet worden verwijderd.`));
+        }
+      }
+      await loadSubcalculationResults();
+      setSelectedLineIds([]);
+      setManagementStatus(`${persistedIds.length} regel(s) uit deelcalculatie verwijderd.`);
+    }catch(error){
+      setManagementStatus(error instanceof Error?error.message:"Regels konden niet uit de deelcalculatie worden verwijderd.");
     }
   };
 
@@ -1860,6 +1888,7 @@ function App() {
             </select>
           </label>}
           <button type="button" onClick={bulkDetachSource}>Bron loskoppelen</button>
+          {activeSubcalculationId!=null && <button type="button" onClick={() => void removeSelectedLinesFromActiveSubcalculation()}>Uit deze deelcalc</button>}
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
