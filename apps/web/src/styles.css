@@ -144,3 +144,22 @@
 .columnResizeHandle::after{content:"";position:absolute;top:6px;bottom:6px;left:3px;width:1px;background:transparent}
 .columnResizeHandle:hover::after,.is-column-resizing .columnResizeHandle::after{background:#87939c}
 .is-column-resizing,.is-column-resizing *{cursor:col-resize!important;user-select:none!important}
+
+
+.recipeWorkspace{border-bottom:1px solid #dfe4e8;background:#f8fafb;padding:18px}
+.recipeWorkspaceHead{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:14px}
+.recipeWorkspaceHead h2{margin:3px 0 4px;font-size:20px}.recipeWorkspaceHead p{margin:0;color:#6d7780;font-size:13px}
+.recipeSummary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.recipeSummary>div,.costRollupBar>div{background:#fff;border:1px solid #dfe4e8;border-radius:7px;padding:11px 12px}
+.recipeSummary span,.costRollupBar span{display:block;color:#707b84;font-size:11px;margin-bottom:4px}.recipeSummary strong{font-size:17px}
+.recipeWarnings{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:9px 11px;border:1px solid #e2d5b5;background:#fffaf0;border-radius:7px;font-size:12px}.recipeWarnings span{color:#765d22}
+.recipeColumns{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:10px;align-items:start}
+.recipePanel{background:#fff;border:1px solid #dfe4e8;border-radius:7px;overflow:hidden;max-height:470px;overflow-y:auto}.recipePanel h3{position:sticky;top:0;z-index:1;margin:0;padding:10px 12px;border-bottom:1px solid #e7ebee;background:#f7f9fa;font-size:13px}
+.recipePanel>.muted{padding:12px;margin:0}
+.conceptPosition,.recipeProposalCard,.generatedLineCard{padding:10px 12px;border-bottom:1px solid #edf0f2}.conceptPosition:last-child,.recipeProposalCard:last-child,.generatedLineCard:last-child{border-bottom:0}
+.conceptPosition>div:first-child,.recipeProposalCard>div:first-child,.generatedLineCard>div:first-child{display:flex;justify-content:space-between;gap:10px}.conceptPosition span,.recipeProposalCard span,.generatedLineCard span,.conceptPosition small,.recipeProposalCard small,.generatedLineCard small{display:block;color:#707b84;font-size:11px}.conceptPosition p{margin:5px 0;font-size:12px}.conceptPosition small,.recipeProposalCard small,.generatedLineCard small{margin-top:3px}
+.reviewBadge{display:inline-flex!important;width:max-content;border-radius:999px;padding:2px 6px;margin-top:5px;font-size:9px!important;font-weight:800;text-transform:uppercase;letter-spacing:.05em}.reviewBadge.reviewed{background:#eef6ef;color:#2f6a39}.reviewBadge.proposed{background:#fff7df;color:#775d12}
+.generatedLineCard{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center}.generatedLineCard>b{font-size:12px;text-align:right}.generatedLineCard>small{grid-column:1/-1}
+.costRollupBar{display:flex;gap:8px;overflow-x:auto;margin-top:12px}.costRollupBar>div{min-width:145px}.costRollupBar strong{display:block;font-size:15px}.costRollupBar small{display:block;color:#7a858d;font-size:10px;margin-top:3px}.costRollupBar .costRollupTotal{margin-left:auto;border-color:#adb7bf;background:#fbfcfc}
+@media(max-width:1200px){.recipeColumns{grid-template-columns:1fr 1fr}.recipePanel:last-child{grid-column:1/-1}.recipeSummary{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.recipeColumns,.recipeSummary{grid-template-columns:1fr}.recipePanel:last-child{grid-column:auto}.costRollupBar{display:grid;grid-template-columns:1fr 1fr}.costRollupBar .costRollupTotal{margin-left:0}}
