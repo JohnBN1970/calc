@@ -94,3 +94,42 @@ export async function evaluateSubcalculations(versionId:number, executor:Pick<Po
   }
   return results;
 }
+
+
+export async function evaluateCalculationPartitions(
+  versionId:number,
+  executor:Pick<Pool|PoolConnection,"execute"> = db
+):Promise<{
+  totalDirectCost:number;
+  mainDirectCost:number;
+  assignedLineIds:number[];
+  subcalculations:SubcalculationResult[];
+}>{
+  const subcalculations=await evaluateSubcalculations(versionId,executor);
+  const assigned=new Set<number>();
+  for(const sub of subcalculations) for(const id of sub.lineIds) assigned.add(id);
+
+  const [lines]=await executor.execute<RowDataPacket[]>(`
+    SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
+           equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
+      FROM calculation_lines
+     WHERE version_id=?
+       AND line_type NOT IN ('chapter','paragraph','note','option')
+  `,[versionId]);
+
+  let totalDirectCost=0;
+  let mainDirectCost=0;
+  for(const row of lines){
+    const amounts=lineAmounts(row);
+    const lineTotal=amounts.labour+amounts.material+amounts.equipment+amounts.subcontracting+amounts.other;
+    totalDirectCost+=lineTotal;
+    if(!assigned.has(Number(row.id))) mainDirectCost+=lineTotal;
+  }
+
+  return {
+    totalDirectCost,
+    mainDirectCost,
+    assignedLineIds:[...assigned],
+    subcalculations
+  };
+}

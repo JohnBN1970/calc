@@ -18,9 +18,10 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
-import { evaluateSubcalculations } from "./subcalculationEvaluation.js";
+import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
-import { createTailCostComponent, evaluateTailCosts, listTailCostComponents } from "./tailCostRepository.js";
+import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
+import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -672,8 +673,19 @@ app.post("/api/workbench/current/tail-costs", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
+    const ownerType=String(req.body?.ownerType??"calculation");
+    const ownerRef=req.body?.ownerRef==null?null:String(req.body.ownerRef).trim();
+    if(ownerType==="subcalculation"){
+      const subcalculations=await listCalcSubcalculations(versionId);
+      if(!ownerRef || !subcalculations.some(item=>item.ref===ownerRef)){
+        res.status(400).json({error:"Kies een geldige deelcalculatie als eigenaar van deze staartkosten."});
+        return;
+      }
+    }
     const id=await createTailCostComponent({
       versionId,
+      ownerType:ownerType as any,
+      ownerRef,
       componentKey:String(req.body?.componentKey??""),
       description:String(req.body?.description??""),
       basis:String(req.body?.basis??"percentage") as any,
@@ -692,16 +704,30 @@ app.post("/api/workbench/current/tail-costs/evaluate", async (req,res)=>{
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
     const components=await listTailCostComponents(versionId);
-    const directCost=Number(req.body?.directCost??0);
-    if(!Number.isFinite(directCost)||directCost<0)throw new Error("Ongeldige directe kost.");
-    const baseAmounts:Record<string,number>={...(req.body?.baseAmounts??{})};
-    const subcalculationResults=await evaluateSubcalculations(versionId);
-    for(const result of subcalculationResults){
-      baseAmounts[`subcalculation:${result.ref}`]=result.directCost;
-    }
-    const evaluated=evaluateTailCosts({directCost,components,baseAmounts});
-    const tailCost=evaluated.reduce((sum,row)=>sum+row.amount,0);
-    res.json({contract:"brebo-calc-tail-cost-evaluation-v1",directCost,components:evaluated,tailCost,salesPrice:directCost+tailCost});
+    const partitions=await evaluateCalculationPartitions(versionId);
+    const requestedDirect=Number(req.body?.directCost??partitions.totalDirectCost);
+    if(!Number.isFinite(requestedDirect)||requestedDirect<0)throw new Error("Ongeldige directe kost.");
+
+    // For unsaved UI edits we may know a newer total direct cost, but ownership
+    // remains based on the last saved line memberships until the next save.
+    const delta=requestedDirect-partitions.totalDirectCost;
+    const adjustedMainDirect=Math.max(0,partitions.mainDirectCost+delta);
+    const hierarchy=evaluateTailCostHierarchy({
+      totalDirectCost:requestedDirect,
+      mainDirectCost:adjustedMainDirect,
+      subcalculations:partitions.subcalculations,
+      components
+    });
+
+    res.json({
+      contract:"brebo-calc-tail-cost-evaluation-v2",
+      directCost:hierarchy.totalDirectCost,
+      mainDirectCost:hierarchy.mainDirectCost,
+      calculationComponents:hierarchy.calculationTailCosts,
+      subcalculations:hierarchy.subcalculations,
+      tailCost:hierarchy.tailCost,
+      salesPrice:hierarchy.salesPrice
+    });
   }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden berekend."});}
 });
 
@@ -709,24 +735,30 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
-    const results=await evaluateSubcalculations(versionId);
-    const [versions]=await db.execute<RowDataPacket[]>(
-      "SELECT direct_cost,markup_amount,sales_price FROM calculation_versions WHERE id=? LIMIT 1",[versionId]
-    );
-    const totalDirect=Number(versions[0]?.direct_cost??0);
-    const totalTail=Number(versions[0]?.markup_amount??0);
-    const evaluated=results.map(result=>{
-      const share=totalDirect>0?result.directCost/totalDirect:0;
-      const allocatedTailCost=totalTail*share;
-      return {
-        ...result,
-        directShare:share,
-        allocatedTailCost,
-        salesPrice:result.directCost+allocatedTailCost
-      };
+    const [components,partitions]=await Promise.all([
+      listTailCostComponents(versionId),
+      evaluateCalculationPartitions(versionId)
+    ]);
+    const hierarchy=evaluateTailCostHierarchy({
+      totalDirectCost:partitions.totalDirectCost,
+      mainDirectCost:partitions.mainDirectCost,
+      subcalculations:partitions.subcalculations,
+      components
     });
+    const results=hierarchy.subcalculations.map(result=>({
+      ...result,
+      allocatedTailCost:result.tailCost,
+      directShare:hierarchy.totalDirectCost>0?result.directCost/hierarchy.totalDirectCost:0
+    }));
     res.setHeader("Cache-Control","no-store, private");
-    res.json({contract:"brebo-calc-subcalculation-results-v1",versionId,totalDirect,totalTail,results:evaluated});
+    res.json({
+      contract:"brebo-calc-subcalculation-results-v2",
+      versionId,
+      totalDirect:hierarchy.totalDirectCost,
+      mainDirect:hierarchy.mainDirectCost,
+      totalTail:hierarchy.tailCost,
+      results
+    });
   }catch(error){
     res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden berekend."});
   }
@@ -1093,14 +1125,15 @@ app.put("/api/workbench/current", async (req, res) => {
     }
 
     const tailComponents = await listTailCostComponents(Number(version.id));
-    const baseAmounts:Record<string,number> = {};
-    const subcalculationResults = await evaluateSubcalculations(Number(version.id), connection);
-    for (const result of subcalculationResults) {
-      baseAmounts[`subcalculation:${result.ref}`] = result.directCost;
-    }
-    const evaluatedTailCosts = evaluateTailCosts({ directCost, components: tailComponents, baseAmounts });
-    const markupAmount = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
-    const salesPrice = directCost + markupAmount;
+    const partitions = await evaluateCalculationPartitions(Number(version.id), connection);
+    const tailHierarchy = evaluateTailCostHierarchy({
+      totalDirectCost: directCost,
+      mainDirectCost: partitions.mainDirectCost,
+      subcalculations: partitions.subcalculations,
+      components: tailComponents
+    });
+    const markupAmount = tailHierarchy.tailCost;
+    const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
       "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
       [directCost, markupAmount, salesPrice, version.id]
@@ -1158,16 +1191,32 @@ app.put("/api/workbench/current", async (req, res) => {
           calculation_id: session.calculationId,
           office_calculation_id: session.officeCalculationId,
           office_project_id: session.officeProjectId,
-          tail_costs: evaluatedTailCosts.map(row => ({
-            component_key: row.componentKey,
-            description: row.description,
-            basis: row.basis,
-            value: row.value,
-            base_scope: row.baseScope,
-            base_ref: row.baseRef,
-            base_amount: row.baseAmount,
-            amount: row.amount
-          }))
+          tail_costs: [
+            ...tailHierarchy.calculationTailCosts.map(row => ({
+              owner_type: row.ownerType,
+              owner_ref: row.ownerRef,
+              component_key: row.componentKey,
+              description: row.description,
+              basis: row.basis,
+              value: row.value,
+              base_scope: row.baseScope,
+              base_ref: row.baseRef,
+              base_amount: row.baseAmount,
+              amount: row.amount
+            })),
+            ...tailHierarchy.subcalculations.flatMap(sub => sub.tailCosts.map(row => ({
+              owner_type: row.ownerType,
+              owner_ref: row.ownerRef,
+              component_key: row.componentKey,
+              description: row.description,
+              basis: row.basis,
+              value: row.value,
+              base_scope: row.baseScope,
+              base_ref: row.baseRef,
+              base_amount: row.baseAmount,
+              amount: row.amount
+            })))
+          ]
         }
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);

@@ -223,11 +223,12 @@ type CalcSubcalculationResult = {
 };
 
 type TailCostComponent={
-  id:number;versionId:number;componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
-  value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
+  id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
+  componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
+  value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity"|"owner_direct_cost"|"owner_running_total"|"consolidated_direct_cost"|"consolidated_running_total";
   baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
 };
-type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;runningTotal:number};
+type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;ownerRunningTotal:number;consolidatedRunningTotal:number};
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
@@ -526,6 +527,7 @@ function App() {
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
   const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
+  const [activeSubcalculationId,setActiveSubcalculationId]=useState<number|null>(null);
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -555,17 +557,48 @@ function App() {
   const [tailCostOpen,setTailCostOpen]=useState(false);
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
   const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
-  const [tailCostDraft,setTailCostDraft]=useState({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null as number|null});
+  const [tailCostTotal,setTailCostTotal]=useState(0);
+  const [mainDirectCost,setMainDirectCost]=useState(0);
+  const [tailCostDraft,setTailCostDraft]=useState({
+    ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,
+    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null
+  });
   const [tailCostStatus,setTailCostStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
-    const tailCost = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
+    const tailCost = tailCostTotal;
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
-  }, [lines, evaluatedTailCosts]);
+  }, [lines, tailCostTotal]);
 
-  const displayedTotals = totals;
+  const activeSubcalculationResult = useMemo(
+    () => activeSubcalculationId == null ? null : subcalculationResults.find(row => row.id === activeSubcalculationId) ?? null,
+    [activeSubcalculationId, subcalculationResults]
+  );
+
+  const workbenchLines = useMemo(() => {
+    if (!activeSubcalculationResult) return lines;
+    const included = new Set(activeSubcalculationResult.lineIds);
+    const lineById = new Map(lines.map(line => [line.id, line]));
+    for (const id of [...included]) {
+      let parentId = lineById.get(id)?.parentId ?? null;
+      while (parentId != null) {
+        if (included.has(parentId)) break;
+        included.add(parentId);
+        parentId = lineById.get(parentId)?.parentId ?? null;
+      }
+    }
+    return lines.filter(line => included.has(line.id));
+  }, [lines, activeSubcalculationResult]);
+
+  const displayedTotals = activeSubcalculationResult
+    ? {
+        direct: activeSubcalculationResult.directCost,
+        markupAmount: activeSubcalculationResult.allocatedTailCost,
+        sales: activeSubcalculationResult.salesPrice
+      }
+    : totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
   useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -614,9 +647,15 @@ function App() {
       method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
     });
     if(evalResponse.ok){
-      const evaluated=await evalResponse.json() as {components:EvaluatedTailCost[]};
-      setEvaluatedTailCosts(Array.isArray(evaluated.components)?evaluated.components:[]);
-    }else setEvaluatedTailCosts([]);
+      const evaluated=await evalResponse.json() as {calculationComponents:EvaluatedTailCost[];tailCost:number;mainDirectCost:number};
+      setEvaluatedTailCosts(Array.isArray(evaluated.calculationComponents)?evaluated.calculationComponents:[]);
+      setTailCostTotal(Number(evaluated.tailCost??0));
+      setMainDirectCost(Number(evaluated.mainDirectCost??0));
+    }else{
+      setEvaluatedTailCosts([]);
+      setTailCostTotal(0);
+      setMainDirectCost(0);
+    }
   };
 
   const createTailCost=async()=>{
@@ -628,7 +667,7 @@ function App() {
       });
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"Staartkostencomponent kon niet worden toegevoegd."));
-      setTailCostDraft({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null});
+      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null});
       await loadTailCosts();
       setTailCostStatus("Staartkostencomponent toegevoegd.");
     }catch(error){setTailCostStatus(error instanceof Error?error.message:"Staartkostencomponent kon niet worden toegevoegd.");}
@@ -692,6 +731,61 @@ function App() {
       await loadRecipeLibrary();
       setManagementStatus("Receptregel toegevoegd.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden toegevoegd."); }
+  };
+
+  const addSelectedLinesToSubcalculation = async (subcalculationId:number) => {
+    if(!subcalculationId) return;
+    const persistedIds=selectedLineIds.filter(id=>id>0 && isCostLine(lines.find(line=>line.id===id) ?? ({lineType:"note"} as Line)));
+    if(selectedLineIds.some(id=>id<0)){
+      setManagementStatus("Sla nieuwe regels eerst op voordat je ze aan een deelcalculatie koppelt.");
+      return;
+    }
+    if(persistedIds.length===0){
+      setManagementStatus("Selecteer minimaal één echte calculatieregel.");
+      return;
+    }
+    setManagementStatus("Regels koppelen aan deelcalculatie…");
+    try{
+      for(const lineId of persistedIds){
+        const response=await fetch(`/api/workbench/current/subcalculations/${subcalculationId}/lines/${lineId}`,{
+          method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({included:true})
+        });
+        if(!response.ok){
+          const payload=await response.json().catch(()=>({}));
+          throw new Error(String(payload.error??`Regel #${lineId} kon niet worden gekoppeld.`));
+        }
+      }
+      await loadSubcalculationResults();
+      setSelectedLineIds([]);
+      setManagementStatus(`${persistedIds.length} regel(s) gekoppeld aan deelcalculatie.`);
+    }catch(error){
+      setManagementStatus(error instanceof Error?error.message:"Regels konden niet worden gekoppeld.");
+    }
+  };
+
+  const removeSelectedLinesFromActiveSubcalculation = async () => {
+    if(activeSubcalculationId==null) return;
+    const persistedIds=selectedLineIds.filter(id=>id>0 && isCostLine(lines.find(line=>line.id===id) ?? ({lineType:"note"} as Line)));
+    if(persistedIds.length===0){setManagementStatus("Selecteer minimaal één gekoppelde calculatieregel.");return;}
+    setManagementStatus("Regels uit deelcalculatie verwijderen…");
+    try{
+      for(const lineId of persistedIds){
+        const response=await fetch(`/api/workbench/current/subcalculations/${activeSubcalculationId}/lines/${lineId}`,{
+          method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({included:false})
+        });
+        if(!response.ok){
+          const payload=await response.json().catch(()=>({}));
+          throw new Error(String(payload.error??`Regel #${lineId} kon niet worden verwijderd.`));
+        }
+      }
+      await loadSubcalculationResults();
+      setSelectedLineIds([]);
+      setManagementStatus(`${persistedIds.length} regel(s) uit deelcalculatie verwijderd.`);
+    }catch(error){
+      setManagementStatus(error instanceof Error?error.message:"Regels konden niet uit de deelcalculatie worden verwijderd.");
+    }
   };
 
   const createSubcalculation = async () => {
@@ -1683,17 +1777,34 @@ function App() {
           <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
+              <label><span>Hoort bij</span><select value={tailCostDraft.ownerType+":"+tailCostDraft.ownerRef} onChange={e=>{
+                const [ownerType,ownerRef=""]=e.target.value.split(":");
+                setTailCostDraft(v=>({...v,ownerType,ownerRef,baseScope:"owner_direct_cost",baseRef:""}));
+              }}>
+                <option value="calculation:">Hoofdcalculatie</option>
+                {subcalculations.map(item=><option key={item.id} value={"subcalculation:"+item.ref}>Deelcalculatie · {item.description}</option>)}
+              </select></label>
               <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>
               <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>
               <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>
               <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>
-              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}><option value="direct_cost">Directe kost</option><option value="running_total">Lopend totaal</option><option value="subcalculation">Deelcalculatie</option><option value="quantity">Hoeveelheid</option></select></label>
-              {!["direct_cost","running_total"].includes(tailCostDraft.baseScope)&&<label><span>Basisreferentie</span><input value={tailCostDraft.baseRef} onChange={e=>setTailCostDraft(v=>({...v,baseRef:e.target.value}))} /></label>}
-              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid (optioneel)</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}>
+                <option value="owner_direct_cost">{tailCostDraft.ownerType==="subcalculation"?"Directe kost van deze deelcalculatie":"Alleen hoofdregels"}</option>
+                <option value="owner_running_total">{tailCostDraft.ownerType==="subcalculation"?"Lopend totaal van deze deelcalculatie":"Lopend totaal hoofdregels"}</option>
+                {tailCostDraft.ownerType==="calculation"&&<><option value="consolidated_direct_cost">Alle unieke directe kosten</option><option value="consolidated_running_total">Geconsolideerd lopend totaal</option></>}
+                <option value="quantity">Hoeveelheid</option>
+              </select></label>
+              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
               <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
             </section>
             <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>
-              <div className="tailCostList"><div><strong>Directe kostprijs</strong><b>{money.format(totals.direct)}</b></div>{evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}<div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div></div>
+              <div className="tailCostList">
+                <div><span><strong>Alle unieke directe kosten</strong><small>Elke Calc-regel telt één keer, ook als hij in meerdere deelcalculaties zit.</small></span><b>{money.format(totals.direct)}</b></div>
+                <div><span><strong>Daarvan hoofdregels</strong><small>Regels die niet onder een deelcalculatie vallen.</small></span><b>{money.format(mainDirectCost)}</b></div>
+                {subcalculationResults.filter(row=>row.allocatedTailCost!==0).map(row=><div key={"subtail-"+row.id}><span><strong>Staartkosten · {row.description}</strong><small>Alleen binnen deze deelcalculatie berekend.</small></span><b>{money.format(row.allocatedTailCost)}</b></div>)}
+                {evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · {row.baseScope==="owner_direct_cost"?"hoofdregels":row.baseScope==="owner_running_total"?"lopend hoofd":row.baseScope==="consolidated_direct_cost"?"alle unieke directe kosten":row.baseScope==="consolidated_running_total"?"geconsolideerd lopend totaal":row.baseScope} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}
+                <div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div>
+              </div>
               {tailCosts.length===0&&<p className="muted">Nog geen staartkosten. De verkoopprijs is dan gelijk aan de directe kostprijs.</p>}
             </section>
           </div>
@@ -1770,6 +1881,19 @@ function App() {
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
         </div>}
 
+        <div className="subcalcWorkmode">
+          <label><span>Weergave</span><select value={activeSubcalculationId ?? ""} onChange={event=>{setActiveSubcalculationId(event.target.value?Number(event.target.value):null);setSelectedLineIds([]);}}>
+            <option value="">Volledige calculatie</option>
+            {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
+          </select></label>
+          {activeSubcalculationResult && <div className="subcalcWorkmodeTotals">
+            <span><small>Direct</small><strong>{money.format(activeSubcalculationResult.directCost)}</strong></span>
+            <span><small>Staartkosten</small><strong>{money.format(activeSubcalculationResult.allocatedTailCost)}</strong></span>
+            <span><small>Verkoop</small><strong>{money.format(activeSubcalculationResult.salesPrice)}</strong></span>
+            <span><small>Regels</small><strong>{activeSubcalculationResult.lineIds.length}</strong></span>
+          </div>}
+        </div>
+
         {selectedLineIds.length > 0 && <div className="bulkBar">
           <strong>{selectedLineIds.length} geselecteerd</strong>
           <button type="button" onClick={bulkDuplicate}>Dupliceren</button>
@@ -1786,19 +1910,26 @@ function App() {
               )}
             </select>
           </label>
+          {subcalculations.length>0 && <label>Toevoegen aan deelcalc
+            <select defaultValue="__choose" onChange={event=>{const value=Number(event.target.value);if(value)void addSelectedLinesToSubcalculation(value);event.currentTarget.value="__choose";}}>
+              <option value="__choose">Kies…</option>
+              {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
+            </select>
+          </label>}
           <button type="button" onClick={bulkDetachSource}>Bron loskoppelen</button>
+          {activeSubcalculationId!=null && <button type="button" onClick={() => void removeSelectedLinesFromActiveSubcalculation()}>Uit deze deelcalc</button>}
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
         <div className="grid">
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
             {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
-              {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={lines.length > 0 && selectedLineIds.length === lines.length} onChange={event => setSelectedLineIds(event.target.checked ? lines.map(line => line.id) : [])} />}
+              {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={workbenchLines.length > 0 && selectedLineIds.length === workbenchLines.length} onChange={event => setSelectedLineIds(event.target.checked ? workbenchLines.map(line => line.id) : [])} />}
               <span>{column.label}</span>
               <span className="columnResizeHandle" role="separator" aria-orientation="vertical" title="Sleep om kolombreedte te wijzigen" onPointerDown={event => startColumnResize(event,column.key)} />
             </b>)}
           </div>
-          {lines.map(line => {
+          {workbenchLines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               return <div className={line.lineType} key={line.id}>
                 <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
@@ -1849,7 +1980,7 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
-          <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+          {activeSubcalculationId == null ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button> : <div className="subcalcFilteredNotice">Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan.</div>}
         </div>
       </section>
     </main>
