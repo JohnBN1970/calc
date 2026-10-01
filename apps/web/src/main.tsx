@@ -164,45 +164,6 @@ type WorkbenchAggregate = {
     code: string | null;
     label: string;
   }>;
-  placedRecipes: Array<{
-    id: number;
-    name: string;
-    paragraph_key: string;
-    quantity: number | string;
-    unit: string | null;
-  }>;
-  generatedLines: Array<{
-    recipeInstanceId: number;
-    recipeLineId: number;
-    paragraphKey: string;
-    recipeName: string;
-    lineKey: string;
-    lineType: string;
-    description: string;
-    unit: string | null;
-    activeQuantity: number;
-    unitCost: number | null;
-  }>;
-  costRollup: {
-    complete: boolean;
-    missingPriceCount: number;
-    baseCostTotal: number;
-    additionalCostTotal: number;
-    grandTotal: number;
-    byLineType: Record<string,{lineCount:number;baseCost:number;additionalCost:number;totalCost:number}>;
-  };
-  salesPriceResult: null | {
-    priced_direct_cost?: number;
-    commercial_result?: {
-      direct_cost?: number;
-      general_cost?: number;
-      risk?: number;
-      profit?: number;
-      single_margin?: number;
-      commercial_adjustment?: number;
-      sales_price?: number;
-    };
-  };
   readiness: unknown;
 };
 
@@ -523,14 +484,7 @@ function App() {
     return { direct, markupAmount, sales: direct + markupAmount };
   }, [lines, markupPct]);
 
-  const aggregateFinancials = useMemo(() => {
-    const commercial = aggregate?.salesPriceResult?.commercial_result;
-    const direct = Number(commercial?.direct_cost ?? aggregate?.costRollup.grandTotal ?? 0);
-    const sales = Number(commercial?.sales_price ?? 0);
-    const markupAmount = sales > 0 ? sales - direct : 0;
-    return { direct, sales, markupAmount };
-  }, [aggregate]);
-  const displayedTotals = aggregate ? aggregateFinancials : totals;
+  const displayedTotals = totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
   useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -635,11 +589,11 @@ function App() {
   }, []);
 
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
-    if (!recipeParagraphKey) {
+    if (!recipeParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Office-paragraaf.");
       return;
     }
-    setRecipeActionStatus(`${proposal.label} plaatsen…`);
+    setRecipeActionStatus(`${proposal.label} in Calc genereren…`);
     try {
       const response = await fetch("/api/workbench/current/concept/recipe-proposals/accept", {
         method: "POST",
@@ -647,20 +601,102 @@ function App() {
         body: JSON.stringify({
           positionRef: proposal.positionRef,
           recipeVersionId: Number(proposal.recipeRef),
-          paragraphKey: recipeParagraphKey,
           takeoffId: selectedTakeoffByPosition[proposal.positionRef] ?? undefined,
           passes: 1,
           parameters: {}
         })
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden geplaatst."));
-      setRecipeActionStatus(`${proposal.label} geplaatst. Office opnieuw berekend.`);
-      const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
-      if (!aggregateResponse.ok) throw new Error("Nieuwe Office-berekening kon niet worden geladen.");
-      setAggregate(await aggregateResponse.json() as WorkbenchAggregate);
+      const payload = await response.json().catch(() => ({})) as {
+        error?: string;
+        recipeName?: string;
+        lines?: Array<{
+          code:string;description:string;unit:string;quantity:number;
+          labourNorm:number|null;labourTotalHours:number|null;labourHoursInputMode:"norm"|"total_hours"|null;
+          labour:number;material:number;equipment:number;subcontracting:number;other:number;
+          priceSourceType:"recipe";officeSourceId:string;sourceReference:string;sourceUnitPrice:number|null;sourceDetails:string;
+        }>;
+      };
+      if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
+      if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Office-recept leverde geen Calc-regels op.");
+
+      const paragraphNode = aggregate.structure.find(node => node.node_key === recipeParagraphKey);
+      if (!paragraphNode) throw new Error("De gekozen Office-paragraaf bestaat niet meer.");
+      const chapterNode = paragraphNode.parent_key ? aggregate.structure.find(node => node.node_key === paragraphNode.parent_key) : null;
+
+      let id = nextId;
+      const created: Line[] = [];
+      let chapterId: number | null = null;
+      if (chapterNode) {
+        const existing = lines.find(line => line.lineType === "chapter" && line.description.trim() === chapterNode.label.trim());
+        if (existing) chapterId = existing.id;
+        else {
+          chapterId = id--;
+          created.push({
+            id:chapterId,parentId:null,lineType:"chapter",code:chapterNode.code??"",description:chapterNode.label,
+            unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+            labour:0,material:0,equipment:0,subcontracting:0,other:0,priceSourceType:"manual",
+            officeSourceId:null,sourceReference:null,sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,
+            sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,
+            sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+          });
+        }
+      }
+
+      let paragraphId: number | null = null;
+      const existingParagraph = lines.find(line => line.lineType === "paragraph" && line.description.trim() === paragraphNode.label.trim() && line.parentId === chapterId);
+      if (existingParagraph) paragraphId = existingParagraph.id;
+      else {
+        paragraphId = id--;
+        created.push({
+          id:paragraphId,parentId:chapterId,lineType:"paragraph",code:paragraphNode.code??"",description:paragraphNode.label,
+          unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+          labour:0,material:0,equipment:0,subcontracting:0,other:0,priceSourceType:"manual",
+          officeSourceId:null,sourceReference:null,sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,
+          sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,
+          sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+        });
+      }
+
+      for (const generated of payload.lines) {
+        created.push({
+          id:id--,
+          parentId:paragraphId,
+          lineType:"item",
+          code:generated.code,
+          description:generated.description,
+          unit:generated.unit,
+          quantity:generated.quantity,
+          labourNorm:generated.labourNorm,
+          labourTotalHours:generated.labourTotalHours,
+          labourHoursInputMode:generated.labourHoursInputMode,
+          labour:generated.labour,
+          material:generated.material,
+          equipment:generated.equipment,
+          subcontracting:generated.subcontracting,
+          other:generated.other,
+          priceSourceType:"recipe",
+          officeSourceId:generated.officeSourceId,
+          sourceReference:generated.sourceReference,
+          sourceSupplier:null,
+          sourceUnitPrice:generated.sourceUnitPrice,
+          sourcePriceDate:null,
+          sourceDocumentId:null,
+          sourceDetails:generated.sourceDetails,
+          sourceVisualPage:null,
+          sourcePositionBounds:null,
+          sourceVisualCrop:null,
+          sourceVisualSearchRegion:null,
+          sourceTextRegions:null,
+          sourceOfferSummary:`${payload.recipeName ?? proposal.label} · ${proposal.positionRef}`
+        });
+      }
+
+      setNextId(id);
+      setLines(current => [...current, ...created]);
+      setStatus("Concept — niet opgeslagen");
+      setRecipeActionStatus(`${payload.recipeName ?? proposal.label}: ${payload.lines.length} Calc-regel(s) gegenereerd. Nog opslaan.`);
     } catch (error) {
-      setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden geplaatst.");
+      setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden gegenereerd.");
     }
   };
 
@@ -1305,8 +1341,8 @@ function App() {
 
       <section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
-        <div><span>{aggregate ? "Commerciële methode" : "Opslag op inkoop"}</span><strong>{aggregate ? (aggregate.salesPriceResult ? "Office" : "—") : <><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</>}</strong></div>
-        <div><span>{aggregate ? "Opslagen/correcties" : "Opslagbedrag"}</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
+        <div><span>Opslag op inkoop</span><strong><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</strong></div>
+        <div><span>Opslagbedrag</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
@@ -1318,7 +1354,7 @@ function App() {
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
           <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
           <div className="commandDivider" />
-          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Concept, recepten en Office-berekening" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Office-brondata gebruiken om Calc-regels te genereren" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
@@ -1327,7 +1363,7 @@ function App() {
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
-            <div><span className="eyebrow">OFFICE-GEDREVEN CALCULATIE</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-versie ${aggregate.officeVersion} · catalogus ${aggregate.catalogVersion.slice(0,12)}…` : "Office-context wordt nog niet geleverd."}</p></div>
+            <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-versie ${aggregate.officeVersion} · catalogus ${aggregate.catalogVersion.slice(0,12)}…` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
           </div>
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
@@ -1336,13 +1372,13 @@ function App() {
                 <option value="">Kies paragraaf…</option>
                 {aggregate.structure.filter(node => node.node_type === "paragraph").map(node => <option key={node.node_key} value={node.node_key}>{node.code ? `${node.code} · ` : ""}{node.label}</option>)}
               </select></label>
-              <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-versie is bewerkbaar." : "Office-versie is vergrendeld.")}</span>
+              <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-brondata beschikbaar voor Calc." : "Office-brondata is alleen-lezen; Calc kan er wel mee rekenen.")}</span>
             </div>
             <div className="recipeSummary">
               <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
               <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
-              <div><span>Geplaatste recepten</span><strong>{aggregate.placedRecipes.length}</strong></div>
-              <div><span>Prijsstatus</span><strong>{aggregate.costRollup.complete ? "Compleet" : `${aggregate.costRollup.missingPriceCount} prijs(en) ontbreken`}</strong></div>
+              <div><span>Calc-regels uit recept</span><strong>{lines.filter(line => line.priceSourceType === "recipe").length}</strong></div>
+              <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
             </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
@@ -1356,13 +1392,14 @@ function App() {
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
                 <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
-              <div className="recipePanel"><h3>Berekende regels</h3>{aggregate.generatedLines.length === 0 ? <p className="muted">Nog geen recepten geplaatst.</p> : aggregate.generatedLines.map(line =>
-                <div className="generatedLineCard" key={line.recipeLineId}><div><strong>{line.description}</strong><span>{line.recipeName}</span></div><b>{line.activeQuantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit ?? ""}</b><small>{line.lineType}{line.unitCost == null ? " · prijs ontbreekt" : ` · ${money.format(line.unitCost)} / ${line.unit ?? "eenh."}`}</small></div>
+              <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
+                <div className="generatedLineCard" key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Office-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b><small>{money.format(lineDirect(line))} direct</small></div>
               )}</div>
             </div>
             <div className="costRollupBar">
-              {Object.entries(aggregate.costRollup.byLineType).map(([type,row]) => <div key={type}><span>{type}</span><strong>{money.format(row.totalCost)}</strong><small>{row.lineCount} regel(s)</small></div>)}
-              <div className="costRollupTotal"><span>Direct totaal</span><strong>{money.format(aggregate.costRollup.grandTotal)}</strong><small>{aggregate.costRollup.additionalCostTotal ? `incl. ${money.format(aggregate.costRollup.additionalCostTotal)} aanvullend` : "geen aanvullende kosten"}</small></div>
+              <div className="costRollupTotal"><span>Calc directe kost</span><strong>{money.format(totals.direct)}</strong><small>som van de zichtbare calculatieregels</small></div>
+              <div><span>Calc opslag</span><strong>{money.format(totals.markupAmount)}</strong><small>{markupPct.toLocaleString("nl-NL",{maximumFractionDigits:2})}%</small></div>
+              <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
         </div>}
