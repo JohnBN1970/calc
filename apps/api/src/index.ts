@@ -12,6 +12,7 @@ import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./reci
 import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./officeRecipeLines.js";
 import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
 import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
+import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -549,6 +550,23 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/cost-rollup", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const rollup = buildOfficeCostRollup(workspace);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-office-cost-rollup-v1",
+      ...rollup
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Kostenrollup kon niet worden opgebouwd: ${detail}` });
+  }
+});
 
 app.get("/api/workbench/current/additional-costs", async (req, res) => {
   const session = requireSession(req, res);
