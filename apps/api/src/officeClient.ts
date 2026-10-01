@@ -394,3 +394,64 @@ export async function fetchOfficeRecipeCatalog(): Promise<OfficeRecipeCatalog> {
   }
   return payload;
 }
+
+
+export type OfficeWorkspaceState = {
+  contract: "brebo-calculation-workspace-v2";
+  calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
+  version: { version: string; status: string; locked_at: string | null; [key:string]: unknown };
+  editable: boolean;
+  [key:string]: unknown;
+};
+
+export async function fetchOfficeWorkspaceState(calculationId:number): Promise<OfficeWorkspaceState> {
+  const path = `/api/workbench/v2/calculations/${calculationId}`;
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "GET",
+    headers: signedHeaders("GET", path),
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`Office workspace state failed with status ${response.status}.`);
+  const payload = await response.json() as OfficeWorkspaceState;
+  if (payload.contract !== "brebo-calculation-workspace-v2" || Number(payload.calculation?.calculation_id) !== calculationId) {
+    throw new Error("Office returned an invalid workspace state.");
+  }
+  return payload;
+}
+
+export async function placeOfficeRecipeFromTakeoff(input:{
+  calculationId:number;
+  version:string;
+  paragraphKey:string;
+  recipeVersionId:number;
+  takeoffId:number;
+  passes:number;
+  parameters:Record<string,string|number>;
+  actorId:number;
+}): Promise<{ok:true;recipe_instance_id:number;takeoff_id:number}> {
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/recipes/from-takeoff`;
+  const body = JSON.stringify({
+    version: input.version,
+    paragraph_key: input.paragraphKey,
+    recipe_version_id: input.recipeVersionId,
+    takeoff_id: input.takeoffId,
+    passes: input.passes,
+    parameters: input.parameters,
+    actor_id: input.actorId
+  });
+  const headers = signedHeaders("POST", path, body);
+  headers["Content-Type"] = "application/json";
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "POST",
+    headers,
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  const text = await response.text();
+  let payload: any = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch {}
+  if (!response.ok) throw new Error(payload?.message || `Office recipe placement failed with status ${response.status}.`);
+  return payload;
+}
