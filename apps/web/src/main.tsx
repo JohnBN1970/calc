@@ -210,6 +210,18 @@ type CalcSubcalculation = {
   }>;
 };
 
+type CalcSubcalculationResult = {
+  id:number;
+  ref:string;
+  description:string;
+  lineIds:number[];
+  directCost:number;
+  costs:{labour:number;material:number;equipment:number;subcontracting:number;other:number};
+  directShare:number;
+  allocatedTailCost:number;
+  salesPrice:number;
+};
+
 type TailCostComponent={
   id:number;versionId:number;componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
   value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
@@ -504,7 +516,6 @@ function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
-  const [markupPct, setMarkupPct] = useState(30);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -514,6 +525,7 @@ function App() {
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
+  const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -637,6 +649,13 @@ function App() {
     setSubcalculations(Array.isArray(payload.subcalculations)?payload.subcalculations:[]);
   };
 
+  const loadSubcalculationResults=async()=>{
+    const response=await fetch("/api/workbench/current/subcalculations/evaluate",{headers:{Accept:"application/json"}});
+    if(!response.ok){setSubcalculationResults([]);return;}
+    const payload=await response.json() as {results:CalcSubcalculationResult[]};
+    setSubcalculationResults(Array.isArray(payload.results)?payload.results:[]);
+  };
+
   const createRecipe = async () => {
     setManagementStatus("Recept aanmaken…");
     try {
@@ -685,7 +704,7 @@ function App() {
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??"Deelcalculatie kon niet worden aangemaakt."));
       setSubcalcDraft({ref:"",description:""});
-      await loadSubcalculations();
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setManagementStatus("Deelcalculatie aangemaakt.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Deelcalculatie kon niet worden aangemaakt."); }
   };
@@ -701,7 +720,7 @@ function App() {
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??"Scope kon niet worden toegevoegd."));
       setSubcalcScopeDraft(current=>({...current,scopeRef:""}));
-      await loadSubcalculations();
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setManagementStatus("Scope toegevoegd.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Scope kon niet worden toegevoegd."); }
   };
@@ -715,9 +734,6 @@ function App() {
     }
     if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
     const data = await response.json();
-    const direct = Number(data.version?.direct_cost ?? 0);
-    const markupAmount = Number(data.version?.markup_amount ?? 0);
-    setMarkupPct(direct !== 0 ? (markupAmount / direct) * 100 : 0);
     try {
       const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
       if (aggregateResponse.ok) {
@@ -764,7 +780,7 @@ function App() {
           window.history.replaceState({}, "", "/");
         }
         await loadWorkbench();
-        await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadTailCosts()]);
+        await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadSubcalculationResults(),loadTailCosts()]);
       } catch (error) {
         setAuthorized(false);
         setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
@@ -1451,7 +1467,6 @@ function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          markupPct,
           allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
@@ -1487,11 +1502,12 @@ function App() {
           }))
         })
       });
-      const payload = await response.json().catch(() => ({})) as {officeSync?:{ok?:boolean;error?:string}};
+      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string}};
       if (!response.ok) throw new Error("Opslaan mislukt");
       if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
       else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
       await loadWorkbench();
+      await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
     } catch {
       setStatus("Opslaan mislukt");
     }
@@ -1529,7 +1545,6 @@ function App() {
       <section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
-        <div><span>Opslagbedrag</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
@@ -1544,7 +1559,8 @@ function App() {
           <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
           <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" title="Deelcalculaties beheren in Calc" onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
-          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" title="Staartkosten beheren in Calc" onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>\n          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" title="Staartkosten beheren in Calc" onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
+          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
@@ -1587,7 +1603,7 @@ function App() {
             </div>
             <div className="costRollupBar">
               <div className="costRollupTotal"><span>Calc directe kost</span><strong>{money.format(totals.direct)}</strong><small>som van de zichtbare calculatieregels</small></div>
-              <div><span>Calc opslag</span><strong>{money.format(totals.markupAmount)}</strong><small>{markupPct.toLocaleString("nl-NL",{maximumFractionDigits:2})}%</small></div>
+              <div><span>Calc staartkosten</span><strong>{money.format(totals.markupAmount)}</strong><small>opbouw via Staartkosten</small></div>
               <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
@@ -1658,12 +1674,32 @@ function App() {
             </section>
             <section className="managementCard managementWide">
               <h3>Huidige deelcalculaties</h3>
-              {subcalculations.length===0?<p className="muted">Nog geen deelcalculaties.</p>:<div className="subcalcList">{subcalculations.map(item=><div className="subcalcCard" key={item.id}><div><strong>{item.description}</strong><span>{item.ref}</span></div>{item.scopes.length===0?<small>Nog geen scope.</small>:<div className="scopeTags">{item.scopes.map(scope=><span key={scope.id}>{scope.scopeType}: {scope.scopeRef}</span>)}</div>}</div>)}</div>}
+              {subcalculations.length===0?<p className="muted">Nog geen deelcalculaties.</p>:<div className="subcalcList">{subcalculations.map(item=>{const result=subcalculationResults.find(row=>row.id===item.id);return <div className="subcalcCard" key={item.id}><div><strong>{item.description}</strong><span>{item.ref}</span></div>{item.scopes.length===0?<small>Nog geen scope.</small>:<div className="scopeTags">{item.scopes.map(scope=><span key={scope.id}>{scope.scopeType}: {scope.scopeRef}</span>)}</div>}<div className="subcalcTotals"><span>Direct <b>{money.format(result?.directCost??0)}</b></span><span>Staartkosten <b>{money.format(result?.allocatedTailCost??0)}</b></span><span>Verkoop <b>{money.format(result?.salesPrice??0)}</b></span><small>{result?.lineIds.length??0} regel(s) · {result?Math.round(result.directShare*1000)/10:0}% van directe kost</small></div></div>})}</div>}
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div>}
-        {tailCostOpen && <div className="managementWorkspace">\n          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>\n          <div className="managementGrid">\n            <section className="managementCard"><h3>Component toevoegen</h3>\n              <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>\n              <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>\n              <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>\n              <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>\n              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}><option value="direct_cost">Directe kost</option><option value="running_total">Lopend totaal</option><option value="selected_lines">Geselecteerde regels</option><option value="subcalculation">Deelcalculatie</option><option value="quantity">Hoeveelheid</option></select></label>\n              {!["direct_cost","running_total"].includes(tailCostDraft.baseScope)&&<label><span>Basisreferentie</span><input value={tailCostDraft.baseRef} onChange={e=>setTailCostDraft(v=>({...v,baseRef:e.target.value}))} /></label>}\n              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid (optioneel)</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}\n              <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>\n            </section>\n            <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>\n              <div className="tailCostList"><div><strong>Directe kostprijs</strong><b>{money.format(totals.direct)}</b></div>{evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}<div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div></div>\n              {tailCosts.length===0&&<p className="muted">Nog geen staartkosten. De verkoopprijs is dan gelijk aan de directe kostprijs.</p>}\n            </section>\n          </div>\n          {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}\n        </div>}\n        {columnSettingsOpen && <div className="columnSettingsPanel">
+        {tailCostOpen && <div className="managementWorkspace">
+          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
+          <div className="managementGrid">
+            <section className="managementCard"><h3>Component toevoegen</h3>
+              <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>
+              <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>
+              <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>
+              <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>
+              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}><option value="direct_cost">Directe kost</option><option value="running_total">Lopend totaal</option><option value="subcalculation">Deelcalculatie</option><option value="quantity">Hoeveelheid</option></select></label>
+              {!["direct_cost","running_total"].includes(tailCostDraft.baseScope)&&<label><span>Basisreferentie</span><input value={tailCostDraft.baseRef} onChange={e=>setTailCostDraft(v=>({...v,baseRef:e.target.value}))} /></label>}
+              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid (optioneel)</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
+            </section>
+            <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>
+              <div className="tailCostList"><div><strong>Directe kostprijs</strong><b>{money.format(totals.direct)}</b></div>{evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}<div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div></div>
+              {tailCosts.length===0&&<p className="muted">Nog geen staartkosten. De verkoopprijs is dan gelijk aan de directe kostprijs.</p>}
+            </section>
+          </div>
+          {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}
+        </div>}
+        {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
           <div className="columnSettingsList">
             {columnSettings.map((column,index) => <div className="columnSettingRow" key={column.key}>

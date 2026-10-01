@@ -46,6 +46,7 @@ export function generateCalcOwnedRecipeLines(input:{
   recipe:CalcRecipeVersion;
   takeoff:{
     id:number;
+    position_ref:string;
     quantity:number;
     width_mm:number|null;
     height_mm:number|null;
@@ -122,6 +123,7 @@ export function generateCalcOwnedRecipeLines(input:{
       sourceDetails:JSON.stringify({
         recipe:{id:input.recipe.recipeId,version_id:input.recipe.id,key:input.recipe.recipeKey,version:input.recipe.versionNo},
         takeoff_id:input.takeoff.id,
+        position_ref:input.takeoff.position_ref,
         quantity_rule:{
           basis:line.takeoffBasis,
           factor:line.factor,

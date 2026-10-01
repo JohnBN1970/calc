@@ -18,6 +18,8 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
+import { evaluateSubcalculations } from "./subcalculationEvaluation.js";
+import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
 import { createTailCostComponent, evaluateTailCosts, listTailCostComponents } from "./tailCostRepository.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
@@ -692,10 +694,42 @@ app.post("/api/workbench/current/tail-costs/evaluate", async (req,res)=>{
     const components=await listTailCostComponents(versionId);
     const directCost=Number(req.body?.directCost??0);
     if(!Number.isFinite(directCost)||directCost<0)throw new Error("Ongeldige directe kost.");
-    const evaluated=evaluateTailCosts({directCost,components,baseAmounts:req.body?.baseAmounts??{}});
+    const baseAmounts:Record<string,number>={...(req.body?.baseAmounts??{})};
+    const subcalculationResults=await evaluateSubcalculations(versionId);
+    for(const result of subcalculationResults){
+      baseAmounts[`subcalculation:${result.ref}`]=result.directCost;
+    }
+    const evaluated=evaluateTailCosts({directCost,components,baseAmounts});
     const tailCost=evaluated.reduce((sum,row)=>sum+row.amount,0);
     res.json({contract:"brebo-calc-tail-cost-evaluation-v1",directCost,components:evaluated,tailCost,salesPrice:directCost+tailCost});
   }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden berekend."});}
+});
+
+app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const results=await evaluateSubcalculations(versionId);
+    const [versions]=await db.execute<RowDataPacket[]>(
+      "SELECT direct_cost,markup_amount,sales_price FROM calculation_versions WHERE id=? LIMIT 1",[versionId]
+    );
+    const totalDirect=Number(versions[0]?.direct_cost??0);
+    const totalTail=Number(versions[0]?.markup_amount??0);
+    const evaluated=results.map(result=>{
+      const share=totalDirect>0?result.directCost/totalDirect:0;
+      const allocatedTailCost=totalTail*share;
+      return {
+        ...result,
+        directShare:share,
+        allocatedTailCost,
+        salesPrice:result.directCost+allocatedTailCost
+      };
+    });
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-subcalculation-results-v1",versionId,totalDirect,totalTail,results:evaluated});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden berekend."});
+  }
 });
 
 app.get("/api/workbench/current/subcalculations", async (req, res) => {
@@ -918,14 +952,13 @@ app.put("/api/workbench/current", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
-  const markupPct = Number(req.body?.markupPct ?? 0);
   if (!Array.isArray(req.body?.lines)) {
     res.status(400).json({ error: "Calculatieregels ontbreken of hebben een ongeldig formaat." });
     return;
   }
   const lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
-  if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000 || allocations.length > 20000) {
+  if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
   }
@@ -948,6 +981,19 @@ app.put("/api/workbench/current", async (req, res) => {
       res.status(409).json({ error: "Alleen een conceptversie kan worden gewijzigd." });
       return;
     }
+
+    const [preservedMemberships] = await connection.execute<RowDataPacket[]>(`
+      SELECT m.subcalculation_id,m.calculation_line_id,m.membership_source
+        FROM calculation_subcalculation_line_memberships m
+        JOIN calculation_lines l ON l.id=m.calculation_line_id
+       WHERE l.version_id=?
+    `,[version.id]);
+    const [preservedScopeTags] = await connection.execute<RowDataPacket[]>(`
+      SELECT t.line_id,t.scope_type,t.scope_ref,t.source
+        FROM calculation_line_scope_tags t
+        JOIN calculation_lines l ON l.id=t.line_id
+       WHERE l.version_id=? AND t.source<>'generated'
+    `,[version.id]);
 
     await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
 
@@ -1004,6 +1050,36 @@ app.put("/api/workbench/current", async (req, res) => {
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);
+      const scopeTags = generatedScopeTags({
+        priceSourceType,
+        sourceDetails: line.sourceDetails == null ? null : String(line.sourceDetails)
+      });
+      if (scopeTags.length) {
+        await storeLineScopeTags(connection, insert.insertId, scopeTags);
+      }
+    }
+
+    for (const membership of preservedMemberships) {
+      const nextLineId = temporaryIds.get(Number(membership.calculation_line_id));
+      if (!nextLineId) continue;
+      await connection.execute(
+        `INSERT INTO calculation_subcalculation_line_memberships
+          (subcalculation_id,calculation_line_id,membership_source)
+         VALUES(?,?,?)
+         ON DUPLICATE KEY UPDATE membership_source=VALUES(membership_source)`,
+        [Number(membership.subcalculation_id),nextLineId,String(membership.membership_source)]
+      );
+    }
+
+    for (const tag of preservedScopeTags) {
+      const nextLineId = temporaryIds.get(Number(tag.line_id));
+      if (!nextLineId) continue;
+      await connection.execute(
+        `INSERT INTO calculation_line_scope_tags(line_id,scope_type,scope_ref,source)
+         VALUES(?,?,?,?)
+         ON DUPLICATE KEY UPDATE source=VALUES(source)`,
+        [nextLineId,String(tag.scope_type),String(tag.scope_ref),String(tag.source)]
+      );
     }
 
     for (const allocation of allocations) {
@@ -1016,7 +1092,14 @@ app.put("/api/workbench/current", async (req, res) => {
       );
     }
 
-    const markupAmount = directCost * (markupPct / 100);
+    const tailComponents = await listTailCostComponents(Number(version.id));
+    const baseAmounts:Record<string,number> = {};
+    const subcalculationResults = await evaluateSubcalculations(Number(version.id), connection);
+    for (const result of subcalculationResults) {
+      baseAmounts[`subcalculation:${result.ref}`] = result.directCost;
+    }
+    const evaluatedTailCosts = evaluateTailCosts({ directCost, components: tailComponents, baseAmounts });
+    const markupAmount = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
     const salesPrice = directCost + markupAmount;
     await connection.execute(
       "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
@@ -1075,7 +1158,16 @@ app.put("/api/workbench/current", async (req, res) => {
           calculation_id: session.calculationId,
           office_calculation_id: session.officeCalculationId,
           office_project_id: session.officeProjectId,
-          markup_pct: markupPct
+          tail_costs: evaluatedTailCosts.map(row => ({
+            component_key: row.componentKey,
+            description: row.description,
+            basis: row.basis,
+            value: row.value,
+            base_scope: row.baseScope,
+            base_ref: row.baseRef,
+            base_amount: row.baseAmount,
+            amount: row.amount
+          }))
         }
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
