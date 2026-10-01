@@ -10,6 +10,7 @@ import { runCalculationPipeline, type CalculationPipelineInput } from "./calcula
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
 import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./officeRecipeLines.js";
+import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -547,6 +548,33 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/office-direct-costs", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const inputLines = officeCostingInputLines(workspace);
+    const wasteByIdentity = new Map(inputLines.map(line => [line.identity, line.wastePct]));
+    const lines = officeRecipeDirectCostLines(inputLines, wasteByIdentity);
+    const pricedTotal = lines.reduce((sum, line) => sum + (line.totalDirectCost ?? 0), 0);
+    const missingPriceCount = lines.filter(line => line.priceStatus === "missing").length;
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-office-direct-costs-v1",
+      officeVersion: String(workspace.version.version),
+      lineCount: lines.length,
+      missingPriceCount,
+      complete: missingPriceCount === 0,
+      pricedTotal,
+      lines
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Directe kosten konden niet uit Office-receptregels worden opgebouwd: ${detail}` });
+  }
+});
 
 app.get("/api/workbench/current/costing-input-lines", async (req, res) => {
   const session = requireSession(req, res);

@@ -70,6 +70,7 @@ export type OfficeCostingInputLine = {
   materialRef: string | null;
   priceSourceRef: string | null;
   officeUnitCost: number | null;
+  wastePct: number;
   snapshotHash: string;
 };
 
@@ -87,6 +88,7 @@ export function officeCostingInputLines(workspace: OfficeWorkspaceState): Office
     materialRef: line.materialRef,
     priceSourceRef: line.priceSourceRef,
     officeUnitCost: line.unitCost,
+    wastePct: line.wastePct,
     snapshotHash: line.snapshotHash
   }));
 }
