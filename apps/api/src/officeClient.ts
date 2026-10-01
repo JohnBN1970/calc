@@ -422,13 +422,14 @@ export type OfficeWorkspaceState = {
     office_version: string;
     calc_version: string;
     current_for_office_version?: boolean;
-    lines: unknown[];
-    totals: {
-      direct_cost: number;
-      markup_amount: number;
-      sales_price: number;
+    commercial_summary: {
+      purchase:number;
+      sales:number;
+      margin:number;
+      margin_pct:number;
+      vat:number;
+      vat_rate:number|null;
     };
-    source?: Record<string,unknown>;
   };
   result?: {
     calculation_id?: number;
