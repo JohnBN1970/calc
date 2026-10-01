@@ -173,3 +173,22 @@
 
 
 .takeoffReview{margin-top:8px;padding:8px;border:1px solid #e0d4b7;background:#fffaf0;border-radius:6px}.takeoffReview>strong{display:block;font-size:11px;margin-bottom:6px;color:#6f581f}.takeoffReview label{display:flex;gap:7px;align-items:flex-start;padding:6px;border-radius:5px;cursor:pointer}.takeoffReview label:hover,.takeoffReview label.is-selected{background:#fff}.takeoffReview input{margin-top:2px}.takeoffReview label span{min-width:0}.takeoffReview label b{display:block;font-size:11px}.takeoffReview label small{margin-top:2px!important;line-height:1.35}
+
+
+.managementWorkspace{margin:12px;border:1px solid #d9dfe4;border-radius:8px;background:#f7f9fa;overflow:hidden}
+.managementGrid{display:grid;grid-template-columns:minmax(240px,320px) minmax(280px,1fr);gap:12px;padding:12px}
+.managementCard{background:#fff;border:1px solid #dde3e7;border-radius:7px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.managementCard.managementWide{grid-column:1/-1}.managementCard h3{margin:0 0 4px;font-size:13px}
+.managementCard label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:700;color:#65717a}
+.managementCard input,.managementCard select,.managementCard textarea{border:1px solid #cbd3d9;border-radius:5px;padding:7px 8px;background:#fff;font:inherit;color:#1f2a30}
+.managementCard textarea{min-height:64px;resize:vertical}.managementCard>button{align-self:flex-start;padding:7px 10px}
+.managementFields{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px}
+.managementList{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto}
+.managementListItem{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:8px;border:1px solid #dce2e6;border-radius:6px;background:#fff}
+.managementListItem.is-selected{border-color:#7f929e;box-shadow:inset 3px 0 0 currentColor}.managementListItem span,.managementListItem small{font-size:10px;color:#66727a}
+.recipeLineList{margin-top:8px;border-top:1px solid #e5e8ea}.recipeLineList>div{display:flex;flex-direction:column;gap:2px;padding:7px 2px;border-bottom:1px solid #edf0f2}.recipeLineList span,.recipeLineList small{font-size:10px;color:#66727a}
+.managementStatus{padding:0 12px 12px;font-size:11px;color:#59666e}
+.subcalcList{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:8px}.subcalcCard{border:1px solid #dde3e7;border-radius:6px;padding:9px}.subcalcCard>div:first-child{display:flex;justify-content:space-between;gap:8px}.subcalcCard span,.subcalcCard small{font-size:10px;color:#65717a}
+.scopeTags{display:flex!important;justify-content:flex-start!important;gap:5px!important;flex-wrap:wrap;margin-top:7px}.scopeTags span{padding:3px 6px;border-radius:999px;background:#eef2f4;color:#4d5b63}
+@media(max-width:1050px){.managementFields{grid-template-columns:repeat(2,minmax(140px,1fr))}.subcalcList{grid-template-columns:1fr 1fr}}
+@media(max-width:720px){.managementGrid{grid-template-columns:1fr}.managementFields,.subcalcList{grid-template-columns:1fr}}
