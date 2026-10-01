@@ -694,7 +694,12 @@ app.post("/api/workbench/current/tail-costs/evaluate", async (req,res)=>{
     const components=await listTailCostComponents(versionId);
     const directCost=Number(req.body?.directCost??0);
     if(!Number.isFinite(directCost)||directCost<0)throw new Error("Ongeldige directe kost.");
-    const evaluated=evaluateTailCosts({directCost,components,baseAmounts:req.body?.baseAmounts??{}});
+    const baseAmounts:Record<string,number>={...(req.body?.baseAmounts??{})};
+    const subcalculationResults=await evaluateSubcalculations(versionId);
+    for(const result of subcalculationResults){
+      baseAmounts[`subcalculation:${result.ref}`]=result.directCost;
+    }
+    const evaluated=evaluateTailCosts({directCost,components,baseAmounts});
     const tailCost=evaluated.reduce((sum,row)=>sum+row.amount,0);
     res.json({contract:"brebo-calc-tail-cost-evaluation-v1",directCost,components:evaluated,tailCost,salesPrice:directCost+tailCost});
   }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Staartkosten konden niet worden berekend."});}
@@ -947,14 +952,13 @@ app.put("/api/workbench/current", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
-  const markupPct = Number(req.body?.markupPct ?? 0);
   if (!Array.isArray(req.body?.lines)) {
     res.status(400).json({ error: "Calculatieregels ontbreken of hebben een ongeldig formaat." });
     return;
   }
   const lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
-  if (!Number.isFinite(markupPct) || markupPct < -100 || markupPct > 1000 || lines.length > 5000 || allocations.length > 20000) {
+  if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
   }
