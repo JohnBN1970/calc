@@ -4,8 +4,10 @@ import { db } from "./db.js";
 export type TailCostBasis="fixed"|"percentage"|"per_unit";
 export type TailCostBaseScope="direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
 
+export type TailCostOwnerType="calculation"|"subcalculation";
 export type TailCostComponent={
-  id:number;versionId:number;componentKey:string;description:string;basis:TailCostBasis;value:number;
+  id:number;versionId:number;ownerType:TailCostOwnerType;ownerRef:string|null;
+  componentKey:string;description:string;basis:TailCostBasis;value:number;
   baseScope:TailCostBaseScope;baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
 };
 
@@ -14,7 +16,8 @@ export async function listTailCostComponents(versionId:number):Promise<TailCostC
     "SELECT * FROM calculation_tail_cost_components WHERE version_id=? AND active=1 ORDER BY sort_order,id",[versionId]
   );
   return rows.map(row=>({
-    id:Number(row.id),versionId:Number(row.version_id),componentKey:String(row.component_key),
+    id:Number(row.id),versionId:Number(row.version_id),ownerType:String(row.owner_type??"calculation") as TailCostOwnerType,
+    ownerRef:row.owner_ref==null?null:String(row.owner_ref),componentKey:String(row.component_key),
     description:String(row.description),basis:String(row.basis) as TailCostBasis,value:Number(row.value),
     baseScope:String(row.base_scope) as TailCostBaseScope,baseRef:row.base_ref==null?null:String(row.base_ref),
     quantity:row.quantity==null?null:Number(row.quantity),sortOrder:Number(row.sort_order),active:Boolean(row.active)
@@ -22,7 +25,7 @@ export async function listTailCostComponents(versionId:number):Promise<TailCostC
 }
 
 export async function createTailCostComponent(input:{
-  versionId:number;componentKey:string;description:string;basis:TailCostBasis;value:number;
+  versionId:number;ownerType?:TailCostOwnerType;ownerRef?:string|null;componentKey:string;description:string;basis:TailCostBasis;value:number;
   baseScope:TailCostBaseScope;baseRef?:string|null;quantity?:number|null;sortOrder?:number;
 }):Promise<number>{
   if(!Number.isInteger(input.versionId)||input.versionId<=0)throw new Error("Ongeldige calculatieversie.");
@@ -30,9 +33,10 @@ export async function createTailCostComponent(input:{
   if(!Number.isFinite(input.value)||input.value<0)throw new Error("Waarde moet positief zijn.");
   const [result]=await db.execute<ResultSetHeader>(
     `INSERT INTO calculation_tail_cost_components
-      (version_id,component_key,description,basis,value,base_scope,base_ref,quantity,sort_order)
-     VALUES(?,?,?,?,?,?,?,?,?)`,
-    [input.versionId,input.componentKey.trim(),input.description.trim(),input.basis,input.value,input.baseScope,
+      (version_id,owner_type,owner_ref,component_key,description,basis,value,base_scope,base_ref,quantity,sort_order)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+    [input.versionId,input.ownerType??"calculation",(input.ownerType??"calculation")==="subcalculation"?(input.ownerRef?.trim()||null):null,
+     input.componentKey.trim(),input.description.trim(),input.basis,input.value,input.baseScope,
      input.baseRef?.trim()||null,input.quantity??null,input.sortOrder??0]
   );
   return result.insertId;
@@ -65,4 +69,17 @@ export function evaluateTailCosts(input:{
     runningTotal+=amount;
     return {...component,baseAmount,amount,runningTotal};
   });
+}
+
+
+export function splitTailCostOwnership(components:TailCostComponent[]) {
+  const calculation = components.filter(component => component.ownerType === "calculation");
+  const bySubcalculation = new Map<string,TailCostComponent[]>();
+  for (const component of components) {
+    if (component.ownerType !== "subcalculation" || !component.ownerRef) continue;
+    const list = bySubcalculation.get(component.ownerRef) ?? [];
+    list.push(component);
+    bySubcalculation.set(component.ownerRef,list);
+  }
+  return {calculation,bySubcalculation};
 }
