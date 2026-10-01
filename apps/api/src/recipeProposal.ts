@@ -1,4 +1,4 @@
-import type { OfficeRecipeCatalog } from "./officeClient.js";
+import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
 import type { CalculationConcept, CalculationConceptPosition } from "./calculationConcept.js";
 
 export type RecipeProposalRule = {
@@ -93,27 +93,35 @@ export function proposeRecipesForConcept(
 }
 
 
-export function proposalRulesFromOfficeCatalog(catalog: OfficeRecipeCatalog): RecipeProposalRule[] {
-  return catalog.catalog.recipes.flatMap(recipe => {
+export function proposalRulesFromCalcRecipes(recipes: CalcRecipeVersion[]): RecipeProposalRule[] {
+  return recipes.flatMap(recipe => {
     const applicability = recipe.applicability;
     if (!applicability) return [];
 
-    const priority = applicability.priority ?? 0;
+    const priority = Number(applicability.priority ?? 0);
     if (!Number.isFinite(priority)) {
-      throw new Error(`Invalid applicability priority for Office recipe ${recipe.recipe_key}.`);
+      throw new Error(`Invalid applicability priority for Calc recipe ${recipe.recipeKey}.`);
     }
 
+    const asStringArray=(value:unknown):string[]|undefined =>
+      Array.isArray(value) ? value.map(item=>String(item)).filter(Boolean) : undefined;
+    const asOptionalNumber=(value:unknown):number|undefined => {
+      if(value==null||value==="") return undefined;
+      const numeric=Number(value);
+      return Number.isFinite(numeric)?numeric:undefined;
+    };
+
     return [{
-      recipeRef: String(recipe.version_id),
+      recipeRef: String(recipe.id),
       label: recipe.name,
       priority,
-      requiresReviewedGeometry: applicability.requiresReviewedGeometry,
-      descriptionIncludes: applicability.descriptionIncludes,
-      descriptionExcludes: applicability.descriptionExcludes,
-      minWidthMm: applicability.minWidthMm,
-      maxWidthMm: applicability.maxWidthMm,
-      minHeightMm: applicability.minHeightMm,
-      maxHeightMm: applicability.maxHeightMm
+      requiresReviewedGeometry: Boolean(applicability.requiresReviewedGeometry ?? false),
+      descriptionIncludes: asStringArray(applicability.descriptionIncludes),
+      descriptionExcludes: asStringArray(applicability.descriptionExcludes),
+      minWidthMm: asOptionalNumber(applicability.minWidthMm),
+      maxWidthMm: asOptionalNumber(applicability.maxWidthMm),
+      minHeightMm: asOptionalNumber(applicability.minHeightMm),
+      maxHeightMm: asOptionalNumber(applicability.maxHeightMm)
     }];
   });
 }
