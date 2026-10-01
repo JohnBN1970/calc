@@ -9,7 +9,7 @@ import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposeRecipesForConcept, type RecipeProposalRule } from "./recipeProposal.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -409,6 +409,22 @@ app.get("/api/workbench/current/concept", async (req, res) => {
     const detail = error instanceof Error ? error.message : "Onbekende conceptfout";
     console.error("BREBO Calc concept build failed:", detail);
     res.status(502).json({ error: `Conceptcalculatie kon niet uit de Office-context worden opgebouwd: ${detail}` });
+  }
+});
+
+
+app.get("/api/workbench/current/recipe-catalog", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const catalog = await fetchOfficeRecipeCatalog();
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json(catalog);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    console.error("BREBO Calc recipe catalog fetch failed:", detail);
+    res.status(502).json({ error: `Receptcatalogus kon niet uit BREBO Office worden opgehaald: ${detail}` });
   }
 });
 
