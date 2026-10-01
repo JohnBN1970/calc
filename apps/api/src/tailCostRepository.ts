@@ -48,6 +48,7 @@ export function evaluateTailCosts(input:{
     let baseAmount:number;
     if(component.baseScope==="direct_cost")baseAmount=input.directCost;
     else if(component.baseScope==="running_total")baseAmount=runningTotal;
+    else if(component.baseScope==="quantity" && component.quantity!=null)baseAmount=component.quantity;
     else {
       const key=`${component.baseScope}:${component.baseRef??""}`;
       const resolved=input.baseAmounts?.[key];
