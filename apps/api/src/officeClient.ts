@@ -429,6 +429,16 @@ export type OfficeWorkspaceState = {
       unit_cost: number | string | null;
       sort_order: number;
       is_custom: number;
+      packaging?: {
+        base_unit: string;
+        use_unit: string | null;
+        order_unit: string | null;
+        conversion_factor: number;
+        minimum_order: number;
+        quantity_from: number;
+        net_price: number;
+        price_date: string;
+      } | null;
     }>;
   }>;
   [key:string]: unknown;
