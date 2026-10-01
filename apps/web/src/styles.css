@@ -192,3 +192,5 @@
 .scopeTags{display:flex!important;justify-content:flex-start!important;gap:5px!important;flex-wrap:wrap;margin-top:7px}.scopeTags span{padding:3px 6px;border-radius:999px;background:#eef2f4;color:#4d5b63}
 @media(max-width:1050px){.managementFields{grid-template-columns:repeat(2,minmax(140px,1fr))}.subcalcList{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.managementGrid{grid-template-columns:1fr}.managementFields,.subcalcList{grid-template-columns:1fr}}
+
+.tailCostList{display:flex;flex-direction:column;border-top:1px solid #e3e7e9}.tailCostList>div{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 2px;border-bottom:1px solid #e8ecee}.tailCostList>div>span{display:flex;flex-direction:column;gap:2px}.tailCostList small{font-size:10px;color:#68757c}.tailCostList b{white-space:nowrap}.tailCostList .tailCostTotal{padding-top:12px;font-size:14px;border-bottom:0}
