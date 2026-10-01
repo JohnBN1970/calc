@@ -16,6 +16,7 @@ import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
 import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
+import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -654,6 +655,63 @@ app.post("/api/session/logout", (req, res) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
   res.status(204).end();
+});
+
+app.get("/api/recipes", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const recipes = await listCalcRecipes();
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({ contract: "brebo-calc-recipe-catalog-v1", recipes });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Recepten konden niet worden geladen.";
+    res.status(500).json({ error: detail });
+  }
+});
+
+app.post("/api/recipes", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const recipeId = await createCalcRecipe({
+      recipeKey: String(req.body?.recipeKey ?? ""),
+      name: String(req.body?.name ?? ""),
+      description: req.body?.description == null ? null : String(req.body.description)
+    });
+    res.status(201).json({ recipeId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Recept kon niet worden aangemaakt.";
+    res.status(400).json({ error: detail });
+  }
+});
+
+app.post("/api/recipes/:versionId/lines", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const lineId = await addCalcRecipeLine({
+      recipeVersionId: Number(req.params.versionId),
+      lineRef: String(req.body?.lineRef ?? ""),
+      sortOrder: Number(req.body?.sortOrder ?? 0),
+      costKind: String(req.body?.costKind ?? "") as any,
+      description: String(req.body?.description ?? ""),
+      unit: req.body?.unit == null ? null : String(req.body.unit),
+      officeSourceType: req.body?.officeSourceType == null ? null : String(req.body.officeSourceType),
+      officeSourceRef: req.body?.officeSourceRef == null ? null : String(req.body.officeSourceRef),
+      takeoffBasis: String(req.body?.takeoffBasis ?? "fixed") as any,
+      factor: req.body?.factor == null ? 1 : Number(req.body.factor),
+      wastePct: req.body?.wastePct == null ? 0 : Number(req.body.wastePct),
+      fixedQuantity: req.body?.fixedQuantity == null ? null : Number(req.body.fixedQuantity),
+      roundingStep: req.body?.roundingStep == null ? null : Number(req.body.roundingStep),
+      minimumQuantity: req.body?.minimumQuantity == null ? null : Number(req.body.minimumQuantity),
+      metadata: req.body?.metadata && typeof req.body.metadata === "object" ? req.body.metadata : null
+    });
+    res.status(201).json({ lineId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Receptregel kon niet worden toegevoegd.";
+    res.status(400).json({ error: detail });
+  }
 });
 
 app.get("/api/workbench/current/aggregate", async (req, res) => {
