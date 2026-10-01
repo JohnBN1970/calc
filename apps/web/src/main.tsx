@@ -223,11 +223,12 @@ type CalcSubcalculationResult = {
 };
 
 type TailCostComponent={
-  id:number;versionId:number;componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
-  value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
+  id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
+  componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
+  value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity"|"owner_direct_cost"|"owner_running_total"|"consolidated_direct_cost"|"consolidated_running_total";
   baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
 };
-type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;runningTotal:number};
+type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;ownerRunningTotal:number;consolidatedRunningTotal:number};
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
@@ -556,15 +557,19 @@ function App() {
   const [tailCostOpen,setTailCostOpen]=useState(false);
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
   const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
-  const [tailCostDraft,setTailCostDraft]=useState({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null as number|null});
+  const [tailCostTotal,setTailCostTotal]=useState(0);
+  const [tailCostDraft,setTailCostDraft]=useState({
+    ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,
+    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null
+  });
   const [tailCostStatus,setTailCostStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
-    const tailCost = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
+    const tailCost = tailCostTotal;
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
-  }, [lines, evaluatedTailCosts]);
+  }, [lines, tailCostTotal]);
 
   const activeSubcalculationResult = useMemo(
     () => activeSubcalculationId == null ? null : subcalculationResults.find(row => row.id === activeSubcalculationId) ?? null,
@@ -641,9 +646,13 @@ function App() {
       method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
     });
     if(evalResponse.ok){
-      const evaluated=await evalResponse.json() as {components:EvaluatedTailCost[]};
-      setEvaluatedTailCosts(Array.isArray(evaluated.components)?evaluated.components:[]);
-    }else setEvaluatedTailCosts([]);
+      const evaluated=await evalResponse.json() as {calculationComponents:EvaluatedTailCost[];tailCost:number};
+      setEvaluatedTailCosts(Array.isArray(evaluated.calculationComponents)?evaluated.calculationComponents:[]);
+      setTailCostTotal(Number(evaluated.tailCost??0));
+    }else{
+      setEvaluatedTailCosts([]);
+      setTailCostTotal(0);
+    }
   };
 
   const createTailCost=async()=>{
@@ -655,7 +664,7 @@ function App() {
       });
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"Staartkostencomponent kon niet worden toegevoegd."));
-      setTailCostDraft({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null});
+      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null});
       await loadTailCosts();
       setTailCostStatus("Staartkostencomponent toegevoegd.");
     }catch(error){setTailCostStatus(error instanceof Error?error.message:"Staartkostencomponent kon niet worden toegevoegd.");}
