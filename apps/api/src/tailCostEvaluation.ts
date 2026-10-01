@@ -1,5 +1,5 @@
-import type { TailCostComponent } from "./tailCostRepository.js";
-import { evaluateTailCosts, splitTailCostOwnership } from "./tailCostRepository.js";
+import type { TailCostComponent } from "./tailCostEngine.js";
+import { evaluateTailCosts, splitTailCostOwnership } from "./tailCostEngine.js";
 import type { SubcalculationResult } from "./subcalculationEvaluation.js";
 
 export type TailCostEvaluationRow = ReturnType<typeof evaluateTailCosts>[number];
