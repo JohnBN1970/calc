@@ -531,3 +531,38 @@ export async function placeOfficeRecipeFromTakeoff(input:{
   if (!response.ok) throw new Error(payload?.message || `Office recipe placement failed with status ${response.status}.`);
   return payload;
 }
+
+
+export async function publishCalcResult(input:{
+  calculationId:number;
+  officeVersion:string;
+  calcVersion:string;
+  actorId:number;
+  lines:unknown[];
+  totals:{direct_cost:number;markup_amount:number;sales_price:number};
+  source:Record<string,unknown>;
+}): Promise<{ok:true;snapshot_id:number;content_hash:string;created:boolean}> {
+  const path = `/api/workbench/v2/calculations/${input.calculationId}/calc-results`;
+  const body = JSON.stringify({
+    office_version: input.officeVersion,
+    calc_version: input.calcVersion,
+    actor_id: input.actorId,
+    lines: input.lines,
+    totals: input.totals,
+    source: input.source
+  });
+  const headers = signedHeaders("POST", path, body);
+  headers["Content-Type"] = "application/json";
+  const response = await fetch(config.office.baseUrl + path, {
+    method: "POST",
+    headers,
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(10000)
+  });
+  const text = await response.text();
+  let payload:any={};
+  try { payload=text?JSON.parse(text):{}; } catch {}
+  if(!response.ok) throw new Error(payload?.message || `Office Calc-result publication failed with status ${response.status}.`);
+  return payload;
+}

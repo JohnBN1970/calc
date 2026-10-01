@@ -15,7 +15,7 @@ import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { generateCalcLinesFromOfficeRecipe } from "./calcRecipeGenerator.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -849,7 +849,63 @@ app.put("/api/workbench/current", async (req, res) => {
       [session.calculationId]
     );
     await connection.commit();
-    res.json({ directCost, markupAmount, salesPrice });
+
+    let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
+    try {
+      const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
+      const published = await publishCalcResult({
+        calculationId: session.officeCalculationId,
+        officeVersion: String(officeState.version.version),
+        calcVersion: String(version.id),
+        actorId: session.actorId,
+        lines: lines.map(line => ({
+          sort_order: line.sortOrder,
+          line_type: line.lineType,
+          parent_ref: line.parentId ?? null,
+          code: line.code ?? null,
+          description: String(line.description ?? ""),
+          unit: line.unit ?? null,
+          quantity: line.quantity ?? null,
+          labour_norm: line.labourNorm ?? null,
+          labour_total_hours: line.labourTotalHours ?? null,
+          labour_hours_input_mode: line.labourHoursInputMode ?? null,
+          unit_costs: {
+            labour: line.labourUnitCost ?? 0,
+            material: line.materialUnitCost ?? 0,
+            equipment: line.equipmentUnitCost ?? 0,
+            subcontracting: line.subcontractingUnitCost ?? 0,
+            other: line.otherUnitCost ?? 0
+          },
+          source: {
+            type: line.priceSourceType ?? "manual",
+            office_source_id: line.officeSourceId ?? null,
+            reference: line.sourceReference ?? null,
+            supplier: line.sourceSupplier ?? null,
+            unit_price: line.sourceUnitPrice ?? null,
+            price_date: line.sourcePriceDate ?? null,
+            document_id: line.sourceDocumentId ?? null,
+            details: line.sourceDetails ?? null
+          }
+        })),
+        totals: {
+          direct_cost: directCost,
+          markup_amount: markupAmount,
+          sales_price: salesPrice
+        },
+        source: {
+          engine: "brebo-calc",
+          calculation_id: session.calculationId,
+          office_calculation_id: session.officeCalculationId,
+          office_project_id: session.officeProjectId,
+          markup_pct: markupPct
+        }
+      });
+      officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
+    } catch(error) {
+      officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
+    }
+
+    res.json({ directCost, markupAmount, salesPrice, officeSync });
   } catch (error) {
     await connection.rollback();
     throw error;
