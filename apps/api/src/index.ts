@@ -478,12 +478,13 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   const positionRef = String(req.body?.positionRef ?? "").trim();
   const recipeVersionId = Number(req.body?.recipeVersionId);
   const paragraphKey = String(req.body?.paragraphKey ?? "").trim();
+  const requestedTakeoffId = req.body?.takeoffId == null ? null : Number(req.body.takeoffId);
   const passes = req.body?.passes == null ? 1 : Number(req.body.passes);
   const parameters = (req.body?.parameters && typeof req.body.parameters === "object" && !Array.isArray(req.body.parameters))
     ? req.body.parameters as Record<string,string|number>
     : {};
 
-  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || !Number.isFinite(passes) || passes <= 0) {
+  if (!positionRef || !Number.isInteger(recipeVersionId) || recipeVersionId <= 0 || !paragraphKey || (requestedTakeoffId !== null && (!Number.isInteger(requestedTakeoffId) || requestedTakeoffId <= 0)) || !Number.isFinite(passes) || passes <= 0) {
     res.status(400).json({ error: "Ongeldige receptacceptatie." });
     return;
   }
@@ -509,15 +510,24 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       res.status(409).json({ error: "Geen geometrische take-off gevonden voor deze positie." });
       return;
     }
-    if (matchingTakeoffs.length > 1) {
-      res.status(409).json({
-        error: "Meerdere geometrische take-offs gevonden voor deze positie. Handmatige selectie/review is vereist.",
-        positionRef,
-        takeoffIds: matchingTakeoffs.map(row => row.id)
-      });
-      return;
+    let takeoff;
+    if (requestedTakeoffId !== null) {
+      takeoff = matchingTakeoffs.find(row => row.id === requestedTakeoffId);
+      if (!takeoff) {
+        res.status(409).json({ error: "De gekozen take-off hoort niet bij deze positie." });
+        return;
+      }
+    } else {
+      if (matchingTakeoffs.length > 1) {
+        res.status(409).json({
+          error: "Meerdere geometrische take-offs gevonden voor deze positie. Handmatige selectie/review is vereist.",
+          positionRef,
+          takeoffIds: matchingTakeoffs.map(row => row.id)
+        });
+        return;
+      }
+      [takeoff] = matchingTakeoffs;
     }
-    const [takeoff] = matchingTakeoffs;
 
     const recipe = catalog.catalog.recipes.find(item => item.version_id === recipeVersionId);
     if (!recipe || !recipe.applicability) {
