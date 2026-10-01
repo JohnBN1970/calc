@@ -20,6 +20,7 @@ export function buildWorkbenchAggregate(input:{
     editable:input.workspace.editable,
     concept,
     takeoffs: input.context.context.takeoff,
+    components: input.context.context.components,
     recipeProposals:proposals,
     structure: Array.isArray((input.workspace as any).structure) ? (input.workspace as any).structure : [],
     placedRecipes:input.workspace.recipes??[],
