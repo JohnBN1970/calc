@@ -401,6 +401,36 @@ export type OfficeWorkspaceState = {
   calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
   version: { version: string; status: string; locked_at: string | null; [key:string]: unknown };
   editable: boolean;
+  recipes?: Array<{
+    id: number;
+    recipe_id: number | null;
+    recipe_version_id: number | null;
+    name: string;
+    quantity: number;
+    unit: string | null;
+    paragraph_key: string;
+    snapshot_hash: string;
+    parameters?: Array<{
+      parameter_key: string;
+      value: string | null;
+      calculated_value: string | null;
+    }>;
+    lines?: Array<{
+      id: number;
+      line_key: string;
+      line_type: string;
+      description: string;
+      unit: string | null;
+      calculated_quantity: number | string;
+      manual_quantity: number | string | null;
+      waste_pct: number | string;
+      material_ref: string | null;
+      price_source_ref: string | null;
+      unit_cost: number | string | null;
+      sort_order: number;
+      is_custom: number;
+    }>;
+  }>;
   [key:string]: unknown;
 };
 
