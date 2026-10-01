@@ -558,6 +558,7 @@ function App() {
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
   const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
   const [tailCostTotal,setTailCostTotal]=useState(0);
+  const [mainDirectCost,setMainDirectCost]=useState(0);
   const [tailCostDraft,setTailCostDraft]=useState({
     ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,
     baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null
@@ -646,12 +647,14 @@ function App() {
       method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
     });
     if(evalResponse.ok){
-      const evaluated=await evalResponse.json() as {calculationComponents:EvaluatedTailCost[];tailCost:number};
+      const evaluated=await evalResponse.json() as {calculationComponents:EvaluatedTailCost[];tailCost:number;mainDirectCost:number};
       setEvaluatedTailCosts(Array.isArray(evaluated.calculationComponents)?evaluated.calculationComponents:[]);
       setTailCostTotal(Number(evaluated.tailCost??0));
+      setMainDirectCost(Number(evaluated.mainDirectCost??0));
     }else{
       setEvaluatedTailCosts([]);
       setTailCostTotal(0);
+      setMainDirectCost(0);
     }
   };
 
@@ -1774,17 +1777,34 @@ function App() {
           <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
+              <label><span>Hoort bij</span><select value={tailCostDraft.ownerType+":"+tailCostDraft.ownerRef} onChange={e=>{
+                const [ownerType,ownerRef=""]=e.target.value.split(":");
+                setTailCostDraft(v=>({...v,ownerType,ownerRef,baseScope:"owner_direct_cost",baseRef:""}));
+              }}>
+                <option value="calculation:">Hoofdcalculatie</option>
+                {subcalculations.map(item=><option key={item.id} value={"subcalculation:"+item.ref}>Deelcalculatie · {item.description}</option>)}
+              </select></label>
               <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>
               <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>
               <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>
               <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>
-              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}><option value="direct_cost">Directe kost</option><option value="running_total">Lopend totaal</option><option value="subcalculation">Deelcalculatie</option><option value="quantity">Hoeveelheid</option></select></label>
-              {!["direct_cost","running_total"].includes(tailCostDraft.baseScope)&&<label><span>Basisreferentie</span><input value={tailCostDraft.baseRef} onChange={e=>setTailCostDraft(v=>({...v,baseRef:e.target.value}))} /></label>}
-              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid (optioneel)</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}>
+                <option value="owner_direct_cost">{tailCostDraft.ownerType==="subcalculation"?"Directe kost van deze deelcalculatie":"Alleen hoofdregels"}</option>
+                <option value="owner_running_total">{tailCostDraft.ownerType==="subcalculation"?"Lopend totaal van deze deelcalculatie":"Lopend totaal hoofdregels"}</option>
+                {tailCostDraft.ownerType==="calculation"&&<><option value="consolidated_direct_cost">Alle unieke directe kosten</option><option value="consolidated_running_total">Geconsolideerd lopend totaal</option></>}
+                <option value="quantity">Hoeveelheid</option>
+              </select></label>
+              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
               <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
             </section>
             <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>
-              <div className="tailCostList"><div><strong>Directe kostprijs</strong><b>{money.format(totals.direct)}</b></div>{evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}<div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div></div>
+              <div className="tailCostList">
+                <div><span><strong>Alle unieke directe kosten</strong><small>Elke Calc-regel telt één keer, ook als hij in meerdere deelcalculaties zit.</small></span><b>{money.format(totals.direct)}</b></div>
+                <div><span><strong>Daarvan hoofdregels</strong><small>Regels die niet onder een deelcalculatie vallen.</small></span><b>{money.format(mainDirectCost)}</b></div>
+                {subcalculationResults.filter(row=>row.allocatedTailCost!==0).map(row=><div key={"subtail-"+row.id}><span><strong>Staartkosten · {row.description}</strong><small>Alleen binnen deze deelcalculatie berekend.</small></span><b>{money.format(row.allocatedTailCost)}</b></div>)}
+                {evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · {row.baseScope==="owner_direct_cost"?"hoofdregels":row.baseScope==="owner_running_total"?"lopend hoofd":row.baseScope==="consolidated_direct_cost"?"alle unieke directe kosten":row.baseScope==="consolidated_running_total"?"geconsolideerd lopend totaal":row.baseScope} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}
+                <div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div>
+              </div>
               {tailCosts.length===0&&<p className="muted">Nog geen staartkosten. De verkoopprijs is dan gelijk aan de directe kostprijs.</p>}
             </section>
           </div>
