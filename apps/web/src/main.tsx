@@ -210,6 +210,13 @@ type CalcSubcalculation = {
   }>;
 };
 
+type TailCostComponent={
+  id:number;versionId:number;componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
+  value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity";
+  baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
+};
+type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;runningTotal:number};
+
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
@@ -533,13 +540,18 @@ function App() {
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(() => loadColumnSettings());
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
+  const [tailCostOpen,setTailCostOpen]=useState(false);
+  const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
+  const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
+  const [tailCostDraft,setTailCostDraft]=useState({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null as number|null});
+  const [tailCostStatus,setTailCostStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
     const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
-    const markupAmount = direct * (markupPct / 100);
-    return { direct, markupAmount, sales: direct + markupAmount };
-  }, [lines, markupPct]);
+    const tailCost = evaluatedTailCosts.reduce((sum,row)=>sum+row.amount,0);
+    return { direct, markupAmount: tailCost, sales: direct + tailCost };
+  }, [lines, evaluatedTailCosts]);
 
   const displayedTotals = totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
@@ -578,6 +590,37 @@ function App() {
     window.addEventListener("pointerup", stop, { once: true });
   };
 
+
+  const loadTailCosts=async(directCost?:number)=>{
+    const response=await fetch("/api/workbench/current/tail-costs",{headers:{Accept:"application/json"}});
+    if(!response.ok)throw new Error("Staartkosten konden niet worden geladen.");
+    const payload=await response.json() as {components:TailCostComponent[]};
+    const components=Array.isArray(payload.components)?payload.components:[];
+    setTailCosts(components);
+    const direct=directCost ?? lines.filter(line=>isCostLine(line)&&line.lineType!=="option").reduce((sum,line)=>sum+lineDirect(line),0);
+    const evalResponse=await fetch("/api/workbench/current/tail-costs/evaluate",{
+      method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
+    });
+    if(evalResponse.ok){
+      const evaluated=await evalResponse.json() as {components:EvaluatedTailCost[]};
+      setEvaluatedTailCosts(Array.isArray(evaluated.components)?evaluated.components:[]);
+    }else setEvaluatedTailCosts([]);
+  };
+
+  const createTailCost=async()=>{
+    setTailCostStatus("Staartkostencomponent toevoegen…");
+    try{
+      const response=await fetch("/api/workbench/current/tail-costs",{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({...tailCostDraft,baseRef:tailCostDraft.baseRef||null})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Staartkostencomponent kon niet worden toegevoegd."));
+      setTailCostDraft({componentKey:"",description:"",basis:"percentage",value:0,baseScope:"direct_cost",baseRef:"",quantity:null});
+      await loadTailCosts();
+      setTailCostStatus("Staartkostencomponent toegevoegd.");
+    }catch(error){setTailCostStatus(error instanceof Error?error.message:"Staartkostencomponent kon niet worden toegevoegd.");}
+  };
 
   const loadRecipeLibrary = async () => {
     const response = await fetch("/api/recipes", { headers:{Accept:"application/json"} });
@@ -721,7 +764,7 @@ function App() {
           window.history.replaceState({}, "", "/");
         }
         await loadWorkbench();
-        await Promise.all([loadRecipeLibrary(),loadSubcalculations()]);
+        await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadTailCosts()]);
       } catch (error) {
         setAuthorized(false);
         setStatus(error instanceof Error ? error.message : "Werkbank kon niet worden geopend.");
@@ -1485,7 +1528,7 @@ function App() {
 
       <section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
-        <div><span>Opslag op inkoop</span><strong><input className="markup" type="number" step="0.1" value={markupPct} onChange={e => { setMarkupPct(Number(e.target.value)); setStatus("Concept — niet opgeslagen"); }} />%</strong></div>
+        <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div><span>Opslagbedrag</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
@@ -1501,7 +1544,7 @@ function App() {
           <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
           <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" title="Deelcalculaties beheren in Calc" onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
-          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" title="Staartkosten beheren in Calc" onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>\n          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
           <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
@@ -1620,7 +1663,7 @@ function App() {
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div>}
-        {columnSettingsOpen && <div className="columnSettingsPanel">
+        {tailCostOpen && <div className="managementWorkspace">\n          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>\n          <div className="managementGrid">\n            <section className="managementCard"><h3>Component toevoegen</h3>\n              <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>\n              <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>\n              <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>\n              <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>\n              <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}><option value="direct_cost">Directe kost</option><option value="running_total">Lopend totaal</option><option value="selected_lines">Geselecteerde regels</option><option value="subcalculation">Deelcalculatie</option><option value="quantity">Hoeveelheid</option></select></label>\n              {!["direct_cost","running_total"].includes(tailCostDraft.baseScope)&&<label><span>Basisreferentie</span><input value={tailCostDraft.baseRef} onChange={e=>setTailCostDraft(v=>({...v,baseRef:e.target.value}))} /></label>}\n              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid (optioneel)</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}\n              <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>\n            </section>\n            <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>\n              <div className="tailCostList"><div><strong>Directe kostprijs</strong><b>{money.format(totals.direct)}</b></div>{evaluatedTailCosts.map(row=><div key={row.id}><span><strong>{row.description}</strong><small>{row.basis==="percentage"?row.value+"%":row.basis==="fixed"?money.format(row.value):money.format(row.value)+" per eenheid"} · basis {money.format(row.baseAmount)}</small></span><b>{money.format(row.amount)}</b></div>)}<div className="tailCostTotal"><strong>Verkoopprijs</strong><b>{money.format(totals.sales)}</b></div></div>\n              {tailCosts.length===0&&<p className="muted">Nog geen staartkosten. De verkoopprijs is dan gelijk aan de directe kostprijs.</p>}\n            </section>\n          </div>\n          {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}\n        </div>}\n        {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
           <div className="columnSettingsList">
             {columnSettings.map((column,index) => <div className="columnSettingRow" key={column.key}>
