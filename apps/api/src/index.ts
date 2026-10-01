@@ -11,6 +11,7 @@ import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
 import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./officeRecipeLines.js";
 import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
+import { officePackagingCostLines } from "./officePackagingCosts.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -548,6 +549,34 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/office-packaging-costs", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const inputLines = officeCostingInputLines(workspace);
+    const lines = officePackagingCostLines(inputLines);
+    const missingPackagingCount = lines.filter(line => line.packagingStatus === "missing").length;
+    const invalidTierCount = lines.filter(line => line.priceTierSatisfied === false).length;
+    const totalMaterialCost = lines.reduce((sum, line) => sum + (line.totalMaterialCost ?? 0), 0);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-office-packaging-costs-v1",
+      officeVersion: String(workspace.version.version),
+      lineCount: lines.length,
+      missingPackagingCount,
+      invalidTierCount,
+      complete: missingPackagingCount === 0 && invalidTierCount === 0,
+      totalMaterialCost,
+      lines
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Verpakkingskosten konden niet worden opgebouwd: ${detail}` });
+  }
+});
 
 app.get("/api/workbench/current/office-direct-costs", async (req, res) => {
   const session = requireSession(req, res);
