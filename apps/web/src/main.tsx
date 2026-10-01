@@ -121,7 +121,6 @@ type ProjectContext = {
 type WorkbenchAggregate = {
   contract: "brebo-calc-workbench-aggregate-v1";
   officeVersion: string;
-  catalogVersion: string;
   editable: boolean;
   concept: {
     positions: Array<{
@@ -1365,7 +1364,7 @@ function App() {
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
-            <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-versie ${aggregate.officeVersion} · catalogus ${aggregate.catalogVersion.slice(0,12)}…` : "Office-context wordt nog niet geleverd."}</p></div>
+            <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · recepten beheerd door Calc` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
           </div>
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
@@ -1395,7 +1394,7 @@ function App() {
                 <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
               <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
-                <div className="generatedLineCard" key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Office-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b><small>{money.format(lineDirect(line))} direct</small></div>
+                <div className="generatedLineCard" key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Calc-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b><small>{money.format(lineDirect(line))} direct</small></div>
               )}</div>
             </div>
             <div className="costRollupBar">
