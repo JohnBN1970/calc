@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS calculation_tail_cost_components (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  version_id BIGINT UNSIGNED NOT NULL,
+  component_key VARCHAR(96) NOT NULL,
+  description VARCHAR(255) NOT NULL,
+  basis ENUM('fixed','percentage','per_unit') NOT NULL,
+  value DECIMAL(19,6) NOT NULL DEFAULT 0,
+  base_scope ENUM('direct_cost','running_total','selected_lines','subcalculation','quantity') NOT NULL DEFAULT 'direct_cost',
+  base_ref VARCHAR(191) NULL,
+  quantity DECIMAL(19,6) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  active TINYINT(1) NOT NULL DEFAULT 1,
+  metadata_json JSON NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(id),
+  UNIQUE KEY uq_tail_component(version_id,component_key),
+  KEY idx_tail_component_version_sort(version_id,sort_order,id),
+  CONSTRAINT fk_tail_component_version FOREIGN KEY(version_id) REFERENCES calculation_versions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
