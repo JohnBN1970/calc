@@ -335,6 +335,16 @@ export type OfficeRecipeCatalog = {
       version: string;
       base_unit: string;
       published: number | null;
+      applicability: {
+        priority?: number;
+        requiresReviewedGeometry?: boolean;
+        descriptionIncludes?: string[];
+        descriptionExcludes?: string[];
+        minWidthMm?: number;
+        maxWidthMm?: number;
+        minHeightMm?: number;
+        maxHeightMm?: number;
+      } | null;
       parameters: Array<{
         key: string;
         label: string;

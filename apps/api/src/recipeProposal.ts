@@ -1,3 +1,4 @@
+import type { OfficeRecipeCatalog } from "./officeClient.js";
 import type { CalculationConcept, CalculationConceptPosition } from "./calculationConcept.js";
 
 export type RecipeProposalRule = {
@@ -89,4 +90,30 @@ export function proposeRecipesForConcept(
     b.confidence - a.confidence ||
     a.recipeRef.localeCompare(b.recipeRef)
   );
+}
+
+
+export function proposalRulesFromOfficeCatalog(catalog: OfficeRecipeCatalog): RecipeProposalRule[] {
+  return catalog.catalog.recipes.flatMap(recipe => {
+    const applicability = recipe.applicability;
+    if (!applicability) return [];
+
+    const priority = applicability.priority ?? 0;
+    if (!Number.isFinite(priority)) {
+      throw new Error(`Invalid applicability priority for Office recipe ${recipe.recipe_key}.`);
+    }
+
+    return [{
+      recipeRef: String(recipe.version_id),
+      label: recipe.name,
+      priority,
+      requiresReviewedGeometry: applicability.requiresReviewedGeometry,
+      descriptionIncludes: applicability.descriptionIncludes,
+      descriptionExcludes: applicability.descriptionExcludes,
+      minWidthMm: applicability.minWidthMm,
+      maxWidthMm: applicability.maxWidthMm,
+      minHeightMm: applicability.minHeightMm,
+      maxHeightMm: applicability.maxHeightMm
+    }];
+  });
 }
