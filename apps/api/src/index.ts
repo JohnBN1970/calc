@@ -11,6 +11,7 @@ import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromOfficeCatalog, proposeRecipesForConcept } from "./recipeProposal.js";
 import { officeAuthoritativeRecipeLines, officeCostingInputLines } from "./officeRecipeLines.js";
 import { officeRecipeDirectCostLines } from "./officeRecipeDirectCosts.js";
+import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeRecipeCatalog, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, placeOfficeRecipeFromTakeoff, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -548,6 +549,26 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 });
 
+
+app.get("/api/workbench/current/additional-costs", async (req, res) => {
+  const session = requireSession(req, res);
+  if (!session) return;
+  try {
+    const workspace = await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const components = evaluateOfficeAdditionalCosts(workspace);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.json({
+      contract: "brebo-calc-additional-costs-v1",
+      officeVersion: String(workspace.version.version),
+      componentCount: components.length,
+      totalAdditionalCost: components.reduce((sum, component) => sum + component.amount, 0),
+      components
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
+    res.status(502).json({ error: `Aanvullende kosten konden niet worden berekend: ${detail}` });
+  }
+});
 
 app.get("/api/workbench/current/office-direct-costs", async (req, res) => {
   const session = requireSession(req, res);
