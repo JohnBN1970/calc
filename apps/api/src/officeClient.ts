@@ -550,23 +550,28 @@ export async function placeOfficeRecipeFromTakeoff(input:{
 }
 
 
+export type OfficeCommercialSummary={
+  purchase:number;
+  sales:number;
+  margin:number;
+  margin_pct:number;
+  vat:number;
+  vat_rate:number|null;
+};
+
 export async function publishCalcResult(input:{
   calculationId:number;
   officeVersion:string;
   calcVersion:string;
   actorId:number;
-  lines:unknown[];
-  totals:{direct_cost:number;markup_amount:number;sales_price:number};
-  source:Record<string,unknown>;
+  commercialSummary:OfficeCommercialSummary;
 }): Promise<{ok:true;snapshot_id:number;content_hash:string;created:boolean}> {
   const path = `/api/workbench/v2/calculations/${input.calculationId}/calc-results`;
   const body = JSON.stringify({
     office_version: input.officeVersion,
     calc_version: input.calcVersion,
     actor_id: input.actorId,
-    lines: input.lines,
-    totals: input.totals,
-    source: input.source
+    commercial_summary: input.commercialSummary
   });
   const headers = signedHeaders("POST", path, body);
   headers["Content-Type"] = "application/json";
