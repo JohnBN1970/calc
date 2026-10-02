@@ -895,7 +895,7 @@ function App() {
 
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
-      setRecipeActionStatus("Kies eerst een Office-paragraaf.");
+      setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
       return;
     }
     setRecipeActionStatus(`${proposal.label} in Calc genereren…`);
@@ -925,46 +925,17 @@ function App() {
         unresolvedCount?:number;
       };
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
-      if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Office-recept leverde geen Calc-regels op.");
+      if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
       const paragraphNode = aggregate.structure.find(node => node.node_key === recipeParagraphKey);
-      if (!paragraphNode) throw new Error("De gekozen Office-paragraaf bestaat niet meer.");
-      const chapterNode = paragraphNode.parent_key ? aggregate.structure.find(node => node.node_key === paragraphNode.parent_key) : null;
+      if (!paragraphNode || paragraphNode.node_type !== "paragraph") throw new Error("De gekozen Calc-paragraaf bestaat niet meer.");
+      const paragraphId = Number(paragraphNode.node_key.replace(/^calc-line-/, ""));
+      if (!Number.isInteger(paragraphId) || !lines.some(line => line.id === paragraphId && line.lineType === "paragraph")) {
+        throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
+      }
 
       let id = nextId;
       const created: Line[] = [];
-      let chapterId: number | null = null;
-      if (chapterNode) {
-        const existing = lines.find(line => line.lineType === "chapter" && line.description.trim() === chapterNode.label.trim());
-        if (existing) chapterId = existing.id;
-        else {
-          chapterId = id--;
-          created.push({
-            id:chapterId,parentId:null,lineType:"chapter",code:chapterNode.code??"",description:chapterNode.label,
-            unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
-            labour:0,material:0,equipment:0,subcontracting:0,other:0,priceSourceType:"manual",
-            officeSourceId:null,sourceReference:null,sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,
-            sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,
-            sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
-          });
-        }
-      }
-
-      let paragraphId: number | null = null;
-      const existingParagraph = lines.find(line => line.lineType === "paragraph" && line.description.trim() === paragraphNode.label.trim() && line.parentId === chapterId);
-      if (existingParagraph) paragraphId = existingParagraph.id;
-      else {
-        paragraphId = id--;
-        created.push({
-          id:paragraphId,parentId:chapterId,lineType:"paragraph",code:paragraphNode.code??"",description:paragraphNode.label,
-          unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
-          labour:0,material:0,equipment:0,subcontracting:0,other:0,priceSourceType:"manual",
-          officeSourceId:null,sourceReference:null,sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,
-          sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,
-          sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
-        });
-      }
-
       for (const generated of payload.lines) {
         created.push({
           id:id--,
