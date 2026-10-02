@@ -699,6 +699,7 @@ app.post("/api/workbench/current/tail-costs", async (req,res)=>{
       baseScope:String(req.body?.baseScope??"direct_cost") as any,
       baseRef:req.body?.baseRef==null?null:String(req.body.baseRef),
       quantity:req.body?.quantity==null?null:Number(req.body.quantity),
+      vatRegimeId:req.body?.vatRegimeId==null?null:Number(req.body.vatRegimeId),
       sortOrder:Number(req.body?.sortOrder??0)
     });
     res.status(201).json({tailCostComponentId:id});
@@ -1349,7 +1350,7 @@ app.put("/api/settings/user/columns", async (req,res)=>{
   const session=requireSession(req,res);
   if(!session)return;
   if(!Array.isArray(req.body?.columns)){res.status(400).json({error:"Ongeldige kolominstellingen."});return;}
-  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","total"]);
+  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","total"]);
   const columns=req.body.columns.map((item:any)=>({
     key:String(item?.key??""),
     visible:item?.visible!==false,
