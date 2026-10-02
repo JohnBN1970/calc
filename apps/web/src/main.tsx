@@ -2020,6 +2020,21 @@ function App() {
               </div>
             </div>
             {documentTriageStatus&&<div className="managementStatus">{documentTriageStatus}</div>}
+            <div className="structureProposalPanel">
+              <div className="structureProposalHead">
+                <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
+                <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
+              </div>
+              {aggregate.structureProposal.groups.length===0?<p className="muted">Nog geen structuurvoorstel mogelijk.</p>:
+                <div className="structureProposalGroups">{aggregate.structureProposal.groups.map(group=>
+                  <div className={"structureProposalGroup"+(group.recipeRef===null?" is-review":"")} key={group.key}>
+                    <div><strong>{group.label}</strong><span>{group.recipeRef?("Recept #"+group.recipeRef):"Handmatige keuze nodig"}</span></div>
+                    <div>{group.positionRefs.map(ref=><span className="structurePosition" key={ref}>{ref}</span>)}</div>
+                  </div>
+                )}</div>
+              }
+              {structureProposalStatus&&<div className="managementStatus">{structureProposalStatus}</div>}
+            </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
               <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map((position,index) => {
