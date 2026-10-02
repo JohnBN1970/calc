@@ -55,3 +55,18 @@ test("conceptbron en pagina blijven traceerbaar in receptregel",()=>{
   assert.deepEqual(details.evidence.document_ids,[12,18]);
   assert.deepEqual(details.evidence.pages,[3,4]);
 });
+
+
+test("positiecontext blijft in sourceDetails van receptregel behouden",()=>{
+  const resolution:OfficeCalcSourceResolution={
+    contract:"brebo-office-calc-source-resolution-v1",project_id:1,
+    results:[{request_index:0,type:"article",ref:"A-1",status:"resolved",value:12.5,unit:"m2",description:"Materiaal",source:{price_id:7}}]
+  };
+  const [line]=generateCalcOwnedRecipeLines({recipe,takeoff,resolution,scopes:[
+    {type:"facade",ref:"Noord"},{type:"dwelling_type",ref:"Type A"}
+  ]});
+  const details=JSON.parse(line.sourceDetails);
+  assert.deepEqual(details.context_scopes,[
+    {type:"facade",ref:"Noord"},{type:"dwelling_type",ref:"Type A"}
+  ]);
+});
