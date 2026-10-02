@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
+import { evaluateTailCostHierarchy, findTailCostPartitionOverlaps } from "./tailCostEvaluation.js";
 import type { TailCostComponent } from "./tailCostEngine.js";
 
 const component=(overrides:Partial<TailCostComponent>):TailCostComponent=>({
@@ -56,4 +56,39 @@ test("overlappende deelcalculaties verdubbelen nooit de directe kost",()=>{
   assert.equal(result.totalDirectCost,1000);
   assert.equal(result.tailCost,0);
   assert.equal(result.salesPrice,1000);
+});
+
+
+test("overlap tussen deelcalculaties met eigen staartkosten wordt geblokkeerd",()=>{
+  const first={...sub,id:20,ref:"GEVEL-NOORD",description:"Gevel Noord",lineIds:[10,11],directCost:1000};
+  const second={...sub,id:21,ref:"TYPE-A",description:"Woningtype A",lineIds:[10,12],directCost:800};
+  const components=[
+    component({id:20,ownerType:"subcalculation",ownerRef:"GEVEL-NOORD",description:"AK gevel",value:10}),
+    component({id:21,ownerType:"subcalculation",ownerRef:"TYPE-A",description:"AK woningtype",value:10})
+  ];
+  const overlaps=findTailCostPartitionOverlaps({subcalculations:[first,second],components});
+  assert.equal(overlaps.length,1);
+  assert.equal(overlaps[0].lineId,10);
+  assert.deepEqual(overlaps[0].subcalculations.map(item=>item.ref),["GEVEL-NOORD","TYPE-A"]);
+  assert.throws(()=>evaluateTailCostHierarchy({
+    totalDirectCost:1500,
+    mainDirectCost:0,
+    subcalculations:[first,second],
+    components
+  }),/regel #10: Gevel Noord \[GEVEL-NOORD\] \+ Woningtype A \[TYPE-A\]/);
+});
+
+test("overlap blijft bruikbaar als slechts één deelcalculatie staartkosten bezit",()=>{
+  const first={...sub,id:30,ref:"GEVEL-NOORD",description:"Gevel Noord",lineIds:[10,11],directCost:1000};
+  const second={...sub,id:31,ref:"TYPE-A",description:"Woningtype A",lineIds:[10,12],directCost:800};
+  const components=[
+    component({id:30,ownerType:"subcalculation",ownerRef:"GEVEL-NOORD",description:"AK gevel",value:10})
+  ];
+  assert.deepEqual(findTailCostPartitionOverlaps({subcalculations:[first,second],components}),[]);
+  assert.doesNotThrow(()=>evaluateTailCostHierarchy({
+    totalDirectCost:1500,
+    mainDirectCost:0,
+    subcalculations:[first,second],
+    components
+  }));
 });
