@@ -310,3 +310,17 @@
 .scopeOverviewCard.is-active{outline:2px solid #111;outline-offset:-2px}
 .scopeOverviewCard span,.scopeOverviewCard small{color:#66707a;font-size:.78rem}
 .scopeOverviewCard b{font-size:.95rem}
+
+.scopeCoveragePanel{margin:14px 0 18px;border:1px solid #dfe4e8;border-radius:10px;background:#fff;overflow:hidden}
+.scopeCoverageHead{padding:13px 15px;border-bottom:1px solid #e8ecef;background:#fafbfc}
+.scopeCoverageHead>div{display:grid;gap:4px}
+.scopeCoverageHead span{color:#66707a;font-size:.86rem}
+.scopeCoverageList{display:grid}
+.scopeCoverageItem{display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,2fr) 64px minmax(220px,2fr);gap:12px;align-items:center;padding:11px 15px;border-bottom:1px solid #eef1f3}
+.scopeCoverageItem:last-child{border-bottom:0}
+.scopeCoverageItem>div:first-child{display:grid;gap:2px}
+.scopeCoverageItem>div:first-child span,.scopeCoverageItem small{color:#66707a;font-size:.8rem}
+.scopeCoverageBar{height:8px;border-radius:999px;background:#eceff2;overflow:hidden}
+.scopeCoverageBar span{display:block;height:100%;background:#111}
+.scopeCoverageItem.is-complete small{color:#3f4a44}
+@media(max-width:800px){.scopeCoverageItem{grid-template-columns:1fr 64px}.scopeCoverageBar,.scopeCoverageItem small{grid-column:1/-1}}
