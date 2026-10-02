@@ -8,7 +8,7 @@ export type TailCostOwnerType="calculation"|"subcalculation";
 export type TailCostComponent={
   id:number;versionId:number;ownerType:TailCostOwnerType;ownerRef:string|null;
   componentKey:string;description:string;basis:TailCostBasis;value:number;
-  baseScope:TailCostBaseScope;baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
+  baseScope:TailCostBaseScope;baseRef:string|null;quantity:number|null;vatRegimeId:number|null;sortOrder:number;active:boolean;
 };
 
 export function evaluateTailCosts(input:{
