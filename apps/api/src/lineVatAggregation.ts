@@ -28,7 +28,7 @@ export function aggregateVat(input:{
     totals.set(vatRegimeId,(totals.get(vatRegimeId)??0)+amount);
   };
   for(const line of input.lineSales)add(line.vatRegimeId,line.salesAmount);
-  for(const tail of input.tailCosts)add(tail.vatRegimeId,tail.amount);
+  for(const tail of input.tailCosts)add(tail.vatRegimeId??null,tail.amount);
   return [...totals.entries()].map(([id,taxableBase])=>{
     const regime=regimes.get(id)!;
     return{
