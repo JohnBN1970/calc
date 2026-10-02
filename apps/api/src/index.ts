@@ -9,7 +9,7 @@ import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
-import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
+import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
@@ -907,16 +907,43 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
   if (!session) return;
 
   try {
-    const [context, recipes, workspace] = await Promise.all([
+    const [context, recipes, workspace, versions] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
       listCalcRecipes(),
-      fetchOfficeWorkspaceState(session.officeCalculationId)
+      fetchOfficeWorkspaceState(session.officeCalculationId),
+      db.execute<RowDataPacket[]>(
+        "SELECT id FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
+        [session.calculationId]
+      )
     ]);
     if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
-    const aggregate = buildWorkbenchAggregate({ context, recipes, workspace });
+    const versionId = versions[0][0]?.id;
+    if (!versionId) {
+      res.status(409).json({ error: "Calc heeft geen actieve calculatieversie." });
+      return;
+    }
+    const [structureLines] = await db.execute<RowDataPacket[]>(
+      `SELECT id, parent_id, line_type, code, description
+         FROM calculation_lines
+        WHERE version_id = ? AND line_type IN ('chapter','paragraph')
+        ORDER BY sort_order, id`,
+      [versionId]
+    );
+    const aggregate = buildWorkbenchAggregate({
+      context,
+      recipes,
+      workspace,
+      structure: calcWorkbenchStructureFromLines(structureLines.map(row=>({
+        id:Number(row.id),
+        parent_id:row.parent_id==null?null:Number(row.parent_id),
+        line_type:String(row.line_type),
+        code:row.code==null?null:String(row.code),
+        description:String(row.description??"")
+      })))
+    });
     res.setHeader("Cache-Control", "no-store, private");
     res.json(aggregate);
   } catch (error) {
