@@ -973,7 +973,7 @@ app.get("/api/workbench/current", async (req, res) => {
   }
 
   const [versions] = await db.execute<RowDataPacket[]>(
-    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price, vat_rate FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
+    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
     [session.calculationId]
   );
   const version = versions[0];
@@ -1192,7 +1192,7 @@ app.put("/api/workbench/current", async (req, res) => {
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ?, vat_rate = NULL WHERE id = ?",
+      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
       [directCost, markupAmount, salesPrice, version.id]
     );
     await connection.execute(
