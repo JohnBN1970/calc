@@ -1209,9 +1209,9 @@ function App() {
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
-      const paragraphNode = aggregate.structure.find(node => node.node_key === recipeParagraphKey);
-      if (!paragraphNode || paragraphNode.node_type !== "paragraph") throw new Error("De gekozen Calc-paragraaf bestaat niet meer.");
-      const paragraphLine = lines.find(line => line.lineType === "paragraph" && line.structureKey === paragraphNode.node_key);
+      const paragraphLine = recipeParagraphKey.startsWith("local:")
+        ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(recipeParagraphKey.slice(6)))
+        : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===recipeParagraphKey);
       if (!paragraphLine) throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
 
       let id = nextId;
@@ -1986,7 +1986,10 @@ function App() {
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
                 <option value="">Kies paragraaf…</option>
-                {aggregate.structure.filter(node => node.node_type === "paragraph").map(node => <option key={node.node_key} value={node.node_key}>{node.code ? `${node.code} · ` : ""}{node.label}</option>)}
+                {lines.filter(line=>line.lineType==="paragraph").map(line => {
+                  const key=line.structureKey??("local:"+line.id);
+                  return <option key={key} value={key}>{line.code ? line.code+" · " : ""}{line.description}</option>;
+                })}
               </select></label>
               <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-brondata beschikbaar voor Calc." : "Office-brondata is alleen-lezen; Calc kan er wel mee rekenen.")}</span>
             </div>
