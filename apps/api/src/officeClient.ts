@@ -350,8 +350,6 @@ export type OfficeWorkspaceState = {
       }>;
     };
   };
-  structure?: unknown[];
-  readiness?: unknown;
   [key:string]: unknown;
 };
 
