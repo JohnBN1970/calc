@@ -323,79 +323,6 @@ export async function fetchCalculationContextSnapshot(calculationId: number): Pr
 }
 
 
-export type OfficeRecipeCatalog = {
-  contract: "brebo-recipe-catalog-v1";
-  catalog: {
-    catalog_version: string;
-    recipes: Array<{
-      recipe_id: number;
-      recipe_key: string;
-      name: string;
-      version_id: number;
-      version: string;
-      base_unit: string;
-      published: number | null;
-      applicability: {
-        priority?: number;
-        requiresReviewedGeometry?: boolean;
-        descriptionIncludes?: string[];
-        descriptionExcludes?: string[];
-        minWidthMm?: number;
-        maxWidthMm?: number;
-        minHeightMm?: number;
-        maxHeightMm?: number;
-      } | null;
-      parameters: Array<{
-        key: string;
-        label: string;
-        data_type: string;
-        unit: string | null;
-        default_value: string | null;
-        formula: string | null;
-        required: boolean;
-        sort_order: number;
-      }>;
-      lines: Array<{
-        id: number;
-        key: string;
-        type: string;
-        description: string;
-        unit: string | null;
-        quantity_formula: string | null;
-        waste_pct: number;
-        material_ref: string | null;
-        price_source_ref: string | null;
-        unit_cost: number | null;
-        sort_order: number;
-        metadata: string | null;
-      }>;
-    }>;
-  };
-};
-
-export async function fetchOfficeRecipeCatalog(): Promise<OfficeRecipeCatalog> {
-  const path = "/api/workbench/v2/recipe-catalog";
-  const response = await fetch(config.office.baseUrl + path, {
-    method: "GET",
-    headers: signedHeaders("GET", path),
-    redirect: "error",
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) {
-    throw new Error(`Office recipe catalog request failed with status ${response.status}.`);
-  }
-  const payload = await response.json() as OfficeRecipeCatalog;
-  if (
-    payload.contract !== "brebo-recipe-catalog-v1" ||
-    typeof payload.catalog?.catalog_version !== "string" ||
-    !Array.isArray(payload.catalog?.recipes)
-  ) {
-    throw new Error("Office returned an invalid recipe catalog contract.");
-  }
-  return payload;
-}
-
-
 export type OfficeWorkspaceState = {
   contract: "brebo-calculation-workspace-v2";
   calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
@@ -513,43 +440,6 @@ export async function fetchOfficeWorkspaceState(calculationId:number): Promise<O
   }
   return payload;
 }
-
-export async function placeOfficeRecipeFromTakeoff(input:{
-  calculationId:number;
-  version:string;
-  paragraphKey:string;
-  recipeVersionId:number;
-  takeoffId:number;
-  passes:number;
-  parameters:Record<string,string|number>;
-  actorId:number;
-}): Promise<{ok:true;recipe_instance_id:number;takeoff_id:number}> {
-  const path = `/api/workbench/v2/calculations/${input.calculationId}/recipes/from-takeoff`;
-  const body = JSON.stringify({
-    version: input.version,
-    paragraph_key: input.paragraphKey,
-    recipe_version_id: input.recipeVersionId,
-    takeoff_id: input.takeoffId,
-    passes: input.passes,
-    parameters: input.parameters,
-    actor_id: input.actorId
-  });
-  const headers = signedHeaders("POST", path, body);
-  headers["Content-Type"] = "application/json";
-  const response = await fetch(config.office.baseUrl + path, {
-    method: "POST",
-    headers,
-    body,
-    redirect: "error",
-    signal: AbortSignal.timeout(10000)
-  });
-  const text = await response.text();
-  let payload: any = {};
-  try { payload = text ? JSON.parse(text) : {}; } catch {}
-  if (!response.ok) throw new Error(payload?.message || `Office recipe placement failed with status ${response.status}.`);
-  return payload;
-}
-
 
 export type OfficeCommercialSummary={
   purchase:number;
