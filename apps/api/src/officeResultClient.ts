@@ -8,6 +8,14 @@ export type OfficeCommercialSummary={
   margin_pct:number;
   vat:number;
   vat_rate:number|null;
+  vat_breakdown:Array<{
+    code:string;
+    label:string;
+    rate:number|null;
+    taxable_base:number;
+    vat_amount:number;
+    reverse_charged:boolean;
+  }>;
 };
 
 export async function publishCalcResult(input:{
