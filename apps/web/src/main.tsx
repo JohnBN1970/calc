@@ -42,7 +42,7 @@ type Line = {
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
 };
-type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"total";
+type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"position"|"recipe"|"source"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
 const defaultColumns: ColumnSetting[] = [
   { key:"code", label:"Code", width:90, visible:true },
@@ -58,6 +58,9 @@ const defaultColumns: ColumnSetting[] = [
   { key:"subcontracting", label:"OA", width:100, visible:true },
   { key:"other", label:"Overig", width:100, visible:true },
   { key:"vat", label:"BTW", width:120, visible:true },
+  { key:"position", label:"Positie", width:110, visible:false },
+  { key:"recipe", label:"Recept", width:160, visible:false },
+  { key:"source", label:"Bron", width:180, visible:false },
   { key:"total", label:"Totaal", width:125, visible:true }
 ];
 const columnPrefsKey = "brebo.calc.columns.v1";
@@ -67,11 +70,46 @@ function loadColumnSettings(): ColumnSetting[] {
     if (!raw) return defaultColumns;
     const parsed = JSON.parse(raw) as ColumnSetting[];
     const byKey = new Map(parsed.map(item => [item.key,item]));
-    return defaultColumns.map(def => {
-      const saved = byKey.get(def.key);
-      return saved ? { ...def, visible: saved.visible !== false, width: Math.max(55, Math.min(600, Number(saved.width) || def.width)) } : def;
-    }).sort((a,b) => parsed.findIndex(x=>x.key===a.key)-parsed.findIndex(x=>x.key===b.key));
+    const ordered=parsed
+      .map(item=>defaultColumns.find(def=>def.key===item.key))
+      .filter((item):item is ColumnSetting=>Boolean(item))
+      .map(def=>{
+        const saved=byKey.get(def.key);
+        return saved ? { ...def, visible: saved.visible !== false, width: Math.max(55, Math.min(600, Number(saved.width) || def.width)) } : def;
+      });
+    const missing=defaultColumns.filter(def=>!byKey.has(def.key));
+    return [...ordered,...missing];
   } catch { return defaultColumns; }
+}
+
+type LineTrace={
+  position:string|null;
+  recipe:string|null;
+  source:string|null;
+};
+function lineTrace(line:Line):LineTrace{
+  if(line.sourceDetails){
+    try{
+      const details=JSON.parse(line.sourceDetails) as any;
+      const position=String(details?.position_ref??"").trim()||null;
+      const recipeKey=String(details?.recipe?.key??"").trim();
+      const recipeVersion=details?.recipe?.version==null?"":String(details.recipe.version).trim();
+      const recipe=recipeKey?(recipeKey+(recipeVersion?" v"+recipeVersion:"")):null;
+      const documents=Array.isArray(details?.evidence?.document_ids)?details.evidence.document_ids.map((value:unknown)=>Number(value)).filter(Number.isFinite):[];
+      const pages=Array.isArray(details?.evidence?.pages)?details.evidence.pages.map((value:unknown)=>Number(value)).filter(Number.isFinite):[];
+      const source=documents.length
+        ? "Doc "+documents.join(", ")+(pages.length?" · p. "+pages.join(", "):"")
+        : line.sourceDocumentId
+          ? "Doc "+line.sourceDocumentId
+          : line.sourceSupplier||line.sourceReference||null;
+      return{position,recipe,source};
+    }catch{}
+  }
+  return{
+    position:null,
+    recipe:line.priceSourceType==="recipe"&&line.sourceReference?line.sourceReference.split("/")[0]:null,
+    source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference)
+  };
 }
 
 type QuoteCandidate = { value: number; score: number; line_no: number; text: string };
@@ -2403,6 +2441,7 @@ function App() {
                 <LineActions line={line} />
               </div>;
             }
+            const trace=lineTrace(line);
             const cells: Record<ColumnKey, React.ReactNode> = {
               code: <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id,event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id,{code:e.target.value})} /></div>,
               description: <div className="descWrap">
@@ -2439,6 +2478,9 @@ function App() {
               equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
               subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
               other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
+              position: <span className="cell traceCell">{trace.position??"—"}</span>,
+              recipe: <span className="cell traceCell">{trace.recipe??"—"}</span>,
+              source: <span className="cell traceCell" title={trace.source??""}>{trace.source??"—"}</span>,
               vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
