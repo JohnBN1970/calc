@@ -20,6 +20,7 @@ import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
+import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -1184,21 +1185,7 @@ app.put("/api/workbench/current", async (req, res) => {
         commercialSummary
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const officeSummary = verifiedState.calc_result?.commercial_summary;
-      if (!officeSummary) throw new Error("Office bevestigde geen commerciele Calc-samenvatting.");
-      const tolerance = 0.005;
-      const checks:[number,number,string][] = [
-        [Number(officeSummary.purchase), commercialSummary.purchase, "inkoop"],
-        [Number(officeSummary.sales), commercialSummary.sales, "verkoop"],
-        [Number(officeSummary.margin), commercialSummary.margin, "marge"],
-        [Number(officeSummary.margin_pct), commercialSummary.margin_pct, "margepercentage"],
-        [Number(officeSummary.vat), commercialSummary.vat, "btw"]
-      ];
-      for (const [actual, expected, label] of checks) {
-        if (!Number.isFinite(actual) || Math.abs(actual - expected) > tolerance) {
-          throw new Error(`Office bevestigde een afwijkende ${label}.`);
-        }
-      }
+      verifyOfficeCommercialSummary(verifiedState.calc_result?.commercial_summary, commercialSummary);
       officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
     } catch(error) {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
