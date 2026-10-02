@@ -210,3 +210,34 @@
 .readinessItems{display:flex;gap:6px;flex-wrap:wrap}.readinessItems button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:1px solid #e2c0c0;background:#fff;border-radius:6px;padding:6px 8px;max-width:320px}.readinessItems b{font-size:10px}.readinessItems span,.readinessItems small{font-size:9px;color:#765f5f}
 .generatedLineCard.is-unresolved{border-color:#d8a8a8;background:#fff9f9}.generatedLineCard .sourceError{color:#8a4f4f}
 .commandSave:disabled{opacity:.45;cursor:not-allowed}
+
+
+.settingsOverlay{
+  position:fixed;inset:0;z-index:80;background:rgba(10,14,20,.58);
+  display:flex;justify-content:flex-end;backdrop-filter:blur(2px)
+}
+.settingsPanel{
+  width:min(920px,96vw);height:100%;overflow:auto;background:#fff;
+  box-shadow:-20px 0 50px rgba(0,0,0,.18);padding:28px
+}
+.settingsHead{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:1px solid #ddd;padding-bottom:18px;margin-bottom:24px}
+.settingsHead h2,.settingsSection h3{margin:.2rem 0}
+.settingsHead p,.settingsSectionHead p{margin:.35rem 0 0;color:#666}
+.settingsSection{display:grid;gap:18px}
+.settingsSectionHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-end}
+.vatRegimeList{display:grid;gap:8px}
+.vatRegimeRow,.vatRegimeCreate{
+  display:grid;grid-template-columns:minmax(180px,2fr) minmax(120px,1fr) 140px 110px 100px;
+  gap:8px;align-items:center
+}
+.vatRegimeRow input,.vatRegimeRow select,.vatRegimeCreate input,.vatRegimeCreate select{
+  min-width:0;padding:9px 10px;border:1px solid #cfd4da;border-radius:6px;background:#fff
+}
+.vatRegimeCreate{padding-top:14px;border-top:1px solid #e5e7eb}
+.vatRegimeCreate button{padding:9px 12px}
+.toggleLabel{display:flex;gap:7px;align-items:center;font-size:.9rem}
+.settingsStatus{margin:0;color:#555}
+@media(max-width:760px){
+  .settingsPanel{padding:18px}
+  .vatRegimeRow,.vatRegimeCreate{grid-template-columns:1fr 1fr}
+}
