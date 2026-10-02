@@ -139,6 +139,20 @@ type WorkbenchAggregate = {
     }>;
     unresolved: string[];
   };
+  documentTriage: Array<{
+    documentId:number;
+    title:string;
+    documentType:string|null;
+    documentFamily:string|null;
+    mimeType:string|null;
+    status:"primary"|"supporting"|"review";
+    score:number;
+    factCount:number;
+    reviewedFactCount:number;
+    positionRefs:string[];
+    signals:string[];
+    reviewStatus:string;
+  }>;
   recipeProposals: Array<{
     positionRef: string;
     recipeRef: string;
@@ -1865,10 +1879,24 @@ function App() {
               <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-brondata beschikbaar voor Calc." : "Office-brondata is alleen-lezen; Calc kan er wel mee rekenen.")}</span>
             </div>
             <div className="recipeSummary">
+              <div><span>Primaire documenten</span><strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length}</strong></div>
               <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
               <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
               <div><span>Calc-regels uit recept</span><strong>{lines.filter(line => line.priceSourceType === "recipe").length}</strong></div>
               <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
+            </div>
+            <div className="documentTriagePanel">
+              <div className="documentTriageHead"><div><strong>Calc-documenttriage</strong><span>Calc beoordeelt welke Office-bronnen daadwerkelijk calculatie-informatie opleveren.</span></div><small>{aggregate.documentTriage.length} document(en)</small></div>
+              <div className="documentTriageList">
+                {aggregate.documentTriage.length===0?<p className="muted">Nog geen documenten in de calculatiecontext.</p>:aggregate.documentTriage.map(item=>
+                  <div className={"documentTriageItem status-"+item.status} key={item.documentId}>
+                    <div><strong>{item.title}</strong><span>{item.documentFamily||item.documentType||"onbekend type"} · bron #{item.documentId}</span></div>
+                    <div className="documentTriageScore"><b>{item.score}</b><small>{item.status==="primary"?"primair":item.status==="supporting"?"ondersteunend":"review"}</small></div>
+                    <div className="documentTriageSignals">{item.signals.map((signal,index)=><small key={index}>{signal}</small>)}</div>
+                    {item.positionRefs.length>0&&<div className="documentTriagePositions">{item.positionRefs.map(ref=><span key={ref}>{ref}</span>)}</div>}
+                  </div>
+                )}
+              </div>
             </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
