@@ -23,7 +23,7 @@ type Line = {
   equipment: number;
   subcontracting: number;
   other: number;
-  vatRegimeId: number | null;
+  vatRegimeId?: number | null;
   priceSourceType: PriceSourceType;
   officeSourceId: string | null;
   sourceReference: string | null;
@@ -677,6 +677,23 @@ function App() {
     })();
     return()=>{cancelled=true;};
   },[authorized]);
+
+  useEffect(()=>{
+    if(authorized!==true)return;
+    let cancelled=false;
+    void (async()=>{
+      try{
+        const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+        const payload=await response.json().catch(()=>({})) as {regimes?:VatRegime[]};
+        if(!response.ok)throw new Error("Btw-regimes konden niet worden geladen.");
+        if(!cancelled)setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
+      }catch{
+        if(!cancelled)setVatRegimes([]);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[authorized]);
+
 
   const patchColumn = (key: ColumnKey, patch: Partial<ColumnSetting>) => setColumnSettings(current => current.map(column => column.key === key ? { ...column, ...patch } : column));
   const moveColumn = (key: ColumnKey, direction: -1|1) => setColumnSettings(current => {
@@ -2156,6 +2173,7 @@ function App() {
               equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
               subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
               other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
+              vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
             return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
