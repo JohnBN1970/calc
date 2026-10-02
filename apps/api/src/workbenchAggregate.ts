@@ -5,6 +5,25 @@ import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipe
 import type { CalcDocumentTriageItem } from "./documentTriage.js";
 import { buildCalcStructureProposal } from "./structureProposal.js";
 
+export type CalcScopeCoverageItem={
+  scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
+  covered:number;
+  total:number;
+  missingPositionRefs:string[];
+};
+
+export function calculateScopeCoverage(positions:Array<{
+  positionRef:string;
+  scopes:Array<{type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";ref:string}>;
+}>):CalcScopeCoverageItem[]{
+  const types:CalcScopeCoverageItem["scopeType"][]=["building","facade","dwelling","dwelling_type","building_part"];
+  return types.map(scopeType=>{
+    const present=positions.filter(position=>position.scopes.some(scope=>scope.type===scopeType&&scope.ref.trim()));
+    const missing=positions.filter(position=>!position.scopes.some(scope=>scope.type===scopeType&&scope.ref.trim())).map(position=>position.positionRef).sort((a,b)=>a.localeCompare(b,"nl"));
+    return{scopeType,covered:present.length,total:positions.length,missingPositionRefs:missing};
+  }).filter(item=>item.covered>0);
+}
+
 export type CalcWorkbenchStructureNode={
   node_key:string;
   parent_key:string|null;
@@ -48,6 +67,7 @@ export function buildWorkbenchAggregate(input:{
   const concept=buildConceptFromOfficeContext(input.context,documentTriage);
   const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
+  const scopeCoverage=calculateScopeCoverage(concept.positions);
   return {
     contract:"brebo-calc-workbench-aggregate-v1",
     officeVersion:String(input.workspace.version.version),
@@ -57,6 +77,7 @@ export function buildWorkbenchAggregate(input:{
     takeoffs: input.context.context.takeoff,
     recipeProposals:proposals,
     structureProposal,
+    scopeCoverage,
     structure:input.structure,
     readiness:{
       source:"calc",

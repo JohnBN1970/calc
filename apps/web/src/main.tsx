@@ -226,6 +226,12 @@ type WorkbenchAggregate = {
     overridden:boolean;
     overrideReason:string|null;
   }>;
+  scopeCoverage:Array<{
+    scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
+    covered:number;
+    total:number;
+    missingPositionRefs:string[];
+  }>;
   structureProposal:{
     contract:"brebo-calc-structure-proposal-v1";
     chapter:{key:string;label:string};
@@ -2369,6 +2375,21 @@ function App() {
               </div>
             </div>
             {documentTriageStatus&&<div className="managementStatus">{documentTriageStatus}</div>}
+            {aggregate.scopeCoverage.length>0&&<div className="scopeCoveragePanel">
+              <div className="scopeCoverageHead"><div><strong>Scopecontext-dekking</strong><span>Controle op aangeleverde gebouwcontext per calculatiepositie; informatief, niet blokkerend.</span></div></div>
+              <div className="scopeCoverageList">
+                {aggregate.scopeCoverage.map(item=>{
+                  const label=scopeLabels[item.scopeType];
+                  const complete=item.covered===item.total;
+                  return <div className={"scopeCoverageItem"+(complete?" is-complete":"")} key={item.scopeType}>
+                    <div><strong>{label}</strong><span>{item.covered} / {item.total} posities</span></div>
+                    <div className="scopeCoverageBar"><span style={{width:(item.total?Math.round(item.covered/item.total*100):0)+"%"}} /></div>
+                    <b>{item.total?Math.round(item.covered/item.total*100):0}%</b>
+                    <small>{complete?"Volledig":("Ontbreekt bij "+item.missingPositionRefs.join(", "))}</small>
+                  </div>;
+                })}
+              </div>
+            </div>}
             <div className="structureProposalPanel">
               <div className="structureProposalHead">
                 <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
