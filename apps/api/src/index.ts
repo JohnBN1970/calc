@@ -14,7 +14,7 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, createScopedCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
-import { generatedScopeTags, storeLineScopeTags, type LineScopeTag } from "./lineScopeRepository.js";
+import { generatedScopeTags, manualScopeTags, storeLineScopeTags, type LineScopeTag } from "./lineScopeRepository.js";
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
@@ -1250,18 +1250,7 @@ app.put("/api/workbench/current", async (req, res) => {
       }
       if(Array.isArray(line.manualScopes)){
         if(line.id!=null)explicitManualScopeLineIds.add(Number(line.id));
-        const generatedKeys=new Set(scopeTags.map(tag=>tag.scopeType+"\u0000"+tag.scopeRef));
-        const allowed=new Set<LineScopeTag["scopeType"]>(["building","facade","dwelling","dwelling_type","building_part","position","custom"]);
-        const manualTags:LineScopeTag[]=[];
-        const seen=new Set<string>();
-        for(const item of line.manualScopes){
-          const scopeType=String(item?.scopeType??"") as LineScopeTag["scopeType"];
-          const scopeRef=String(item?.scopeRef??"").trim().slice(0,255);
-          const key=scopeType+"\u0000"+scopeRef;
-          if(!allowed.has(scopeType)||!scopeRef||seen.has(key)||generatedKeys.has(key))continue;
-          seen.add(key);
-          manualTags.push({scopeType,scopeRef,source:"manual"});
-        }
+        const manualTags=manualScopeTags(line.manualScopes,scopeTags);
         if(manualTags.length)await storeLineScopeTags(connection,insert.insertId,manualTags);
       }
     }
