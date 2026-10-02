@@ -566,6 +566,7 @@ function App() {
   const [quoteCarrier, setQuoteCarrier] = useState<CostCarrier>("subcontracting");
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(() => loadColumnSettings());
+  const [columnPreferencesLoaded,setColumnPreferencesLoaded]=useState(false);
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [vatRegimes,setVatRegimes]=useState<VatRegime[]>([]);
@@ -631,7 +632,48 @@ function App() {
     : totals;
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
-  useEffect(() => { localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings)); }, [columnSettings]);
+  useEffect(() => {
+    localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings));
+    if(!columnPreferencesLoaded)return;
+    const timer=window.setTimeout(()=>{
+      void fetch("/api/settings/user/columns",{
+        method:"PUT",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({columns:columnSettings.map(({key,width,visible})=>({key,width,visible}))})
+      });
+    },350);
+    return()=>window.clearTimeout(timer);
+  }, [columnSettings,columnPreferencesLoaded]);
+
+  useEffect(()=>{
+    if(authorized!==true)return;
+    let cancelled=false;
+    void (async()=>{
+      try{
+        const response=await fetch("/api/settings/user/columns",{headers:{Accept:"application/json"}});
+        const payload=await response.json().catch(()=>({})) as {columns?:Array<{key:ColumnKey;width:number;visible:boolean}>};
+        if(!response.ok)throw new Error("Kolomvoorkeuren konden niet worden geladen.");
+        if(cancelled)return;
+        if(Array.isArray(payload.columns)&&payload.columns.length){
+          const byKey=new Map(payload.columns.map(item=>[item.key,item]));
+          const ordered=payload.columns
+            .map(item=>defaultColumns.find(def=>def.key===item.key))
+            .filter((item):item is ColumnSetting=>Boolean(item))
+            .map(def=>{
+              const saved=byKey.get(def.key);
+              return{...def,width:Math.max(55,Math.min(600,Number(saved?.width)||def.width)),visible:saved?.visible!==false};
+            });
+          const missing=defaultColumns.filter(def=>!byKey.has(def.key));
+          setColumnSettings([...ordered,...missing]);
+        }
+      }catch{
+        // Lokale voorkeur blijft de fallback als synchronisatie tijdelijk niet beschikbaar is.
+      }finally{
+        if(!cancelled)setColumnPreferencesLoaded(true);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[authorized]);
 
   const patchColumn = (key: ColumnKey, patch: Partial<ColumnSetting>) => setColumnSettings(current => current.map(column => column.key === key ? { ...column, ...patch } : column));
   const moveColumn = (key: ColumnKey, direction: -1|1) => setColumnSettings(current => {
