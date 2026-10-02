@@ -21,7 +21,7 @@ import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
-import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
+import { createVatRegime, listVatRegimes, updateVatRegime, listCalculationVatComponents, replaceCalculationVatComponents, type VatTreatment } from "./vatSettingsRepository.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -1169,14 +1169,35 @@ app.put("/api/workbench/current", async (req, res) => {
     let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
     try {
       const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
+      const vatComponents=await listCalculationVatComponents(Number(version.id));
+      const summary = buildCommercialSummary({
+        purchase:directCost,
+        sales:salesPrice,
+        vatRate,
+        vatBreakdown:vatComponents.length?vatComponents.map(component=>({
+          code:component.regimeCode,
+          label:component.label,
+          rate:component.rate,
+          taxableBase:component.taxableBase,
+          vatAmount:component.vatAmount,
+          reverseCharged:component.treatment==="reverse_charge"
+        })):undefined
+      });
       const commercialSummary = {
         purchase: summary.purchase,
         sales: summary.sales,
         margin: summary.margin,
         margin_pct: summary.marginPct,
         vat: summary.vat,
-        vat_rate: summary.vatRate
+        vat_rate: summary.vatRate,
+        vat_breakdown: summary.vatBreakdown.map(item=>({
+          code:item.code,
+          label:item.label,
+          rate:item.rate,
+          taxable_base:item.taxableBase,
+          vat_amount:item.vatAmount,
+          reverse_charged:item.reverseCharged
+        }))
       };
       const published = await publishCalcResult({
         calculationId: session.officeCalculationId,
@@ -1192,13 +1213,71 @@ app.put("/api/workbench/current", async (req, res) => {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
     }
 
-    const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
-    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, officeSync });
+    const finalVatComponents=await listCalculationVatComponents(Number(version.id));
+    const summary = buildCommercialSummary({
+      purchase:directCost,
+      sales:salesPrice,
+      vatRate,
+      vatBreakdown:finalVatComponents.length?finalVatComponents.map(component=>({
+        code:component.regimeCode,
+        label:component.label,
+        rate:component.rate,
+        taxableBase:component.taxableBase,
+        vatAmount:component.vatAmount,
+        reverseCharged:component.treatment==="reverse_charge"
+      })):undefined
+    });
+    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, vatBreakdown:summary.vatBreakdown, officeSync });
   } catch (error) {
     await connection.rollback();
     throw error;
   } finally {
     connection.release();
+  }
+});
+
+app.get("/api/workbench/current/vat-components", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    const [versions]=await db.execute<RowDataPacket[]>(
+      "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+      [session.calculationId]
+    );
+    const versionId=Number(versions[0]?.id??0);
+    if(!versionId){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({components:await listCalculationVatComponents(versionId)});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden geladen."});
+  }
+});
+
+app.put("/api/workbench/current/vat-components", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  if(!Array.isArray(req.body?.components)){res.status(400).json({error:"Btw-componenten ontbreken."});return;}
+  try{
+    const [versions]=await db.execute<RowDataPacket[]>(
+      "SELECT id,status,sales_price FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+      [session.calculationId]
+    );
+    const version=versions[0];
+    if(!version){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
+    if(String(version.status)!=="draft"){res.status(409).json({error:"Alleen een conceptversie kan worden gewijzigd."});return;}
+    const components=req.body.components.map((item:any)=>({
+      vatRegimeId:Number(item.vatRegimeId),
+      taxableBase:Number(item.taxableBase)
+    }));
+    const baseTotal=components.reduce((sum:number,item:{taxableBase:number})=>sum+item.taxableBase,0);
+    const sales=Number(version.sales_price??0);
+    if(Math.abs(baseTotal-sales)>0.01){
+      res.status(409).json({error:"Som van btw-grondslagen moet gelijk zijn aan de verkoopprijs.",salesPrice:sales,taxableBaseTotal:baseTotal});
+      return;
+    }
+    res.json({components:await replaceCalculationVatComponents(Number(version.id),components)});
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden opgeslagen."});
   }
 });
 
