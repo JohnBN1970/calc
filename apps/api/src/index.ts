@@ -1449,7 +1449,7 @@ app.put("/api/settings/user/columns", async (req,res)=>{
   const session=requireSession(req,res);
   if(!session)return;
   if(!Array.isArray(req.body?.columns)){res.status(400).json({error:"Ongeldige kolominstellingen."});return;}
-  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","position","recipe","source","total"]);
+  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","building","facade","dwelling","dwelling_type","building_part","position","recipe","source","total"]);
   const columns=req.body.columns.map((item:any)=>({
     key:String(item?.key??""),
     visible:item?.visible!==false,
