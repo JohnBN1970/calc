@@ -23,6 +23,7 @@ type Line = {
   equipment: number;
   subcontracting: number;
   other: number;
+  vatRegimeId: number | null;
   priceSourceType: PriceSourceType;
   officeSourceId: string | null;
   sourceReference: string | null;
@@ -40,7 +41,7 @@ type Line = {
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
 };
-type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"total";
+type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
 const defaultColumns: ColumnSetting[] = [
   { key:"code", label:"Code", width:90, visible:true },
@@ -55,6 +56,7 @@ const defaultColumns: ColumnSetting[] = [
   { key:"equipment", label:"Materieel", width:105, visible:true },
   { key:"subcontracting", label:"OA", width:100, visible:true },
   { key:"other", label:"Overig", width:100, visible:true },
+  { key:"vat", label:"BTW", width:120, visible:true },
   { key:"total", label:"Totaal", width:125, visible:true }
 ];
 const columnPrefsKey = "brebo.calc.columns.v1";
@@ -508,6 +510,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     equipment: Number(raw.equipment_unit_cost ?? 0),
     subcontracting: Number(raw.subcontracting_unit_cost ?? 0),
     other: Number(raw.other_unit_cost ?? 0),
+    vatRegimeId: raw.vat_regime_id == null ? null : Number(raw.vat_regime_id),
     priceSourceType: String(raw.price_source_type ?? "manual") as PriceSourceType,
     officeSourceId: raw.office_source_id == null ? null : String(raw.office_source_id),
     sourceReference: raw.source_reference == null ? null : String(raw.source_reference),
@@ -1713,6 +1716,7 @@ function App() {
             equipmentUnitCost: line.equipment,
             subcontractingUnitCost: line.subcontracting,
             otherUnitCost: line.other,
+            vatRegimeId: line.vatRegimeId,
             priceSourceType: line.priceSourceType,
             officeSourceId: line.officeSourceId,
             sourceReference: line.sourceReference,
