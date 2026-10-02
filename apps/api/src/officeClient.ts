@@ -263,6 +263,14 @@ export type OfficeCalculationContextSnapshot = {
       confidence: number;
       review_status: string;
     }>;
+    position_scopes?: Array<{
+      position_ref: string;
+      building?: string | null;
+      facade?: string | null;
+      dwelling?: string | null;
+      dwelling_type?: string | null;
+      building_part?: string | null;
+    }>;
     takeoff: Array<{
       id: number;
       position_ref: string;
