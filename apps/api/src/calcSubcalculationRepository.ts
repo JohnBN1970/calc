@@ -93,3 +93,40 @@ export async function setManualLineMembership(input:{
     );
   }
 }
+
+
+export async function createScopedCalcSubcalculation(input:{
+  versionId:number;
+  ref:string;
+  description:string;
+  scopeType:CalcSubcalculationScopeType;
+  scopeRef:string;
+  includeDescendants?:boolean;
+  sortOrder?:number;
+}):Promise<number>{
+  if(!Number.isInteger(input.versionId)||input.versionId<=0)throw new Error("Ongeldige calculatieversie.");
+  const ref=input.ref.trim();
+  const description=input.description.trim();
+  const scopeRef=input.scopeRef.trim();
+  if(!ref||!description||!scopeRef)throw new Error("Referentie, omschrijving en scope zijn verplicht.");
+  const connection=await db.getConnection();
+  try{
+    await connection.beginTransaction();
+    const [insert]=await connection.execute<ResultSetHeader>(
+      "INSERT INTO calculation_subcalculations(version_id,ref,description,dimension_type,dimension_ref,sort_order) VALUES(?,?,?,?,?,?)",
+      [input.versionId,ref,description,input.scopeType,scopeRef,input.sortOrder??0]
+    );
+    const id=Number(insert.insertId);
+    await connection.execute(
+      "INSERT INTO calculation_subcalculation_scopes(subcalculation_id,scope_type,scope_ref,include_descendants,sort_order) VALUES(?,?,?,?,?)",
+      [id,input.scopeType,scopeRef,input.includeDescendants?1:0,0]
+    );
+    await connection.commit();
+    return id;
+  }catch(error){
+    await connection.rollback();
+    throw error;
+  }finally{
+    connection.release();
+  }
+}

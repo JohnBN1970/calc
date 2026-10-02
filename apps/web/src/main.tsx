@@ -1096,18 +1096,12 @@ function App() {
         building_part:"BOUWDEEL",
         position:"POS"
       }[scopeType];
-      const createResponse=await fetch("/api/workbench/current/subcalculations",{
+      const createResponse=await fetch("/api/workbench/current/subcalculations/scoped",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-        body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref})
+        body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref,scopeType,scopeRef:ref})
       });
       const created=await createResponse.json().catch(()=>({})) as {subcalculationId?:number;error?:string};
       if(!createResponse.ok||!created.subcalculationId)throw new Error(String(created.error??"Deelcalculatie kon niet worden aangemaakt."));
-      const scopeResponse=await fetch("/api/workbench/current/subcalculations/"+created.subcalculationId+"/scopes",{
-        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-        body:JSON.stringify({scopeType,scopeRef:ref})
-      });
-      const scopePayload=await scopeResponse.json().catch(()=>({})) as {error?:string};
-      if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Scope kon niet worden gekoppeld."));
       await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setActiveSubcalculationId(created.subcalculationId);
       setManagementStatus("Deelcalculatie "+label+" "+ref+" aangemaakt. Regels met deze scope vallen er automatisch onder.");
@@ -1139,18 +1133,12 @@ function App() {
     const failedRefs:string[]=[];
     for(const ref of pending){
       try{
-        const createResponse=await fetch("/api/workbench/current/subcalculations",{
+        const createResponse=await fetch("/api/workbench/current/subcalculations/scoped",{
           method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-          body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref})
+          body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref,scopeType:activeScopeType,scopeRef:ref})
         });
         const created=await createResponse.json().catch(()=>({})) as {subcalculationId?:number;error?:string};
         if(!createResponse.ok||!created.subcalculationId)throw new Error(String(created.error??"Deelcalculatie kon niet worden aangemaakt."));
-        const scopeResponse=await fetch("/api/workbench/current/subcalculations/"+created.subcalculationId+"/scopes",{
-          method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-          body:JSON.stringify({scopeType:activeScopeType,scopeRef:ref})
-        });
-        const scopePayload=await scopeResponse.json().catch(()=>({})) as {error?:string};
-        if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Scope kon niet worden gekoppeld."));
         createdRefs.push(ref);
       }catch{
         failedRefs.push(ref);

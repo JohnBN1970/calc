@@ -12,7 +12,7 @@ import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipe
 import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
-import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
+import { addCalcSubcalculationScope, createCalcSubcalculation, createScopedCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
@@ -844,6 +844,27 @@ app.get("/api/workbench/current/subcalculations", async (req, res) => {
     res.json({contract:"brebo-calc-subcalculations-v1",versionId,subcalculations});
   } catch(error) {
     res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden geladen."});
+  }
+});
+
+app.post("/api/workbench/current/subcalculations/scoped", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    const versionId=await currentCalcVersionId(session.calculationId);
+    const scopeType=String(req.body?.scopeType??"custom") as any;
+    const id=await createScopedCalcSubcalculation({
+      versionId,
+      ref:String(req.body?.ref??""),
+      description:String(req.body?.description??""),
+      scopeType,
+      scopeRef:String(req.body?.scopeRef??""),
+      includeDescendants:Boolean(req.body?.includeDescendants??false),
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json({subcalculationId:id});
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Scoped deelcalculatie kon niet worden aangemaakt."});
   }
 });
 
