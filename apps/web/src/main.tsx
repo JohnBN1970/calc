@@ -224,6 +224,16 @@ type CalcSubcalculationResult = {
   salesPrice:number;
 };
 
+type VatRegime={
+  id:number;
+  code:string;
+  label:string;
+  treatment:"normal"|"reverse_charge"|"exempt";
+  rate:number|null;
+  active:boolean;
+  sortOrder:number;
+};
+
 type TailCostComponent={
   id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
   componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
@@ -557,6 +567,17 @@ function App() {
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(() => loadColumnSettings());
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
+  const [vatRegimes,setVatRegimes]=useState<VatRegime[]>([]);
+  const [vatSettingsStatus,setVatSettingsStatus]=useState("");
+  const [vatRegimeDraft,setVatRegimeDraft]=useState({
+    code:"",
+    label:"",
+    treatment:"normal" as VatRegime["treatment"],
+    rate:null as number|null,
+    active:true,
+    sortOrder:0
+  });
   const [tailCostOpen,setTailCostOpen]=useState(false);
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
   const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
@@ -644,6 +665,58 @@ function App() {
     window.addEventListener("pointerup", stop, { once: true });
   };
 
+
+  const loadVatRegimes=async()=>{
+    setVatSettingsStatus("Btw-instellingen laden…");
+    try{
+      const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Btw-instellingen konden niet worden geladen."));
+      setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
+      setVatSettingsStatus("");
+    }catch(error){
+      setVatSettingsStatus(error instanceof Error?error.message:"Btw-instellingen konden niet worden geladen.");
+    }
+  };
+
+  const openSettings=async()=>{
+    setSettingsOpen(true);
+    await loadVatRegimes();
+  };
+
+  const createVatSetting=async()=>{
+    setVatSettingsStatus("Btw-regime opslaan…");
+    try{
+      const response=await fetch("/api/settings/vat-regimes",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(vatRegimeDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Btw-regime kon niet worden opgeslagen."));
+      setVatRegimeDraft({code:"",label:"",treatment:"normal",rate:null,active:true,sortOrder:0});
+      await loadVatRegimes();
+    }catch(error){
+      setVatSettingsStatus(error instanceof Error?error.message:"Btw-regime kon niet worden opgeslagen.");
+    }
+  };
+
+  const patchVatSetting=async(id:number,patch:Partial<VatRegime>)=>{
+    setVatSettingsStatus("Btw-regime bijwerken…");
+    try{
+      const response=await fetch(`/api/settings/vat-regimes/${id}`,{
+        method:"PUT",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(patch)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Btw-regime kon niet worden bijgewerkt."));
+      setVatRegimes(current=>current.map(item=>item.id===id?payload as VatRegime:item));
+      setVatSettingsStatus("");
+    }catch(error){
+      setVatSettingsStatus(error instanceof Error?error.message:"Btw-regime kon niet worden bijgewerkt.");
+    }
+  };
 
   const loadTailCosts=async(directCost?:number)=>{
     const response=await fetch("/api/workbench/current/tail-costs",{headers:{Accept:"application/json"}});
@@ -1666,9 +1739,48 @@ function App() {
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
       </div>}
 
+      {settingsOpen && <div className="settingsOverlay" role="dialog" aria-modal="true" aria-label="Calc-instellingen">
+        <div className="settingsPanel">
+          <div className="settingsHead">
+            <div><span className="eyebrow">CALC CONFIGURATIE</span><h2>Instellingen</h2><p>Centraal beheer van calculatie-instellingen. Btw-regimes zijn hier configureerbaar en niet hardcoded.</p></div>
+            <button type="button" className="panelClose" onClick={()=>setSettingsOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="settingsSection">
+            <div className="settingsSectionHead"><div><h3>Btw-regimes</h3><p>Gebruik eigen regimes voor bijvoorbeeld verschillende tarieven, verlegging of vrijstelling.</p></div></div>
+            <div className="vatRegimeList">
+              {vatRegimes.map(regime=><div className="vatRegimeRow" key={regime.id}>
+                <input value={regime.label} onChange={event=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,label:event.target.value}:item))} onBlur={()=>void patchVatSetting(regime.id,{label:regime.label})} aria-label="Omschrijving" />
+                <input value={regime.code} onChange={event=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,code:event.target.value}:item))} onBlur={()=>void patchVatSetting(regime.id,{code:regime.code})} aria-label="Code" />
+                <select value={regime.treatment} onChange={event=>void patchVatSetting(regime.id,{treatment:event.target.value as VatRegime["treatment"]})} aria-label="Behandeling">
+                  <option value="normal">Normaal</option>
+                  <option value="reverse_charge">Verlegd</option>
+                  <option value="exempt">Vrijgesteld</option>
+                </select>
+                <input type="number" step="0.01" min="0" max="100" value={regime.rate??""} disabled={regime.treatment!=="normal"} onChange={event=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,rate:event.target.value===""?null:Number(event.target.value)}:item))} onBlur={()=>void patchVatSetting(regime.id,{rate:regime.rate})} aria-label="Tarief" />
+                <label className="toggleLabel"><input type="checkbox" checked={regime.active} onChange={event=>void patchVatSetting(regime.id,{active:event.target.checked})} /> Actief</label>
+              </div>)}
+              {vatRegimes.length===0 && <p className="muted">Nog geen btw-regimes ingesteld.</p>}
+            </div>
+            <div className="vatRegimeCreate">
+              <input placeholder="Omschrijving" value={vatRegimeDraft.label} onChange={event=>setVatRegimeDraft(current=>({...current,label:event.target.value}))} />
+              <input placeholder="Code" value={vatRegimeDraft.code} onChange={event=>setVatRegimeDraft(current=>({...current,code:event.target.value}))} />
+              <select value={vatRegimeDraft.treatment} onChange={event=>setVatRegimeDraft(current=>({...current,treatment:event.target.value as VatRegime["treatment"],rate:event.target.value==="normal"?current.rate:null}))}>
+                <option value="normal">Normaal</option>
+                <option value="reverse_charge">Verlegd</option>
+                <option value="exempt">Vrijgesteld</option>
+              </select>
+              <input type="number" step="0.01" min="0" max="100" placeholder="Tarief %" disabled={vatRegimeDraft.treatment!=="normal"} value={vatRegimeDraft.rate??""} onChange={event=>setVatRegimeDraft(current=>({...current,rate:event.target.value===""?null:Number(event.target.value)}))} />
+              <button type="button" onClick={()=>void createVatSetting()}>Regime toevoegen</button>
+            </div>
+            {vatSettingsStatus && <p className="settingsStatus">{vatSettingsStatus}</p>}
+          </div>
+        </div>
+      </div>}
+
       <section className="workbench">
         <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
+          <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
           <div className="commandDivider" />
           <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
