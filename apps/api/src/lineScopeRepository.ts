@@ -39,3 +39,24 @@ export async function storeLineScopeTags(connection:PoolConnection,lineId:number
     );
   }
 }
+
+
+export function manualScopeTags(
+  input:Array<{scopeType?:unknown;scopeRef?:unknown}>|null|undefined,
+  generated:LineScopeTag[]=[]
+):LineScopeTag[]{
+  if(!Array.isArray(input))return [];
+  const allowed=new Set<LineScopeTag["scopeType"]>(["building","facade","dwelling","dwelling_type","building_part","position","custom"]);
+  const generatedKeys=new Set(generated.map(tag=>tag.scopeType+"\u0000"+tag.scopeRef));
+  const seen=new Set<string>();
+  const tags:LineScopeTag[]=[];
+  for(const item of input){
+    const scopeType=String(item?.scopeType??"") as LineScopeTag["scopeType"];
+    const scopeRef=String(item?.scopeRef??"").trim().slice(0,255);
+    const key=scopeType+"\u0000"+scopeRef;
+    if(!allowed.has(scopeType)||!scopeRef||seen.has(key)||generatedKeys.has(key))continue;
+    seen.add(key);
+    tags.push({scopeType,scopeRef,source:"manual"});
+  }
+  return tags;
+}
