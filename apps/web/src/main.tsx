@@ -224,6 +224,19 @@ type CalcSubcalculationResult = {
   salesPrice:number;
 };
 
+type CalculationVatComponent={
+  id?:number;
+  versionId?:number;
+  vatRegimeId:number;
+  regimeCode?:string;
+  label?:string;
+  treatment?:"normal"|"reverse_charge"|"exempt";
+  rate?:number|null;
+  taxableBase:number;
+  vatAmount?:number;
+  sortOrder?:number;
+};
+
 type VatRegime={
   id:number;
   code:string;
@@ -569,6 +582,9 @@ function App() {
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [vatRegimes,setVatRegimes]=useState<VatRegime[]>([]);
+  const [vatComponents,setVatComponents]=useState<CalculationVatComponent[]>([]);
+  const [vatAllocationOpen,setVatAllocationOpen]=useState(false);
+  const [vatAllocationStatus,setVatAllocationStatus]=useState("");
   const [vatSettingsStatus,setVatSettingsStatus]=useState("");
   const [vatRegimeDraft,setVatRegimeDraft]=useState({
     code:"",
@@ -665,6 +681,50 @@ function App() {
     window.addEventListener("pointerup", stop, { once: true });
   };
 
+
+  const loadVatAllocation=async()=>{
+    setVatAllocationStatus("Btw-opbouw laden…");
+    try{
+      const [regimeResponse,componentResponse]=await Promise.all([
+        fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}}),
+        fetch("/api/workbench/current/vat-components",{headers:{Accept:"application/json"}})
+      ]);
+      const regimePayload=await regimeResponse.json().catch(()=>({}));
+      const componentPayload=await componentResponse.json().catch(()=>({}));
+      if(!regimeResponse.ok)throw new Error(String(regimePayload.error??"Btw-regimes konden niet worden geladen."));
+      if(!componentResponse.ok)throw new Error(String(componentPayload.error??"Btw-opbouw kon niet worden geladen."));
+      const regimes=Array.isArray(regimePayload.regimes)?regimePayload.regimes.filter((item:VatRegime)=>item.active):[];
+      const components=Array.isArray(componentPayload.components)?componentPayload.components:[];
+      setVatRegimes(regimes);
+      setVatComponents(components.map((item:any)=>({
+        id:Number(item.id),
+        vatRegimeId:Number(item.vatRegimeId),
+        regimeCode:String(item.regimeCode??""),
+        label:String(item.label??""),
+        treatment:item.treatment,
+        rate:item.rate==null?null:Number(item.rate),
+        taxableBase:Number(item.taxableBase??0),
+        vatAmount:Number(item.vatAmount??0),
+        sortOrder:Number(item.sortOrder??0)
+      })));
+      setVatAllocationStatus("");
+    }catch(error){
+      setVatAllocationStatus(error instanceof Error?error.message:"Btw-opbouw kon niet worden geladen.");
+    }
+  };
+
+  const openVatAllocation=async()=>{
+    setVatAllocationOpen(true);
+    await loadVatAllocation();
+  };
+
+  const addVatAllocation=(regimeId:number)=>{
+    if(vatComponents.some(item=>item.vatRegimeId===regimeId))return;
+    setVatComponents(current=>[...current,{vatRegimeId:regimeId,taxableBase:0}]);
+  };
+
+  const vatAllocatedBase=vatComponents.reduce((sum,item)=>sum+Number(item.taxableBase||0),0);
+  const vatUnallocated=Math.max(0,totals.sales-vatAllocatedBase);
 
   const loadVatRegimes=async()=>{
     setVatSettingsStatus("Btw-instellingen laden…");
@@ -1652,7 +1712,8 @@ function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vatRate,
+          vatRate: vatComponents.length ? null : vatRate,
+          vatComponents: vatComponents.map(item=>({vatRegimeId:item.vatRegimeId,taxableBase:item.taxableBase})),
           allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
@@ -1739,6 +1800,38 @@ function App() {
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
       </div>}
 
+      {vatAllocationOpen && <div className="settingsOverlay" role="dialog" aria-modal="true" aria-label="Btw-verdeling">
+        <div className="settingsPanel">
+          <div className="settingsHead">
+            <div><span className="eyebrow">CALC-OWNED</span><h2>Btw-verdeling</h2><p>Verdeel de verkoopprijs over de ingestelde btw-regimes. Deze uitsplitsing wordt teruggegeven aan Office.</p></div>
+            <button type="button" className="panelClose" onClick={()=>setVatAllocationOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="settingsSection">
+            <div className="settingsSectionHead"><div><h3>Grondslagen</h3><p>Verkoopprijs: {money.format(totals.sales)} · verdeeld: {money.format(vatAllocatedBase)} · resterend: {money.format(vatUnallocated)}</p></div></div>
+            <div className="vatAllocationList">
+              {vatComponents.map((component,index)=>{
+                const regime=vatRegimes.find(item=>item.id===component.vatRegimeId);
+                if(!regime)return null;
+                const vatAmount=regime.treatment==="normal"?component.taxableBase*((regime.rate??0)/100):0;
+                return <div className="vatAllocationRow" key={component.vatRegimeId}>
+                  <div><strong>{regime.label}</strong><small>{regime.treatment==="normal"?`${regime.rate??0}%`:regime.treatment==="reverse_charge"?"Verlegd":"Vrijgesteld"}</small></div>
+                  <label><span>Grondslag</span><input type="number" step="0.01" min="0" value={component.taxableBase} onChange={event=>setVatComponents(current=>current.map((item,i)=>i===index?{...item,taxableBase:Number(event.target.value||0)}:item))} /></label>
+                  <div><span>Btw</span><strong>{money.format(vatAmount)}</strong></div>
+                  <button type="button" onClick={()=>setVatComponents(current=>current.filter((_,i)=>i!==index))}>Verwijderen</button>
+                </div>;
+              })}
+              {vatComponents.length===0&&<p className="muted">Nog geen btw-regime aan deze calculatie gekoppeld.</p>}
+            </div>
+            <div className="vatAllocationAdd">
+              {vatRegimes.filter(regime=>!vatComponents.some(item=>item.vatRegimeId===regime.id)).map(regime=><button type="button" key={regime.id} onClick={()=>addVatAllocation(regime.id)}>+ {regime.label}</button>)}
+              {vatUnallocated>0.009&&vatComponents.length===1&&<button type="button" onClick={()=>setVatComponents(current=>current.map((item,index)=>index===0?{...item,taxableBase:totals.sales}:item))}>Resterend toewijzen</button>}
+            </div>
+            {Math.abs(vatAllocatedBase-totals.sales)>0.01&&<div className="readinessBanner" role="alert"><div><strong>Btw-opbouw onvolledig</strong><span>De grondslagen moeten samen exact de verkoopprijs vormen.</span></div></div>}
+            {vatAllocationStatus&&<p className="settingsStatus">{vatAllocationStatus}</p>}
+          </div>
+        </div>
+      </div>}
+
       {settingsOpen && <div className="settingsOverlay" role="dialog" aria-modal="true" aria-label="Calc-instellingen">
         <div className="settingsPanel">
           <div className="settingsHead">
@@ -1781,6 +1874,7 @@ function App() {
         <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
           <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
+          <button className="command" type="button" onClick={()=>void openVatAllocation()} title="Btw-verdeling"><span aria-hidden="true">%</span><span>BTW</span></button>
           <div className="commandDivider" />
           <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
@@ -1910,7 +2004,7 @@ function App() {
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div>}
         {tailCostOpen && <div className="managementWorkspace">
-          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><label className="vatRateField"><span>Btw %</span><input type="number" min="0" max="100" step="0.01" value={vatRate??""} placeholder="—" onChange={e=>{setVatRate(e.target.value===""?null:Number(e.target.value));setStatus("Concept — niet opgeslagen");}} /></label><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
+          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button type="button" onClick={()=>void openVatAllocation()}>Btw-verdeling</button><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
               <label><span>Hoort bij</span><select value={tailCostDraft.ownerType+":"+tailCostDraft.ownerRef} onChange={e=>{
