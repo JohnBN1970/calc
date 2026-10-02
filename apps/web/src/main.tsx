@@ -82,10 +82,12 @@ function loadColumnSettings(): ColumnSetting[] {
   } catch { return defaultColumns; }
 }
 
+type ScopeFilterType="building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position";
 type LineTrace={
   position:string|null;
   recipe:string|null;
   source:string|null;
+  scopes:Partial<Record<ScopeFilterType,string[]>>;
 };
 function lineTrace(line:Line):LineTrace{
   if(line.sourceDetails){
@@ -102,13 +104,26 @@ function lineTrace(line:Line):LineTrace{
         : line.sourceDocumentId
           ? "Doc "+line.sourceDocumentId
           : line.sourceSupplier||line.sourceReference||null;
-      return{position,recipe,source};
+      const scopes:Partial<Record<ScopeFilterType,string[]>>={};
+      if(position)scopes.position=[position];
+      if(Array.isArray(details?.context_scopes)){
+        for(const item of details.context_scopes){
+          const type=String(item?.type??"") as ScopeFilterType;
+          const ref=String(item?.ref??"").trim();
+          if(!["building","facade","dwelling","dwelling_type","building_part"].includes(type)||!ref)continue;
+          const values=scopes[type]??[];
+          if(!values.includes(ref))values.push(ref);
+          scopes[type]=values;
+        }
+      }
+      return{position,recipe,source,scopes};
     }catch{}
   }
   return{
     position:null,
     recipe:line.priceSourceType==="recipe"&&line.sourceReference?line.sourceReference.split("/")[0]:null,
-    source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference)
+    source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference),
+    scopes:{}
   };
 }
 
@@ -634,7 +649,8 @@ function App() {
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
   const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
   const [activeSubcalculationId,setActiveSubcalculationId]=useState<number|null>(null);
-  const [activePositionFilter,setActivePositionFilter]=useState("");
+  const [activeScopeType,setActiveScopeType]=useState<ScopeFilterType>("position");
+  const [activeScopeRef,setActiveScopeRef]=useState("");
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -704,9 +720,17 @@ function App() {
     [activeSubcalculationId, subcalculationResults]
   );
 
-  const availablePositions=useMemo(()=>Array.from(new Set(
-    lines.map(line=>lineTrace(line).position).filter((value):value is string=>Boolean(value))
-  )).sort((a,b)=>a.localeCompare(b,"nl")),[lines]);
+  const availableScopeValues=useMemo(()=>{
+    const values=new Set<string>();
+    for(const line of lines){
+      for(const value of lineTrace(line).scopes[activeScopeType]??[])values.add(value);
+    }
+    return [...values].sort((a,b)=>a.localeCompare(b,"nl"));
+  },[lines,activeScopeType]);
+
+  useEffect(()=>{
+    if(activeScopeRef&&!availableScopeValues.includes(activeScopeRef))setActiveScopeRef("");
+  },[activeScopeRef,availableScopeValues]);
 
   const workbenchLines = useMemo(() => {
     let base=lines;
@@ -723,8 +747,8 @@ function App() {
       }
       base=lines.filter(line => included.has(line.id));
     }
-    if(!activePositionFilter)return base;
-    const included=new Set(base.filter(line=>lineTrace(line).position===activePositionFilter).map(line=>line.id));
+    if(!activeScopeRef)return base;
+    const included=new Set(base.filter(line=>(lineTrace(line).scopes[activeScopeType]??[]).includes(activeScopeRef)).map(line=>line.id));
     const lineById=new Map(base.map(line=>[line.id,line]));
     for(const id of [...included]){
       let parentId=lineById.get(id)?.parentId??null;
@@ -735,7 +759,7 @@ function App() {
       }
     }
     return base.filter(line=>included.has(line.id));
-  }, [lines, activeSubcalculationResult,activePositionFilter]);
+  }, [lines, activeSubcalculationResult,activeScopeType,activeScopeRef]);
 
   const displayedTotals = activeSubcalculationResult
     ? {
