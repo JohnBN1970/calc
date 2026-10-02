@@ -342,8 +342,6 @@ export type OfficeWorkspaceState = {
       vat_rate:number|null;
     };
   };
-  structure?: unknown[];
-  readiness?: unknown;
   [key:string]: unknown;
 };
 
