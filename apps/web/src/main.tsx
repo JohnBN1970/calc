@@ -42,7 +42,7 @@ type Line = {
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
 };
-type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"position"|"recipe"|"source"|"total";
+type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position"|"recipe"|"source"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
 const defaultColumns: ColumnSetting[] = [
   { key:"code", label:"Code", width:90, visible:true },
@@ -58,6 +58,11 @@ const defaultColumns: ColumnSetting[] = [
   { key:"subcontracting", label:"OA", width:100, visible:true },
   { key:"other", label:"Overig", width:100, visible:true },
   { key:"vat", label:"BTW", width:120, visible:true },
+  { key:"building", label:"Gebouw", width:130, visible:false },
+  { key:"facade", label:"Gevel", width:120, visible:false },
+  { key:"dwelling", label:"Woning", width:120, visible:false },
+  { key:"dwelling_type", label:"Woningtype", width:130, visible:false },
+  { key:"building_part", label:"Bouwdeel", width:130, visible:false },
   { key:"position", label:"Positie", width:110, visible:false },
   { key:"recipe", label:"Recept", width:160, visible:false },
   { key:"source", label:"Bron", width:180, visible:false },
@@ -2628,6 +2633,11 @@ function App() {
               equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
               subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
               other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
+              building: <span className="cell traceCell">{(trace.scopes.building??[]).join(", ")||"—"}</span>,
+              facade: <span className="cell traceCell">{(trace.scopes.facade??[]).join(", ")||"—"}</span>,
+              dwelling: <span className="cell traceCell">{(trace.scopes.dwelling??[]).join(", ")||"—"}</span>,
+              dwelling_type: <span className="cell traceCell">{(trace.scopes.dwelling_type??[]).join(", ")||"—"}</span>,
+              building_part: <span className="cell traceCell">{(trace.scopes.building_part??[]).join(", ")||"—"}</span>,
               position: <span className="cell traceCell">{trace.position??"—"}</span>,
               recipe: <span className="cell traceCell">{trace.recipe??"—"}</span>,
               source: <span className="cell traceCell" title={trace.source??""}>{trace.source??"—"}</span>,
