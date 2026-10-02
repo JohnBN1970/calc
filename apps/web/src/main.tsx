@@ -23,6 +23,7 @@ type Line = {
   equipment: number;
   subcontracting: number;
   other: number;
+  vatRegimeId?: number | null;
   priceSourceType: PriceSourceType;
   officeSourceId: string | null;
   sourceReference: string | null;
@@ -40,7 +41,7 @@ type Line = {
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
 };
-type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"total";
+type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
 const defaultColumns: ColumnSetting[] = [
   { key:"code", label:"Code", width:90, visible:true },
@@ -55,6 +56,7 @@ const defaultColumns: ColumnSetting[] = [
   { key:"equipment", label:"Materieel", width:105, visible:true },
   { key:"subcontracting", label:"OA", width:100, visible:true },
   { key:"other", label:"Overig", width:100, visible:true },
+  { key:"vat", label:"BTW", width:120, visible:true },
   { key:"total", label:"Totaal", width:125, visible:true }
 ];
 const columnPrefsKey = "brebo.calc.columns.v1";
@@ -238,7 +240,7 @@ type TailCostComponent={
   id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
   componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
   value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity"|"owner_direct_cost"|"owner_running_total"|"consolidated_direct_cost"|"consolidated_running_total";
-  baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
+  baseRef:string|null;quantity:number|null;vatRegimeId:number|null;sortOrder:number;active:boolean;
 };
 type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;ownerRunningTotal:number;consolidatedRunningTotal:number};
 
@@ -508,6 +510,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     equipment: Number(raw.equipment_unit_cost ?? 0),
     subcontracting: Number(raw.subcontracting_unit_cost ?? 0),
     other: Number(raw.other_unit_cost ?? 0),
+    vatRegimeId: raw.vat_regime_id == null ? null : Number(raw.vat_regime_id),
     priceSourceType: String(raw.price_source_type ?? "manual") as PriceSourceType,
     officeSourceId: raw.office_source_id == null ? null : String(raw.office_source_id),
     sourceReference: raw.source_reference == null ? null : String(raw.source_reference),
@@ -527,7 +530,6 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
-  const [vatRate,setVatRate]=useState<number|null>(null);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
   const [status, setStatus] = useState("Laden…");
@@ -586,7 +588,7 @@ function App() {
   const [mainDirectCost,setMainDirectCost]=useState(0);
   const [tailCostDraft,setTailCostDraft]=useState({
     ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,
-    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null
+    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null,vatRegimeId:null as number|null
   });
   const [tailCostStatus,setTailCostStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
@@ -674,6 +676,23 @@ function App() {
     })();
     return()=>{cancelled=true;};
   },[authorized]);
+
+  useEffect(()=>{
+    if(authorized!==true)return;
+    let cancelled=false;
+    void (async()=>{
+      try{
+        const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+        const payload=await response.json().catch(()=>({})) as {regimes?:VatRegime[]};
+        if(!response.ok)throw new Error("Btw-regimes konden niet worden geladen.");
+        if(!cancelled)setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
+      }catch{
+        if(!cancelled)setVatRegimes([]);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[authorized]);
+
 
   const patchColumn = (key: ColumnKey, patch: Partial<ColumnSetting>) => setColumnSettings(current => current.map(column => column.key === key ? { ...column, ...patch } : column));
   const moveColumn = (key: ColumnKey, direction: -1|1) => setColumnSettings(current => {
@@ -791,7 +810,7 @@ function App() {
       });
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"Staartkostencomponent kon niet worden toegevoegd."));
-      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null});
+      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null,vatRegimeId:null});
       await loadTailCosts();
       setTailCostStatus("Staartkostencomponent toegevoegd.");
     }catch(error){setTailCostStatus(error instanceof Error?error.message:"Staartkostencomponent kon niet worden toegevoegd.");}
@@ -968,7 +987,6 @@ function App() {
       setAggregate(null);
     }
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
-    setVatRate(data.version?.vat_rate == null ? null : Number(data.version.vat_rate));
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
       sourceLineId:Number(row.source_line_id), targetLineId:Number(row.target_line_id), method:String(row.allocation_method) as LineAllocation["method"], share:Number(row.share ?? 0), amount:Number(row.amount ?? 0)
@@ -1694,7 +1712,6 @@ function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vatRate,
           allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
@@ -1713,6 +1730,7 @@ function App() {
             equipmentUnitCost: line.equipment,
             subcontractingUnitCost: line.subcontracting,
             otherUnitCost: line.other,
+            vatRegimeId: line.vatRegimeId,
             priceSourceType: line.priceSourceType,
             officeSourceId: line.officeSourceId,
             sourceReference: line.sourceReference,
@@ -1952,7 +1970,7 @@ function App() {
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div>}
         {tailCostOpen && <div className="managementWorkspace">
-          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><label className="vatRateField"><span>Btw %</span><input type="number" min="0" max="100" step="0.01" value={vatRate??""} placeholder="—" onChange={e=>{setVatRate(e.target.value===""?null:Number(e.target.value));setStatus("Concept — niet opgeslagen");}} /></label><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
+          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
               <label><span>Hoort bij</span><select value={tailCostDraft.ownerType+":"+tailCostDraft.ownerRef} onChange={e=>{
@@ -1973,6 +1991,7 @@ function App() {
                 <option value="quantity">Hoeveelheid</option>
               </select></label>
               {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              <label><span>BTW</span><select value={tailCostDraft.vatRegimeId??""} onChange={e=>setTailCostDraft(v=>({...v,vatRegimeId:e.target.value===""?null:Number(e.target.value)}))}><option value="">—</option>{vatRegimes.filter(regime=>regime.active).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select></label>
               <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
             </section>
             <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>
@@ -2152,6 +2171,7 @@ function App() {
               equipment: <NumberCell value={line.equipment} onChange={equipment => patchLine(line.id,{equipment})} />,
               subcontracting: <NumberCell value={line.subcontracting} onChange={subcontracting => patchLine(line.id,{subcontracting})} />,
               other: <NumberCell value={line.other} onChange={other => patchLine(line.id,{other})} />,
+              vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
             return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>

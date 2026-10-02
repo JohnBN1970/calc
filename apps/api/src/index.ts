@@ -22,7 +22,8 @@ import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOffice
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
-import { createVatRegime, listVatRegimes, updateVatRegime, listCalculationVatComponents, replaceCalculationVatComponents, type VatTreatment } from "./vatSettingsRepository.js";
+import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
+import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -44,6 +45,7 @@ type LineInput = {
   equipmentUnitCost?: number;
   subcontractingUnitCost?: number;
   otherUnitCost?: number;
+  vatRegimeId?: number | null;
   priceSourceType?: PriceSourceType;
   officeSourceId?: string | null;
   sourceReference?: string | null;
@@ -698,6 +700,7 @@ app.post("/api/workbench/current/tail-costs", async (req,res)=>{
       baseScope:String(req.body?.baseScope??"direct_cost") as any,
       baseRef:req.body?.baseRef==null?null:String(req.body.baseRef),
       quantity:req.body?.quantity==null?null:Number(req.body.quantity),
+      vatRegimeId:req.body?.vatRegimeId==null?null:Number(req.body.vatRegimeId),
       sortOrder:Number(req.body?.sortOrder??0)
     });
     res.status(201).json({tailCostComponentId:id});
@@ -953,7 +956,7 @@ app.get("/api/workbench/current", async (req, res) => {
   const [lines] = await db.execute<RowDataPacket[]>(
     `SELECT id, parent_id, sort_order, line_type, code, description, unit, quantity,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
-            subcontracting_unit_cost, other_unit_cost, price_source_type,
+            subcontracting_unit_cost, other_unit_cost, vat_regime_id, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
             source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary
        FROM calculation_lines
@@ -995,11 +998,6 @@ app.put("/api/workbench/current", async (req, res) => {
   }
   const lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
-  const vatRate = req.body?.vatRate == null || req.body.vatRate === "" ? null : Number(req.body.vatRate);
-  if (vatRate !== null && (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)) {
-    res.status(400).json({ error: "Ongeldig btw-tarief." });
-    return;
-  }
   if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
@@ -1053,6 +1051,7 @@ app.put("/api/workbench/current", async (req, res) => {
     await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
 
     let directCost = 0;
+    const lineVatSources:VatSource[] = [];
     const temporaryIds = new Map<number, number>();
     for (const line of lines) {
       if (!["chapter", "paragraph", "item", "allowance", "adjustable", "option", "note"].includes(line.lineType)) {
@@ -1073,21 +1072,27 @@ app.put("/api/workbench/current", async (req, res) => {
       }
       if (!["chapter", "paragraph", "note", "option"].includes(line.lineType)) {
         const labourCost = (labourTotalHours ?? 0) * labour;
-        directCost += labourCost + quantity * (material + equipment + subcontracting + other);
+        const lineSalesAmount = labourCost + quantity * (material + equipment + subcontracting + other);
+        directCost += lineSalesAmount;
+        lineVatSources.push({
+          vatRegimeId: line.vatRegimeId == null ? null : Number(line.vatRegimeId),
+          salesAmount: lineSalesAmount
+        });
       }
       const parentId = line.parentId != null ? (temporaryIds.get(line.parentId) ?? null) : null;
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO calculation_lines
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
            labour_norm, labour_total_hours, labour_hours_input_mode,
-           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
+           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost, vat_regime_id,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
           line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode, labour, material, equipment, subcontracting, other,
+          line.vatRegimeId == null ? null : Number(line.vatRegimeId),
           priceSourceType,
           line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
           line.sourceReference ? String(line.sourceReference).slice(0, 255) : null,
@@ -1158,8 +1163,8 @@ app.put("/api/workbench/current", async (req, res) => {
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ?, vat_rate = ? WHERE id = ?",
-      [directCost, markupAmount, salesPrice, vatRate, version.id]
+      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ?, vat_rate = NULL WHERE id = ?",
+      [directCost, markupAmount, salesPrice, version.id]
     );
     await connection.execute(
       "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
@@ -1170,19 +1175,32 @@ app.put("/api/workbench/current", async (req, res) => {
     let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
     try {
       const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const vatComponents=await listCalculationVatComponents(Number(version.id));
+      const vatRegimes = await listVatRegimes(true);
+      const evaluatedTailCosts = [
+        ...tailHierarchy.calculationTailCosts,
+        ...tailHierarchy.subcalculations.flatMap(row=>row.tailCosts)
+      ];
+      const vatBreakdown = aggregateVat({
+        regimes:vatRegimes,
+        lineSales:lineVatSources,
+        tailCosts:evaluatedTailCosts
+      });
+      const taxableBaseTotal = vatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
+      if(Math.abs(taxableBaseTotal-salesPrice)>0.01){
+        throw new Error("BTW-regime ontbreekt op een of meer verkoopregels of staartkostenregels.");
+      }
       const summary = buildCommercialSummary({
         purchase:directCost,
         sales:salesPrice,
-        vatRate,
-        vatBreakdown:vatComponents.length?vatComponents.map(component=>({
-          code:component.regimeCode,
-          label:component.label,
-          rate:component.rate,
-          taxableBase:component.taxableBase,
-          vatAmount:component.vatAmount,
-          reverseCharged:component.treatment==="reverse_charge"
-        })):undefined
+        vatRate:null,
+        vatBreakdown:vatBreakdown.map(item=>({
+          code:item.code,
+          label:item.label,
+          rate:item.rate,
+          taxableBase:item.taxableBase,
+          vatAmount:item.vatAmount,
+          reverseCharged:item.reverseCharged
+        }))
       });
       const commercialSummary = {
         purchase: summary.purchase,
@@ -1214,71 +1232,42 @@ app.put("/api/workbench/current", async (req, res) => {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
     }
 
-    const finalVatComponents=await listCalculationVatComponents(Number(version.id));
+    const finalVatRegimes=await listVatRegimes(true);
+    const finalVatBreakdown=aggregateVat({
+      regimes:finalVatRegimes,
+      lineSales:lineVatSources,
+      tailCosts:[
+        ...tailHierarchy.calculationTailCosts,
+        ...tailHierarchy.subcalculations.flatMap(row=>row.tailCosts)
+      ]
+    });
+    const finalTaxableBase=finalVatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
+    const vatReady=Math.abs(finalTaxableBase-salesPrice)<=0.01;
     const summary = buildCommercialSummary({
       purchase:directCost,
       sales:salesPrice,
-      vatRate,
-      vatBreakdown:finalVatComponents.length?finalVatComponents.map(component=>({
-        code:component.regimeCode,
-        label:component.label,
-        rate:component.rate,
-        taxableBase:component.taxableBase,
-        vatAmount:component.vatAmount,
-        reverseCharged:component.treatment==="reverse_charge"
+      vatRate:null,
+      vatBreakdown:vatReady?finalVatBreakdown.map(item=>({
+        code:item.code,
+        label:item.label,
+        rate:item.rate,
+        taxableBase:item.taxableBase,
+        vatAmount:item.vatAmount,
+        reverseCharged:item.reverseCharged
       })):undefined
     });
-    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, vatBreakdown:summary.vatBreakdown, officeSync });
+    res.json({
+      directCost, markupAmount, salesPrice,
+      margin:summary.margin, marginPct:summary.marginPct,
+      vat:summary.vat, vatRate:summary.vatRate,
+      vatBreakdown:finalVatBreakdown, vatReady,
+      officeSync
+    });
   } catch (error) {
     await connection.rollback();
     throw error;
   } finally {
     connection.release();
-  }
-});
-
-app.get("/api/workbench/current/vat-components", async (req,res)=>{
-  const session=requireSession(req,res);
-  if(!session)return;
-  try{
-    const [versions]=await db.execute<RowDataPacket[]>(
-      "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
-      [session.calculationId]
-    );
-    const versionId=Number(versions[0]?.id??0);
-    if(!versionId){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
-    res.setHeader("Cache-Control","no-store, private");
-    res.json({components:await listCalculationVatComponents(versionId)});
-  }catch(error){
-    res.status(500).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden geladen."});
-  }
-});
-
-app.put("/api/workbench/current/vat-components", async (req,res)=>{
-  const session=requireSession(req,res);
-  if(!session)return;
-  if(!Array.isArray(req.body?.components)){res.status(400).json({error:"Btw-componenten ontbreken."});return;}
-  try{
-    const [versions]=await db.execute<RowDataPacket[]>(
-      "SELECT id,status,sales_price FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
-      [session.calculationId]
-    );
-    const version=versions[0];
-    if(!version){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
-    if(String(version.status)!=="draft"){res.status(409).json({error:"Alleen een conceptversie kan worden gewijzigd."});return;}
-    const components=req.body.components.map((item:any)=>({
-      vatRegimeId:Number(item.vatRegimeId),
-      taxableBase:Number(item.taxableBase)
-    }));
-    const baseTotal=components.reduce((sum:number,item:{taxableBase:number})=>sum+item.taxableBase,0);
-    const sales=Number(version.sales_price??0);
-    if(Math.abs(baseTotal-sales)>0.01){
-      res.status(409).json({error:"Som van btw-grondslagen moet gelijk zijn aan de verkoopprijs.",salesPrice:sales,taxableBaseTotal:baseTotal});
-      return;
-    }
-    res.json({components:await replaceCalculationVatComponents(Number(version.id),components)});
-  }catch(error){
-    res.status(400).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden opgeslagen."});
   }
 });
 
@@ -1347,7 +1336,7 @@ app.put("/api/settings/user/columns", async (req,res)=>{
   const session=requireSession(req,res);
   if(!session)return;
   if(!Array.isArray(req.body?.columns)){res.status(400).json({error:"Ongeldige kolominstellingen."});return;}
-  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","total"]);
+  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","total"]);
   const columns=req.body.columns.map((item:any)=>({
     key:String(item?.key??""),
     visible:item?.visible!==false,
