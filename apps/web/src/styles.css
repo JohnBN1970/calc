@@ -204,3 +204,9 @@
 .subcalcFilteredNotice{padding:10px 12px;font-size:11px;color:#64727a;background:#f7f9fa;border-top:1px solid #e6eaec}
 
 .vatRateField{display:flex;align-items:center;gap:7px;margin-left:auto;font-size:10px;font-weight:700;color:#66747b}.vatRateField input{width:74px;padding:6px 7px;border:1px solid #cbd3d9;border-radius:5px;background:#fff;text-align:right}
+
+.readinessBanner{margin:10px 12px 0;border:1px solid #d8a8a8;border-radius:7px;background:#fff8f8;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.readinessBanner>div:first-child{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.readinessBanner strong{font-size:12px}.readinessBanner span{font-size:11px;color:#6d5555}
+.readinessItems{display:flex;gap:6px;flex-wrap:wrap}.readinessItems button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;border:1px solid #e2c0c0;background:#fff;border-radius:6px;padding:6px 8px;max-width:320px}.readinessItems b{font-size:10px}.readinessItems span,.readinessItems small{font-size:9px;color:#765f5f}
+.generatedLineCard.is-unresolved{border-color:#d8a8a8;background:#fff9f9}.generatedLineCard .sourceError{color:#8a4f4f}
+.commandSave:disabled{opacity:.45;cursor:not-allowed}

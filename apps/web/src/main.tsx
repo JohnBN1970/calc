@@ -575,6 +575,12 @@ function App() {
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
   }, [lines, tailCostTotal]);
 
+  const unresolvedLines = useMemo(
+    () => lines.filter(line => line.resolutionStatus === "unresolved"),
+    [lines]
+  );
+  const calculationReady = unresolvedLines.length === 0;
+
   const activeSubcalculationResult = useMemo(
     () => activeSubcalculationId == null ? null : subcalculationResults.find(row => row.id === activeSubcalculationId) ?? null,
     [activeSubcalculationId, subcalculationResults]
@@ -1655,6 +1661,11 @@ function App() {
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
+      {!calculationReady && <div className="readinessBanner" role="alert">
+        <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Opslaan en publiceren is geblokkeerd.</span></div>
+        <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
+      </div>}
+
       <section className="workbench">
         <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
@@ -1670,7 +1681,7 @@ function App() {
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} title="Calculatie opslaan"><Icon name="save" /><span>Opslaan</span></button>
+          <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Calculatie opslaan" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
         </div>
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
@@ -1705,7 +1716,7 @@ function App() {
                 <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
               <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
-                <div className="generatedLineCard" key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Calc-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b><small>{money.format(lineDirect(line))} direct</small></div>
+                <div className={"generatedLineCard"+(line.resolutionStatus==="unresolved"?" is-unresolved":"")} key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Calc-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b>{line.resolutionStatus==="unresolved"?<small className="sourceError">{line.resolutionReason || "Bron niet beschikbaar."}</small>:<small>{money.format(lineDirect(line))} direct</small>}</div>
               )}</div>
             </div>
             <div className="costRollupBar">
