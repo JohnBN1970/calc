@@ -82,10 +82,12 @@ function loadColumnSettings(): ColumnSetting[] {
   } catch { return defaultColumns; }
 }
 
+type ScopeFilterType="building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position";
 type LineTrace={
   position:string|null;
   recipe:string|null;
   source:string|null;
+  scopes:Partial<Record<ScopeFilterType,string[]>>;
 };
 function lineTrace(line:Line):LineTrace{
   if(line.sourceDetails){
@@ -102,13 +104,26 @@ function lineTrace(line:Line):LineTrace{
         : line.sourceDocumentId
           ? "Doc "+line.sourceDocumentId
           : line.sourceSupplier||line.sourceReference||null;
-      return{position,recipe,source};
+      const scopes:Partial<Record<ScopeFilterType,string[]>>={};
+      if(position)scopes.position=[position];
+      if(Array.isArray(details?.context_scopes)){
+        for(const item of details.context_scopes){
+          const type=String(item?.type??"") as ScopeFilterType;
+          const ref=String(item?.ref??"").trim();
+          if(!["building","facade","dwelling","dwelling_type","building_part"].includes(type)||!ref)continue;
+          const values=scopes[type]??[];
+          if(!values.includes(ref))values.push(ref);
+          scopes[type]=values;
+        }
+      }
+      return{position,recipe,source,scopes};
     }catch{}
   }
   return{
     position:null,
     recipe:line.priceSourceType==="recipe"&&line.sourceReference?line.sourceReference.split("/")[0]:null,
-    source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference)
+    source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference),
+    scopes:{}
   };
 }
 
@@ -634,7 +649,8 @@ function App() {
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
   const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
   const [activeSubcalculationId,setActiveSubcalculationId]=useState<number|null>(null);
-  const [activePositionFilter,setActivePositionFilter]=useState("");
+  const [activeScopeType,setActiveScopeType]=useState<ScopeFilterType>("position");
+  const [activeScopeRef,setActiveScopeRef]=useState("");
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -704,9 +720,17 @@ function App() {
     [activeSubcalculationId, subcalculationResults]
   );
 
-  const availablePositions=useMemo(()=>Array.from(new Set(
-    lines.map(line=>lineTrace(line).position).filter((value):value is string=>Boolean(value))
-  )).sort((a,b)=>a.localeCompare(b,"nl")),[lines]);
+  const availableScopeValues=useMemo(()=>{
+    const values=new Set<string>();
+    for(const line of lines){
+      for(const value of lineTrace(line).scopes[activeScopeType]??[])values.add(value);
+    }
+    return [...values].sort((a,b)=>a.localeCompare(b,"nl"));
+  },[lines,activeScopeType]);
+
+  useEffect(()=>{
+    if(activeScopeRef&&!availableScopeValues.includes(activeScopeRef))setActiveScopeRef("");
+  },[activeScopeRef,availableScopeValues]);
 
   const workbenchLines = useMemo(() => {
     let base=lines;
@@ -723,8 +747,8 @@ function App() {
       }
       base=lines.filter(line => included.has(line.id));
     }
-    if(!activePositionFilter)return base;
-    const included=new Set(base.filter(line=>lineTrace(line).position===activePositionFilter).map(line=>line.id));
+    if(!activeScopeRef)return base;
+    const included=new Set(base.filter(line=>(lineTrace(line).scopes[activeScopeType]??[]).includes(activeScopeRef)).map(line=>line.id));
     const lineById=new Map(base.map(line=>[line.id,line]));
     for(const id of [...included]){
       let parentId=lineById.get(id)?.parentId??null;
@@ -735,7 +759,7 @@ function App() {
       }
     }
     return base.filter(line=>included.has(line.id));
-  }, [lines, activeSubcalculationResult,activePositionFilter]);
+  }, [lines, activeSubcalculationResult,activeScopeType,activeScopeRef]);
 
   const displayedTotals = activeSubcalculationResult
     ? {
@@ -1043,36 +1067,55 @@ function App() {
     }
   };
 
-  const createSubcalculationForPosition=async(positionRef:string)=>{
-    const ref=positionRef.trim();
+  const scopeLabels:Record<ScopeFilterType,string>={
+    building:"Gebouw",
+    facade:"Gevel",
+    dwelling:"Woning",
+    dwelling_type:"Woningtype",
+    building_part:"Bouwdeel",
+    position:"Positie"
+  };
+
+  const createSubcalculationForScope=async(scopeType:ScopeFilterType,scopeRef:string)=>{
+    const ref=scopeRef.trim();
     if(!ref)return;
-    const existing=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType==="position"&&scope.scopeRef===ref));
+    const label=scopeLabels[scopeType];
+    const existing=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===scopeType&&scope.scopeRef===ref));
     if(existing){
       setActiveSubcalculationId(existing.id);
-      setManagementStatus("Positie "+ref+" is al gekoppeld aan deelcalculatie "+existing.description+".");
+      setManagementStatus(label+" "+ref+" is al gekoppeld aan deelcalculatie "+existing.description+".");
       return;
     }
-    setManagementStatus("Deelcalculatie voor positie "+ref+" aanmaken…");
+    setManagementStatus("Deelcalculatie voor "+label.toLowerCase()+" "+ref+" aanmaken…");
     try{
+      const prefix={
+        building:"GEBOUW",
+        facade:"GEVEL",
+        dwelling:"WONING",
+        dwelling_type:"WONINGTYPE",
+        building_part:"BOUWDEEL",
+        position:"POS"
+      }[scopeType];
       const createResponse=await fetch("/api/workbench/current/subcalculations",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-        body:JSON.stringify({ref:"POS-"+ref,description:"Positie "+ref})
+        body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref})
       });
       const created=await createResponse.json().catch(()=>({})) as {subcalculationId?:number;error?:string};
       if(!createResponse.ok||!created.subcalculationId)throw new Error(String(created.error??"Deelcalculatie kon niet worden aangemaakt."));
       const scopeResponse=await fetch("/api/workbench/current/subcalculations/"+created.subcalculationId+"/scopes",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-        body:JSON.stringify({scopeType:"position",scopeRef:ref})
+        body:JSON.stringify({scopeType,scopeRef:ref})
       });
       const scopePayload=await scopeResponse.json().catch(()=>({})) as {error?:string};
-      if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Positiescope kon niet worden gekoppeld."));
+      if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Scope kon niet worden gekoppeld."));
       await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
       setActiveSubcalculationId(created.subcalculationId);
-      setManagementStatus("Deelcalculatie Positie "+ref+" aangemaakt. Regels met deze positie vallen er automatisch onder.");
+      setManagementStatus("Deelcalculatie "+label+" "+ref+" aangemaakt. Regels met deze scope vallen er automatisch onder.");
     }catch(error){
-      setManagementStatus(error instanceof Error?error.message:"Deelcalculatie voor positie kon niet worden aangemaakt.");
+      setManagementStatus(error instanceof Error?error.message:"Deelcalculatie voor scope kon niet worden aangemaakt.");
     }
   };
+
   const createSubcalculation = async () => {
     setManagementStatus("Deelcalculatie aanmaken…");
     try {
@@ -2438,16 +2481,24 @@ function App() {
             <option value="">Volledige calculatie</option>
             {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
           </select></label>
-          <label><span>Positie</span><select value={activePositionFilter} onChange={event=>{setActivePositionFilter(event.target.value);setSelectedLineIds([]);}}>
-            <option value="">Alle posities</option>
-            {availablePositions.map(position=><option key={position} value={position}>{position}</option>)}
+          <label><span>Scope</span><select value={activeScopeType} onChange={event=>{setActiveScopeType(event.target.value as ScopeFilterType);setActiveScopeRef("");setSelectedLineIds([]);}}>
+            <option value="position">Positie</option>
+            <option value="building">Gebouw</option>
+            <option value="facade">Gevel</option>
+            <option value="dwelling">Woning</option>
+            <option value="dwelling_type">Woningtype</option>
+            <option value="building_part">Bouwdeel</option>
           </select></label>
-          {activePositionFilter&&<div className="positionFilterActions">
+          <label><span>{scopeLabels[activeScopeType]}</span><select value={activeScopeRef} onChange={event=>{setActiveScopeRef(event.target.value);setSelectedLineIds([]);}}>
+            <option value="">Alle {scopeLabels[activeScopeType].toLowerCase()}s</option>
+            {availableScopeValues.map(value=><option key={value} value={value}>{value}</option>)}
+          </select></label>
+          {activeScopeRef&&<div className="positionFilterActions">
             <span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>
-            <button type="button" onClick={()=>void createSubcalculationForPosition(activePositionFilter)}>
-              {subcalculations.some(item=>item.scopes.some(scope=>scope.scopeType==="position"&&scope.scopeRef===activePositionFilter))
+            <button type="button" onClick={()=>void createSubcalculationForScope(activeScopeType,activeScopeRef)}>
+              {subcalculations.some(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===activeScopeRef))
                 ?"Open deelcalculatie"
-                :"Maak deelcalculatie van positie"}
+                :"Maak deelcalculatie van "+scopeLabels[activeScopeType].toLowerCase()}
             </button>
           </div>}
           {activeSubcalculationResult && <div className="subcalcWorkmodeTotals">
@@ -2549,11 +2600,11 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
-          {activeSubcalculationId==null&&!activePositionFilter
+          {activeSubcalculationId==null&&!activeScopeRef
             ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
             : <div className="subcalcFilteredNotice">{activeSubcalculationId!=null
               ? "Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan."
-              : "Positiefilter is actief. Nieuwe regels maak je in de volledige weergave zodat ze niet zonder positie ontstaan."}</div>}
+              : "Scopefilter is actief. Nieuwe regels maak je in de volledige weergave zodat ze niet zonder context ontstaan."}</div>}
         </div>
       </section>
     </main>
