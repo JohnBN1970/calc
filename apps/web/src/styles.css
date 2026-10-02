@@ -295,3 +295,5 @@
 
 .positionFilterActions{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 .positionFilterActions button{padding:7px 10px}
+
+.scopeBulkButton{align-self:end;padding:7px 10px}
