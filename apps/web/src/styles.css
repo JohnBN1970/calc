@@ -297,3 +297,5 @@
 .positionFilterActions button{padding:7px 10px}
 
 .scopeBulkButton{align-self:end;padding:7px 10px}
+
+.bulkScopeRef{min-width:180px;padding:7px 9px;border:1px solid #cfd5da;border-radius:6px}

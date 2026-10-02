@@ -14,7 +14,7 @@ import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOw
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, createScopedCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
-import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
+import { generatedScopeTags, manualScopeTags, storeLineScopeTags, type LineScopeTag } from "./lineScopeRepository.js";
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
@@ -65,6 +65,7 @@ type LineInput = {
   sourceOfferSummary?: string | null;
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
+  manualScopes?: Array<{scopeType:LineScopeTag["scopeType"];scopeRef:string}>;
 };
 
 type LaunchPayload = {
@@ -1078,6 +1079,22 @@ app.get("/api/workbench/current", async (req, res) => {
     [version.id]
   );
 
+  const [manualScopeRows] = await db.execute<RowDataPacket[]>(
+    `SELECT t.line_id,t.scope_type,t.scope_ref
+       FROM calculation_line_scope_tags t
+       JOIN calculation_lines l ON l.id=t.line_id
+      WHERE l.version_id=? AND t.source='manual'
+      ORDER BY t.line_id,t.scope_type,t.scope_ref`,
+    [version.id]
+  );
+  const manualScopesByLine=new Map<number,Array<{scopeType:string;scopeRef:string}>>();
+  for(const row of manualScopeRows){
+    const lineId=Number(row.line_id);
+    const items=manualScopesByLine.get(lineId)??[];
+    items.push({scopeType:String(row.scope_type),scopeRef:String(row.scope_ref)});
+    manualScopesByLine.set(lineId,items);
+  }
+
   const [allocations] = await db.execute<RowDataPacket[]>(
     `SELECT source_line_id, target_line_id, allocation_method, share, amount FROM calculation_line_allocations WHERE version_id = ? ORDER BY source_line_id, target_line_id`,
     [version.id]
@@ -1096,7 +1113,7 @@ app.get("/api/workbench/current", async (req, res) => {
     calculation: calculations[0],
     version,
     project: officeContext.project,
-    lines,
+    lines:lines.map(row=>({...row,manual_scopes:manualScopesByLine.get(Number(row.id))??[]})),
     allocations
   });
 });
@@ -1158,7 +1175,7 @@ app.put("/api/workbench/current", async (req, res) => {
       SELECT t.line_id,t.scope_type,t.scope_ref,t.source
         FROM calculation_line_scope_tags t
         JOIN calculation_lines l ON l.id=t.line_id
-       WHERE l.version_id=? AND t.source<>'generated'
+       WHERE l.version_id=? AND t.source='manual'
     `,[version.id]);
 
     await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
@@ -1166,6 +1183,7 @@ app.put("/api/workbench/current", async (req, res) => {
     let directCost = 0;
     const lineVatSources:VatSource[] = [];
     const temporaryIds = new Map<number, number>();
+    const explicitManualScopeLineIds=new Set<number>();
     for (const line of lines) {
       if (!["chapter", "paragraph", "item", "allowance", "adjustable", "option", "note"].includes(line.lineType)) {
         throw new Error("Unknown line type.");
@@ -1230,6 +1248,11 @@ app.put("/api/workbench/current", async (req, res) => {
       if (scopeTags.length) {
         await storeLineScopeTags(connection, insert.insertId, scopeTags);
       }
+      if(Array.isArray(line.manualScopes)){
+        if(line.id!=null)explicitManualScopeLineIds.add(Number(line.id));
+        const manualTags=manualScopeTags(line.manualScopes,scopeTags);
+        if(manualTags.length)await storeLineScopeTags(connection,insert.insertId,manualTags);
+      }
     }
 
     for (const membership of preservedMemberships) {
@@ -1245,6 +1268,7 @@ app.put("/api/workbench/current", async (req, res) => {
     }
 
     for (const tag of preservedScopeTags) {
+      if(explicitManualScopeLineIds.has(Number(tag.line_id)))continue;
       const nextLineId = temporaryIds.get(Number(tag.line_id));
       if (!nextLineId) continue;
       await connection.execute(

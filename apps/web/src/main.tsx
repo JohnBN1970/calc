@@ -41,6 +41,7 @@ type Line = {
   sourceOfferSummary: string | null;
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
+  manualScopes?: Array<{scopeType:ScopeFilterType;scopeRef:string}>;
 };
 type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"vat"|"building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position"|"recipe"|"source"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
@@ -121,14 +122,25 @@ function lineTrace(line:Line):LineTrace{
           scopes[type]=values;
         }
       }
+      for(const item of line.manualScopes??[]){
+        const values=scopes[item.scopeType]??[];
+        if(!values.includes(item.scopeRef))values.push(item.scopeRef);
+        scopes[item.scopeType]=values;
+      }
       return{position,recipe,source,scopes};
     }catch{}
   }
+  const scopes:Partial<Record<ScopeFilterType,string[]>>={};
+  for(const item of line.manualScopes??[]){
+    const values=scopes[item.scopeType]??[];
+    if(!values.includes(item.scopeRef))values.push(item.scopeRef);
+    scopes[item.scopeType]=values;
+  }
   return{
-    position:null,
+    position:scopes.position?.[0]??null,
     recipe:line.priceSourceType==="recipe"&&line.sourceReference?line.sourceReference.split("/")[0]:null,
     source:line.sourceSupplier||(line.sourceDocumentId?"Doc "+line.sourceDocumentId:line.sourceReference),
-    scopes:{}
+    scopes
   };
 }
 
@@ -635,7 +647,8 @@ function mapServerLine(raw: Record<string, unknown>): Line {
     sourceVisualCrop: raw.source_visual_crop ? JSON.parse(String(raw.source_visual_crop)) as VisualCrop : null,
     sourceVisualSearchRegion: raw.source_visual_search_region ? JSON.parse(String(raw.source_visual_search_region)) as VisualCrop : null,
     sourceTextRegions: raw.source_text_regions ? JSON.parse(String(raw.source_text_regions)) as VisualCrop[] : null,
-    sourceOfferSummary: raw.source_offer_summary == null ? null : String(raw.source_offer_summary)
+    sourceOfferSummary: raw.source_offer_summary == null ? null : String(raw.source_offer_summary),
+    manualScopes: Array.isArray(raw.manual_scopes) ? (raw.manual_scopes as Array<any>).map(item=>({scopeType:String(item.scopeType) as ScopeFilterType,scopeRef:String(item.scopeRef)})).filter(item=>["building","facade","dwelling","dwelling_type","building_part","position"].includes(item.scopeType)&&item.scopeRef.trim()) : []
   };
 }
 
@@ -677,6 +690,8 @@ function App() {
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
+  const [manualScopeType,setManualScopeType]=useState<ScopeFilterType>("position");
+  const [manualScopeRef,setManualScopeRef]=useState("");
   const [allocations, setAllocations] = useState<LineAllocation[]>([]);
   const [quoteStatus, setQuoteStatus] = useState("Selecteer eerst een calculatieregel.");
   const [quoteProposal, setQuoteProposal] = useState<QuoteProposal | null>(null);
@@ -1777,6 +1792,43 @@ function App() {
     setStatus("Concept — niet opgeslagen");
   };
 
+  const addManualScopeToSelected=()=>{
+    const ref=manualScopeRef.trim();
+    if(!ref||!selectedLineIds.length)return;
+    const selected=new Set(selectedLineIds);
+    let changed=0;
+    setLines(current=>current.map(line=>{
+      if(!selected.has(line.id)||!isCostLine(line))return line;
+      const existing=line.manualScopes??[];
+      if(existing.some(item=>item.scopeType===manualScopeType&&item.scopeRef===ref))return line;
+      changed++;
+      return{...line,manualScopes:[...existing,{scopeType:manualScopeType,scopeRef:ref}]};
+    }));
+    if(changed){
+      setStatus("Concept — niet opgeslagen");
+      setManagementStatus(changed+" regel(s) gekoppeld aan "+scopeLabels[manualScopeType]+" "+ref+".");
+    }
+  };
+
+  const removeManualScopeFromSelected=()=>{
+    const ref=manualScopeRef.trim();
+    if(!ref||!selectedLineIds.length)return;
+    const selected=new Set(selectedLineIds);
+    let changed=0;
+    setLines(current=>current.map(line=>{
+      if(!selected.has(line.id))return line;
+      const before=line.manualScopes??[];
+      const after=before.filter(item=>!(item.scopeType===manualScopeType&&item.scopeRef===ref));
+      if(after.length===before.length)return line;
+      changed++;
+      return{...line,manualScopes:after};
+    }));
+    if(changed){
+      setStatus("Concept — niet opgeslagen");
+      setManagementStatus(changed+" handmatige scope(s) verwijderd.");
+    }
+  };
+
   const bulkDetachSource = () => {
     if (selectedLineIds.length === 0) return;
     setLines(current => current.map(line => selectedLineIds.includes(line.id) ? {
@@ -2136,7 +2188,8 @@ function App() {
             sourceVisualCrop: line.sourceVisualCrop,
             sourceVisualSearchRegion: line.sourceVisualSearchRegion,
             sourceTextRegions: line.sourceTextRegions,
-            sourceOfferSummary: line.sourceOfferSummary
+            sourceOfferSummary: line.sourceOfferSummary,
+            manualScopes: line.manualScopes ?? []
           }))
         })
       });
@@ -2574,6 +2627,14 @@ function App() {
               {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
             </select>
           </label>}
+          <label>Scope
+            <select value={manualScopeType} onChange={event=>setManualScopeType(event.target.value as ScopeFilterType)}>
+              {Object.entries(scopeLabels).map(([type,label])=><option key={type} value={type}>{label}</option>)}
+            </select>
+          </label>
+          <input className="bulkScopeRef" value={manualScopeRef} onChange={event=>setManualScopeRef(event.target.value)} placeholder="bijv. Type A, Noord, K1" />
+          <button type="button" disabled={!manualScopeRef.trim()} onClick={addManualScopeToSelected}>Scope toevoegen</button>
+          <button type="button" disabled={!manualScopeRef.trim()} onClick={removeManualScopeFromSelected}>Scope verwijderen</button>
           <button type="button" onClick={bulkDetachSource}>Bron loskoppelen</button>
           {activeSubcalculationId!=null && <button type="button" onClick={() => void removeSelectedLinesFromActiveSubcalculation()}>Uit deze deelcalc</button>}
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
