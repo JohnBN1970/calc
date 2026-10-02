@@ -22,7 +22,7 @@ import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOffice
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
-import { createVatRegime, listVatRegimes, updateVatRegime, listCalculationVatComponents, replaceCalculationVatComponents, type VatTreatment } from "./vatSettingsRepository.js";
+import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -1241,70 +1241,33 @@ app.put("/api/workbench/current", async (req, res) => {
         ...tailHierarchy.subcalculations.flatMap(row=>row.tailCosts)
       ]
     });
+    const finalTaxableBase=finalVatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
+    const vatReady=Math.abs(finalTaxableBase-salesPrice)<=0.01;
     const summary = buildCommercialSummary({
       purchase:directCost,
       sales:salesPrice,
       vatRate:null,
-      vatBreakdown:finalVatBreakdown.map(item=>({
+      vatBreakdown:vatReady?finalVatBreakdown.map(item=>({
         code:item.code,
         label:item.label,
         rate:item.rate,
         taxableBase:item.taxableBase,
         vatAmount:item.vatAmount,
         reverseCharged:item.reverseCharged
-      }))
+      })):undefined
     });
-    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, vatBreakdown:summary.vatBreakdown, officeSync });
+    res.json({
+      directCost, markupAmount, salesPrice,
+      margin:summary.margin, marginPct:summary.marginPct,
+      vat:summary.vat, vatRate:summary.vatRate,
+      vatBreakdown:finalVatBreakdown, vatReady,
+      officeSync
+    });
   } catch (error) {
     await connection.rollback();
     throw error;
   } finally {
     connection.release();
-  }
-});
-
-app.get("/api/workbench/current/vat-components", async (req,res)=>{
-  const session=requireSession(req,res);
-  if(!session)return;
-  try{
-    const [versions]=await db.execute<RowDataPacket[]>(
-      "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
-      [session.calculationId]
-    );
-    const versionId=Number(versions[0]?.id??0);
-    if(!versionId){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
-    res.setHeader("Cache-Control","no-store, private");
-    res.json({components:await listCalculationVatComponents(versionId)});
-  }catch(error){
-    res.status(500).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden geladen."});
-  }
-});
-
-app.put("/api/workbench/current/vat-components", async (req,res)=>{
-  const session=requireSession(req,res);
-  if(!session)return;
-  if(!Array.isArray(req.body?.components)){res.status(400).json({error:"Btw-componenten ontbreken."});return;}
-  try{
-    const [versions]=await db.execute<RowDataPacket[]>(
-      "SELECT id,status,sales_price FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
-      [session.calculationId]
-    );
-    const version=versions[0];
-    if(!version){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
-    if(String(version.status)!=="draft"){res.status(409).json({error:"Alleen een conceptversie kan worden gewijzigd."});return;}
-    const components=req.body.components.map((item:any)=>({
-      vatRegimeId:Number(item.vatRegimeId),
-      taxableBase:Number(item.taxableBase)
-    }));
-    const baseTotal=components.reduce((sum:number,item:{taxableBase:number})=>sum+item.taxableBase,0);
-    const sales=Number(version.sales_price??0);
-    if(Math.abs(baseTotal-sales)>0.01){
-      res.status(409).json({error:"Som van btw-grondslagen moet gelijk zijn aan de verkoopprijs.",salesPrice:sales,taxableBaseTotal:baseTotal});
-      return;
-    }
-    res.json({components:await replaceCalculationVatComponents(Number(version.id),components)});
-  }catch(error){
-    res.status(400).json({error:error instanceof Error?error.message:"Btw-opbouw kon niet worden opgeslagen."});
   }
 });
 
