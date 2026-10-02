@@ -36,3 +36,22 @@ test("gevonden kostprijsbron blijft resolved",()=>{
   assert.equal(line.material,12.5);
   assert.equal(line.sourceUnitPrice,12.5);
 });
+
+
+test("conceptbron en pagina blijven traceerbaar in receptregel",()=>{
+  const resolution:OfficeCalcSourceResolution={
+    contract:"brebo-office-calc-source-resolution-v1",project_id:1,
+    results:[{request_index:0,type:"article",ref:"A-1",status:"resolved",value:12.5,unit:"m2",description:"Materiaal",source:{price_id:7}}]
+  };
+  const [line]=generateCalcOwnedRecipeLines({
+    recipe,
+    takeoff,
+    resolution,
+    evidence:{documentIds:[12,18],pages:[3,4]}
+  });
+  const details=JSON.parse(line.sourceDetails);
+  assert.equal(details.position_ref,"K1");
+  assert.equal(details.recipe.key,"test");
+  assert.deepEqual(details.evidence.document_ids,[12,18]);
+  assert.deepEqual(details.evidence.pages,[3,4]);
+});

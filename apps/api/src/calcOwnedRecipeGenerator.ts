@@ -54,6 +54,7 @@ export function generateCalcOwnedRecipeLines(input:{
     height_mm:number|null;
   };
   resolution:OfficeCalcSourceResolution;
+  evidence?:{documentIds:number[];pages:number[]};
 }):CalcOwnedGeneratedLine[] {
   const widthMm=Number(input.takeoff.width_mm??0);
   const heightMm=Number(input.takeoff.height_mm??0);
@@ -138,6 +139,10 @@ export function generateCalcOwnedRecipeLines(input:{
         recipe:{id:input.recipe.recipeId,version_id:input.recipe.id,key:input.recipe.recipeKey,version:input.recipe.versionNo},
         takeoff_id:input.takeoff.id,
         position_ref:input.takeoff.position_ref,
+        evidence:{
+          document_ids:input.evidence?.documentIds??[],
+          pages:input.evidence?.pages??[]
+        },
         quantity_rule:{
           basis:line.takeoffBasis,
           factor:line.factor,

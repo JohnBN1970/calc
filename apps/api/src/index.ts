@@ -596,7 +596,16 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       ? await resolveOfficeCalcSources({ projectId: session.officeProjectId, sources: sourceRequests })
       : { contract: "brebo-office-calc-source-resolution-v1" as const, project_id: session.officeProjectId, results: [] };
 
-    const generated = generateCalcOwnedRecipeLines({ recipe, takeoff, resolution });
+    const conceptPosition=concept.positions.find(item=>item.positionRef===positionRef)??null;
+    const generated = generateCalcOwnedRecipeLines({
+      recipe,
+      takeoff,
+      resolution,
+      evidence:conceptPosition?{
+        documentIds:conceptPosition.sourceDocumentIds,
+        pages:conceptPosition.sourcePages
+      }:undefined
+    });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
     res.setHeader("Cache-Control", "no-store, private");
@@ -1418,7 +1427,7 @@ app.put("/api/settings/user/columns", async (req,res)=>{
   const session=requireSession(req,res);
   if(!session)return;
   if(!Array.isArray(req.body?.columns)){res.status(400).json({error:"Ongeldige kolominstellingen."});return;}
-  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","total"]);
+  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","vat","position","recipe","source","total"]);
   const columns=req.body.columns.map((item:any)=>({
     key:String(item?.key??""),
     visible:item?.visible!==false,
