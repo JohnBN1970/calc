@@ -987,7 +987,6 @@ function App() {
       setAggregate(null);
     }
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
-    setVatRate(data.version?.vat_rate == null ? null : Number(data.version.vat_rate));
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
       sourceLineId:Number(row.source_line_id), targetLineId:Number(row.target_line_id), method:String(row.allocation_method) as LineAllocation["method"], share:Number(row.share ?? 0), amount:Number(row.amount ?? 0)
