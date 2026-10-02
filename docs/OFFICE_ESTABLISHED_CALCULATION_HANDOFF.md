@@ -1,9 +1,40 @@
-# Established calculation handoff to Office
+# Calc result handoff to Office
 
-Calc owns calculation logic. Office receives the result of an established calculation as an explicit contract and must not reconstruct the price from mutable source data.
+Calc owns the complete calculation: structure, lines, recipes, subcalculations, tail costs, VAT assignment and calculation logic.
 
-Contract `brebo-calc-established-calculation-v1` contains calculation identity, version number, establishment timestamp, SHA-256 content fingerprint, direct cost, total markup and sales price.
+Office does not receive or reconstruct that calculation. The Calc -> Office boundary contains only the commercial result that Office needs for downstream business processes.
 
-The handoff is signed with the existing BREBO shared-secret request scheme. Office must acknowledge with `brebo-office-established-calculation-ack-v1`, acceptance and the exact same content hash.
+## Contract
 
-A missing, rejected or hash-mismatched acknowledgement fails closed. This makes the version boundary explicit and prevents Office and Calc from silently referring to different calculation states.
+The published commercial summary contains:
+
+- purchase total
+- sales total
+- margin
+- margin percentage
+- total VAT
+- VAT breakdown per configured Calc VAT regime
+
+Each VAT breakdown item contains the regime code and label, rate where applicable, taxable base, VAT amount and whether VAT is reverse charged.
+
+For mixed VAT calculations, Office receives multiple breakdown items. Reverse-charge and exempt regimes keep their taxable base while contributing no VAT amount.
+
+## Ownership rule
+
+Office may store and present the commercial summary, but must not use it to reconstruct or become authoritative for:
+
+- chapters or paragraphs
+- calculation lines
+- recipes
+- subcalculations
+- tail costs
+- line-level VAT choices
+- calculation formulas
+
+Those remain Calc-owned.
+
+## Roundtrip verification
+
+After publishing, Calc reads the Office acknowledgement/state back and verifies that the commercial values and VAT breakdown match what Calc published.
+
+A missing or mismatching commercial acknowledgement is treated as a sync failure. The Calc calculation itself remains the source of truth.
