@@ -994,6 +994,7 @@ app.put("/api/workbench/current", async (req, res) => {
   }
   const lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
+  const requestedVatComponents = Array.isArray(req.body?.vatComponents) ? req.body.vatComponents : null;
   const vatRate = req.body?.vatRate == null || req.body.vatRate === "" ? null : Number(req.body.vatRate);
   if (vatRate !== null && (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)) {
     res.status(400).json({ error: "Ongeldig btw-tarief." });
@@ -1156,6 +1157,19 @@ app.put("/api/workbench/current", async (req, res) => {
     });
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
+
+    let savedVatComponents = await listCalculationVatComponents(Number(version.id));
+    if (requestedVatComponents) {
+      const normalizedVatComponents = requestedVatComponents.map((item:any)=>({
+        vatRegimeId:Number(item.vatRegimeId),
+        taxableBase:Number(item.taxableBase)
+      }));
+      const taxableBaseTotal = normalizedVatComponents.reduce((sum:number,item:{taxableBase:number})=>sum+item.taxableBase,0);
+      if (Math.abs(taxableBaseTotal-salesPrice)>0.01) {
+        throw new Error("Som van btw-grondslagen moet gelijk zijn aan de verkoopprijs.");
+      }
+      savedVatComponents = await replaceCalculationVatComponents(Number(version.id), normalizedVatComponents);
+    }
     await connection.execute(
       "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ?, vat_rate = ? WHERE id = ?",
       [directCost, markupAmount, salesPrice, vatRate, version.id]
@@ -1169,7 +1183,7 @@ app.put("/api/workbench/current", async (req, res) => {
     let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
     try {
       const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const vatComponents=await listCalculationVatComponents(Number(version.id));
+      const vatComponents=savedVatComponents;
       const summary = buildCommercialSummary({
         purchase:directCost,
         sales:salesPrice,
@@ -1213,7 +1227,7 @@ app.put("/api/workbench/current", async (req, res) => {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
     }
 
-    const finalVatComponents=await listCalculationVatComponents(Number(version.id));
+    const finalVatComponents=savedVatComponents;
     const summary = buildCommercialSummary({
       purchase:directCost,
       sales:salesPrice,
