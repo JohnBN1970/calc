@@ -752,6 +752,21 @@ function App() {
     if(activeScopeRef&&!availableScopeValues.includes(activeScopeRef))setActiveScopeRef("");
   },[activeScopeRef,availableScopeValues]);
 
+  const scopeOverview=useMemo(()=>availableScopeValues.map(scopeRef=>{
+    const scopedCostLines=lines.filter(line=>isCostLine(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
+    const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line),0);
+    const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
+    const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
+    return{
+      scopeRef,
+      lineCount:scopedCostLines.length,
+      directCost,
+      subcalculationId:subcalculation?.id??null,
+      salesPrice:result?.salesPrice??null,
+      tailCost:result?.allocatedTailCost??null
+    };
+  }),[availableScopeValues,lines,activeScopeType,subcalculations,subcalculationResults]);
+
   const workbenchLines = useMemo(() => {
     let base=lines;
     if (activeSubcalculationResult) {
@@ -2610,6 +2625,23 @@ function App() {
             <span><small>Regels</small><strong>{activeSubcalculationResult.lineIds.length}</strong></span>
           </div>}
         </div>
+
+        {scopeOverview.length>0&&<div className="scopeOverview">
+          <div className="scopeOverviewHead">
+            <div><strong>{scopeLabels[activeScopeType]}-overzicht</strong><span>Werkoverzicht; verandert de calculatietotalen niet.</span></div>
+            <small>{scopeOverview.length} gevonden</small>
+          </div>
+          <div className="scopeOverviewGrid">
+            {scopeOverview.map(item=><button type="button" className={"scopeOverviewCard"+(activeScopeRef===item.scopeRef?" is-active":"")} key={item.scopeRef} onClick={()=>{setActiveScopeRef(item.scopeRef);setSelectedLineIds([]);}}>
+              <strong>{item.scopeRef}</strong>
+              <span>{item.lineCount} regel{item.lineCount===1?"":"s"}</span>
+              <b>{money.format(item.directCost)}</b>
+              {item.salesPrice!=null
+                ? <small>Deelcalc · verkoop {money.format(item.salesPrice)}{item.tailCost!=null?" · staart "+money.format(item.tailCost):""}</small>
+                : <small>Nog geen deelcalculatie</small>}
+            </button>)}
+          </div>
+        </div>}
 
         {selectedLineIds.length > 0 && <div className="bulkBar">
           <strong>{selectedLineIds.length} geselecteerd</strong>
