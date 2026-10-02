@@ -22,8 +22,9 @@ Calculatie owns the user interaction and calculation-domain workflow for:
 6. options, allowances and adjustable items
 7. commercial parameters
 8. draft calculation versions
-9. immutable established versions
-10. line-level auditability
+9. immutable established versions and snapshots
+10. line-level VAT regime assignment and roll-up
+11. line-level auditability
 
 ## Office responsibility
 
@@ -42,7 +43,7 @@ Office owns:
 
 ```
 Office --versioned API--> Calculatie
-Office <--immutable established calculation-- Calculatie
+Office <--commercial summary + VAT breakdown-- Calculatie
 ```
 
 No shared database.
@@ -96,7 +97,7 @@ Every future BREBO workbench must follow the same rules:
 6. Browser users enter through Office or central BREBO authentication; secrets never reach the browser.
 7. Stable Office identifiers are stored alongside local workbench identifiers.
 8. The BREBO shell, design tokens and navigation model stay visually consistent across applications.
-9. Domain-specific draft/work data belongs to the specialist workbench; established results and canonical references flow back to Office.
+9. Domain-specific draft/work data and full calculation structure belong to the specialist workbench. Office receives only the commercial summary it needs for downstream business processes, plus canonical references.
 10. Existing Drupal modules remain available until the replacement workbench is proven in production and migration is complete.
 
 ### Planned workbenches
