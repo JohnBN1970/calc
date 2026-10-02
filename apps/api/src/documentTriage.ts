@@ -1,6 +1,6 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
 
-export type CalcDocumentTriageStatus="primary"|"supporting"|"review";
+export type CalcDocumentTriageStatus="primary"|"supporting"|"review"|"excluded";
 
 export type CalcDocumentTriageItem={
   documentId:number;
@@ -15,12 +15,16 @@ export type CalcDocumentTriageItem={
   positionRefs:string[];
   signals:string[];
   reviewStatus:string;
+  automaticStatus:"primary"|"supporting"|"review";
+  overridden:boolean;
+  overrideReason:string|null;
 };
 
 const geometryFacts=new Set(["quantity","width_mm","height_mm"]);
 const commercialFacts=new Set(["description","supplier_unit_price"]);
 
-export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnapshot):CalcDocumentTriageItem[]{
+export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnapshot,overrides:Array<{officeDocumentId:number;decision:CalcDocumentTriageStatus;reason:string|null}>=[]):CalcDocumentTriageItem[]{
+  const overrideByDocument=new Map(overrides.map(item=>[item.officeDocumentId,item]));
   const factsByDocument=new Map<number,typeof snapshot.context.facts>();
   for(const fact of snapshot.context.facts){
     const rows=factsByDocument.get(Number(fact.document_id))??[];
@@ -80,11 +84,13 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
     }
     score=Math.min(100,Math.round(score));
 
-    const status:CalcDocumentTriageStatus=
+    const automaticStatus:"primary"|"supporting"|"review"=
       document.exclusion_reason?"review":
       completeGeometry.length?"primary":
       relevant.length?"supporting":
       "review";
+    const override=overrideByDocument.get(Number(document.document_id));
+    const status:CalcDocumentTriageStatus=override?.decision??automaticStatus;
 
     if(!signals.length)signals.push("Nog geen calculatiefeiten uit dit document beschikbaar.");
 
@@ -100,10 +106,13 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
       reviewedFactCount:reviewed.length,
       positionRefs,
       signals,
-      reviewStatus:document.review_status
+      reviewStatus:document.review_status,
+      automaticStatus,
+      overridden:Boolean(override),
+      overrideReason:override?.reason??null
     };
   }).sort((a,b)=>{
-    const order:Record<CalcDocumentTriageStatus,number>={primary:0,supporting:1,review:2};
+    const order:Record<CalcDocumentTriageStatus,number>={primary:0,supporting:1,review:2,excluded:3};
     return order[a.status]-order[b.status]||b.score-a.score||a.title.localeCompare(b.title,"nl");
   });
 }

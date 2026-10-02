@@ -145,13 +145,16 @@ type WorkbenchAggregate = {
     documentType:string|null;
     documentFamily:string|null;
     mimeType:string|null;
-    status:"primary"|"supporting"|"review";
+    status:"primary"|"supporting"|"review"|"excluded";
     score:number;
     factCount:number;
     reviewedFactCount:number;
     positionRefs:string[];
     signals:string[];
     reviewStatus:string;
+    automaticStatus:"primary"|"supporting"|"review";
+    overridden:boolean;
+    overrideReason:string|null;
   }>;
   recipeProposals: Array<{
     positionRef: string;
@@ -594,6 +597,7 @@ function App() {
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
+  const [documentTriageStatus,setDocumentTriageStatus]=useState("");
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
@@ -1032,6 +1036,36 @@ function App() {
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     setAuthorized(true);
     setStatus("Opgeslagen");
+  };
+
+  const setDocumentDecision=async(documentId:number,decision:"primary"|"supporting"|"review"|"excluded")=>{
+    setDocumentTriageStatus("Documentkeuze opslaan…");
+    try{
+      const response=await fetch(`/api/workbench/current/document-triage/${documentId}`,{
+        method:"PUT",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({decision})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Documentkeuze kon niet worden opgeslagen."));
+      await loadWorkbench();
+      setDocumentTriageStatus("Documentkeuze opgeslagen.");
+    }catch(error){
+      setDocumentTriageStatus(error instanceof Error?error.message:"Documentkeuze kon niet worden opgeslagen.");
+    }
+  };
+
+  const resetDocumentDecision=async(documentId:number)=>{
+    setDocumentTriageStatus("Automatische documentkeuze herstellen…");
+    try{
+      const response=await fetch(`/api/workbench/current/document-triage/${documentId}`,{method:"DELETE",headers:{Accept:"application/json"}});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Documentkeuze kon niet worden hersteld."));
+      await loadWorkbench();
+      setDocumentTriageStatus("Automatische documentkeuze hersteld.");
+    }catch(error){
+      setDocumentTriageStatus(error instanceof Error?error.message:"Documentkeuze kon niet worden hersteld.");
+    }
   };
 
   useEffect(() => {
@@ -1891,13 +1925,23 @@ function App() {
                 {aggregate.documentTriage.length===0?<p className="muted">Nog geen documenten in de calculatiecontext.</p>:aggregate.documentTriage.map(item=>
                   <div className={"documentTriageItem status-"+item.status} key={item.documentId}>
                     <div><strong>{item.title}</strong><span>{item.documentFamily||item.documentType||"onbekend type"} · bron #{item.documentId}</span></div>
-                    <div className="documentTriageScore"><b>{item.score}</b><small>{item.status==="primary"?"primair":item.status==="supporting"?"ondersteunend":"review"}</small></div>
-                    <div className="documentTriageSignals">{item.signals.map((signal,index)=><small key={index}>{signal}</small>)}</div>
+                    <div className="documentTriageScore"><b>{item.score}</b><small>{item.status==="primary"?"primair":item.status==="supporting"?"ondersteunend":item.status==="excluded"?"uitgesloten":"review"}</small></div>
+                    <div className="documentTriageSignals">{item.signals.map((signal,index)=><small key={index}>{signal}</small>)}{item.overridden&&<small><b>Handmatig:</b> automatisch was {item.automaticStatus}.</small>}</div>
+                    <div className="documentTriageChoice">
+                      <select value={item.status} onChange={event=>void setDocumentDecision(item.documentId,event.target.value as "primary"|"supporting"|"review"|"excluded")}>
+                        <option value="primary">Primair</option>
+                        <option value="supporting">Ondersteunend</option>
+                        <option value="review">Review nodig</option>
+                        <option value="excluded">Uitsluiten</option>
+                      </select>
+                      {item.overridden&&<button type="button" onClick={()=>void resetDocumentDecision(item.documentId)}>Auto</button>}
+                    </div>
                     {item.positionRefs.length>0&&<div className="documentTriagePositions">{item.positionRefs.map(ref=><span key={ref}>{ref}</span>)}</div>}
                   </div>
                 )}
               </div>
             </div>
+            {documentTriageStatus&&<div className="managementStatus">{documentTriageStatus}</div>}
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
               <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map((position,index) => {

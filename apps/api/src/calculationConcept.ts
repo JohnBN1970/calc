@@ -34,7 +34,7 @@ export function buildConceptFromOfficeContext(
   documentTriage: CalcDocumentTriageItem[] = triageCalculationDocuments(snapshot)
 ): CalculationConcept {
   const context = snapshot.context;
-  const acceptedDocumentIds=new Set(documentTriage.filter(item=>item.status!=="review").map(item=>item.documentId));
+  const acceptedDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary"||item.status==="supporting").map(item=>item.documentId));
   const primaryDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary").map(item=>item.documentId));
   const factsByPosition = new Map<string, typeof context.facts>();
 
