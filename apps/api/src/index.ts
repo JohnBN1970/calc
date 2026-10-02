@@ -65,6 +65,11 @@ type LineInput = {
   sourceOfferSummary?: string | null;
   resolutionStatus?: "resolved" | "unresolved";
   resolutionReason?: string | null;
+  scopeTags?: Array<{
+    scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part"|"position"|"structure"|"recipe"|"custom";
+    scopeRef:string;
+    source:"generated"|"manual"|"office_context";
+  }>;
 };
 
 type LaunchPayload = {
@@ -1078,6 +1083,26 @@ app.get("/api/workbench/current", async (req, res) => {
     [version.id]
   );
 
+  const [scopeTagRows] = await db.execute<RowDataPacket[]>(
+    `SELECT t.line_id,t.scope_type,t.scope_ref,t.source
+       FROM calculation_line_scope_tags t
+       JOIN calculation_lines l ON l.id=t.line_id
+      WHERE l.version_id=?
+      ORDER BY t.line_id,t.scope_type,t.scope_ref`,
+    [version.id]
+  );
+  const scopeTagsByLine=new Map<number,Array<{scopeType:string;scopeRef:string;source:string}>>();
+  for(const row of scopeTagRows){
+    const lineId=Number(row.line_id);
+    const list=scopeTagsByLine.get(lineId)??[];
+    list.push({scopeType:String(row.scope_type),scopeRef:String(row.scope_ref),source:String(row.source)});
+    scopeTagsByLine.set(lineId,list);
+  }
+  const responseLines=lines.map(row=>({
+    ...row,
+    scope_tags:scopeTagsByLine.get(Number(row.id))??[]
+  }));
+
   const [allocations] = await db.execute<RowDataPacket[]>(
     `SELECT source_line_id, target_line_id, allocation_method, share, amount FROM calculation_line_allocations WHERE version_id = ? ORDER BY source_line_id, target_line_id`,
     [version.id]
@@ -1096,7 +1121,7 @@ app.get("/api/workbench/current", async (req, res) => {
     calculation: calculations[0],
     version,
     project: officeContext.project,
-    lines,
+    lines:responseLines,
     allocations
   });
 });
@@ -1223,12 +1248,25 @@ app.put("/api/workbench/current", async (req, res) => {
         ]
       );
       if (line.id != null) temporaryIds.set(line.id, insert.insertId);
-      const scopeTags = generatedScopeTags({
+      const generatedTags = generatedScopeTags({
         priceSourceType,
         sourceDetails: line.sourceDetails == null ? null : String(line.sourceDetails)
       });
-      if (scopeTags.length) {
-        await storeLineScopeTags(connection, insert.insertId, scopeTags);
+      const explicitTags=(Array.isArray(line.scopeTags)?line.scopeTags:[])
+        .map(tag=>({
+          scopeType:String(tag.scopeType) as any,
+          scopeRef:String(tag.scopeRef??"").trim(),
+          source:String(tag.source??"manual") as any
+        }))
+        .filter(tag=>tag.scopeRef&&["building","facade","dwelling","dwelling_type","building_part","position","structure","recipe","custom"].includes(tag.scopeType));
+      const mergedTags=[...generatedTags];
+      for(const tag of explicitTags){
+        if(!mergedTags.some(existing=>existing.scopeType===tag.scopeType&&existing.scopeRef===tag.scopeRef)){
+          mergedTags.push(tag as any);
+        }
+      }
+      if (mergedTags.length) {
+        await storeLineScopeTags(connection, insert.insertId, mergedTags);
       }
     }
 
