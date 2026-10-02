@@ -21,6 +21,7 @@ import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
+import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -1198,6 +1199,55 @@ app.put("/api/workbench/current", async (req, res) => {
     throw error;
   } finally {
     connection.release();
+  }
+});
+
+app.get("/api/settings/vat-regimes", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({regimes:await listVatRegimes(true)});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Btw-instellingen konden niet worden geladen."});
+  }
+});
+
+app.post("/api/settings/vat-regimes", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    const treatment=String(req.body?.treatment??"normal") as VatTreatment;
+    const regime=await createVatRegime({
+      code:String(req.body?.code??""),
+      label:String(req.body?.label??""),
+      treatment,
+      rate:req.body?.rate==null||req.body?.rate===""?null:Number(req.body.rate),
+      active:req.body?.active!==false,
+      sortOrder:Number(req.body?.sortOrder??0)
+    });
+    res.status(201).json(regime);
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Btw-regime kon niet worden aangemaakt."});
+  }
+});
+
+app.put("/api/settings/vat-regimes/:id", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0){res.status(400).json({error:"Ongeldig btw-regime."});return;}
+  try{
+    const patch:any={};
+    if(req.body?.code!==undefined)patch.code=String(req.body.code);
+    if(req.body?.label!==undefined)patch.label=String(req.body.label);
+    if(req.body?.treatment!==undefined)patch.treatment=String(req.body.treatment) as VatTreatment;
+    if(req.body?.rate!==undefined)patch.rate=req.body.rate==null||req.body.rate===""?null:Number(req.body.rate);
+    if(req.body?.active!==undefined)patch.active=Boolean(req.body.active);
+    if(req.body?.sortOrder!==undefined)patch.sortOrder=Number(req.body.sortOrder);
+    res.json(await updateVatRegime(id,patch));
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Btw-regime kon niet worden bijgewerkt."});
   }
 });
 
