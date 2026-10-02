@@ -21,6 +21,8 @@ export type CalcOwnedGeneratedLine = {
   sourceReference:string;
   sourceUnitPrice:number|null;
   sourceDetails:string;
+  resolutionStatus:"resolved"|"unresolved";
+  resolutionReason:string|null;
 };
 
 export function calcRecipeSourceRequests(recipe:CalcRecipeVersion):Array<{type:string;ref:string;context?:Record<string,unknown>}> {
@@ -68,6 +70,15 @@ export function generateCalcOwnedRecipeLines(input:{
     const costSource=line.costSourceType&&line.costSourceRef
       ? sources.get(`${line.costSourceType}\u0000${line.costSourceRef}`)??null
       : null;
+    const unresolved:string[]=[];
+    if(line.quantitySourceType&&line.quantitySourceRef){
+      if(!quantitySource) unresolved.push(`Normbron ${line.quantitySourceType}:${line.quantitySourceRef} ontbreekt in Office-response.`);
+      else if(quantitySource.status==="unresolved") unresolved.push(quantitySource.reason||`Normbron ${line.quantitySourceType}:${line.quantitySourceRef} is niet beschikbaar.`);
+    }
+    if(line.costSourceType&&line.costSourceRef){
+      if(!costSource) unresolved.push(`Kostprijsbron ${line.costSourceType}:${line.costSourceRef} ontbreekt in Office-response.`);
+      else if(costSource.status==="unresolved") unresolved.push(costSource.reason||`Kostprijsbron ${line.costSourceType}:${line.costSourceRef} is niet beschikbaar.`);
+    }
 
     let grossQuantity:number;
     if(line.takeoffBasis==="fixed"){
@@ -76,7 +87,7 @@ export function generateCalcOwnedRecipeLines(input:{
       if(line.roundingStep) grossQuantity=Math.ceil(grossQuantity/line.roundingStep)*line.roundingStep;
       if(line.minimumQuantity!=null) grossQuantity=Math.max(grossQuantity,line.minimumQuantity);
     } else {
-      const normFactor=quantitySource?Number(quantitySource.value):1;
+      const normFactor=quantitySource?.status==="resolved"?Number(quantitySource.value):1;
       if(!Number.isFinite(normFactor)||normFactor<0) throw new Error(`Ongeldige normbron voor receptregel ${line.description}.`);
       grossQuantity=calculateRecipeQuantityDetails(geometry,{
         basis:line.takeoffBasis,
@@ -87,8 +98,8 @@ export function generateCalcOwnedRecipeLines(input:{
       }).grossQuantity;
     }
 
-    const unitCost=costSource?Number(costSource.value):0;
-    if(!Number.isFinite(unitCost)||unitCost<0) throw new Error(`Ongeldige kostprijsbron voor receptregel ${line.description}.`);
+    const unitCost=costSource?.status==="resolved"?Number(costSource.value):0;
+    if(costSource?.status==="resolved"&&(!Number.isFinite(unitCost)||unitCost<0)) throw new Error(`Ongeldige kostprijsbron voor receptregel ${line.description}.`);
 
     const costs={labour:0,material:0,equipment:0,subcontracting:0,other:0};
     let labourNorm:number|null=null;
@@ -99,7 +110,7 @@ export function generateCalcOwnedRecipeLines(input:{
     if(line.costKind==="labour"){
       labourTotalHours=grossQuantity;
       labourHoursInputMode="total_hours";
-      labourNorm=quantitySource?Number(quantitySource.value):null;
+      labourNorm=quantitySource?.status==="resolved"?Number(quantitySource.value):null;
       costs.labour=unitCost;
       calcQuantity=1;
     } else if(line.costKind==="material") costs.material=unitCost;
@@ -110,16 +121,19 @@ export function generateCalcOwnedRecipeLines(input:{
     return {
       code:line.lineRef,
       description:line.description,
-      unit:line.unit??(line.costKind==="labour"?"uur":costSource?.unit??""),
+      unit:line.unit??(line.costKind==="labour"?"uur":costSource?.status==="resolved"?costSource.unit??"":""),
+
       quantity:calcQuantity,
       labourNorm,
       labourTotalHours,
       labourHoursInputMode,
       ...costs,
       priceSourceType:"recipe" as const,
-      officeSourceId:costSource?String((costSource.source as any).price_id??(costSource.source as any).budget_line_id??""):null,
+      officeSourceId:costSource?.status==="resolved"?String((costSource.source as any).price_id??(costSource.source as any).budget_line_id??""):null,
+      resolutionStatus:unresolved.length?"unresolved":"resolved",
+      resolutionReason:unresolved.length?unresolved.join(" "):null,
       sourceReference:`${input.recipe.recipeKey}@${input.recipe.versionNo}/${line.lineRef}`,
-      sourceUnitPrice:costSource?unitCost:null,
+      sourceUnitPrice:costSource?.status==="resolved"?unitCost:null,
       sourceDetails:JSON.stringify({
         recipe:{id:input.recipe.recipeId,version_id:input.recipe.id,key:input.recipe.recipeKey,version:input.recipe.versionNo},
         takeoff_id:input.takeoff.id,
