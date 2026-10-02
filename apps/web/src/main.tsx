@@ -1572,7 +1572,7 @@ function App() {
   };
   const clearAllocation=(sourceLineId:number)=>{setAllocations(current=>current.filter(item=>item.sourceLineId!==sourceLineId));setStatus("Kostenverdeling opgeheven — nog opslaan");};
 
-  const addLine = (lineType: LineType) => {
+  const addLine = (lineType: LineType, initialScope?:{scopeType:ScopeFilterType;scopeRef:string}) => {
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
     const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
     const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
@@ -1589,7 +1589,8 @@ function App() {
       labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
       labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
       priceSourceType: "manual", officeSourceId: null, sourceReference: null,
-      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null
+      sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null, sourceDocumentId: null, sourceDetails: null, sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null, sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null,
+      manualScopes: initialScope&&initialScope.scopeRef.trim() ? [{scopeType:initialScope.scopeType,scopeRef:initialScope.scopeRef.trim()}] : []
     }]);
     setStatus("Concept — niet opgeslagen");
   };
@@ -2289,7 +2290,12 @@ function App() {
           <div className="commandDivider" />
           <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
           <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
-          <button className="command" type="button" onClick={() => addLine("item")} title="Nieuwe calculatieregel"><Icon name="line" /><span>Regel</span></button>
+          <button className="command" type="button"
+            disabled={activeSubcalculationId!=null&&!activeScopeRef}
+            onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
+            title={activeScopeRef?"Nieuwe regel in "+scopeLabels[activeScopeType]+" "+activeScopeRef:activeSubcalculationId!=null?"Kies eerst een scope om een regel in deze deelcalculatie toe te voegen":"Nieuwe calculatieregel"}>
+            <Icon name="line" /><span>Regel</span>
+          </button>
           <div className="commandDivider" />
           <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
@@ -2709,11 +2715,11 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
-          {activeSubcalculationId==null&&!activeScopeRef
-            ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
-            : <div className="subcalcFilteredNotice">{activeSubcalculationId!=null
-              ? "Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan."
-              : "Scopefilter is actief. Nieuwe regels maak je in de volledige weergave zodat ze niet zonder context ontstaan."}</div>}
+          {activeScopeRef
+            ? <button className="newrow" onClick={() => addLine("item",{scopeType:activeScopeType,scopeRef:activeScopeRef})}>+ Nieuwe regel in {scopeLabels[activeScopeType]} {activeScopeRef}</button>
+            : activeSubcalculationId==null
+              ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+              : <div className="subcalcFilteredNotice">Je werkt nu in een deelcalculatie zonder actieve scope. Kies eerst een gebouw/gevel/woning/woningtype/bouwdeel/positie om een nieuwe regel veilig te koppelen.</div>}
         </div>
       </section>
     </main>
