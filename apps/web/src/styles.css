@@ -270,3 +270,19 @@
 
 .documentTriageHeadActions{display:flex;gap:10px;align-items:center}
 .documentTriageHeadActions button{padding:7px 10px}
+
+
+.structureProposalPanel{margin:14px 0 18px;border:1px solid #dfe4e8;border-radius:10px;background:#fff;overflow:hidden}
+.structureProposalHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid #e8ecef;background:#fafbfc}
+.structureProposalHead>div{display:grid;gap:4px}
+.structureProposalHead span{color:#66707a;font-size:.9rem}
+.structureProposalHead button{padding:8px 12px}
+.structureProposalGroups{display:grid}
+.structureProposalGroup{display:grid;grid-template-columns:minmax(180px,1fr) 2fr;gap:14px;padding:12px 16px;border-bottom:1px solid #eef1f3}
+.structureProposalGroup:last-child{border-bottom:0}
+.structureProposalGroup>div:first-child{display:grid;gap:3px}
+.structureProposalGroup>div:first-child span{color:#6b7280;font-size:.82rem}
+.structureProposalGroup>div:last-child{display:flex;gap:6px;flex-wrap:wrap}
+.structureProposalGroup.is-review{background:#fafafa}
+.structurePosition{padding:3px 7px;border:1px solid #d5dbe0;border-radius:999px;font-size:.75rem;background:#f8fafb}
+@media(max-width:760px){.structureProposalGroup{grid-template-columns:1fr}.structureProposalHead{align-items:stretch;flex-direction:column}}

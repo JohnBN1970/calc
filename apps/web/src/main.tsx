@@ -156,6 +156,19 @@ type WorkbenchAggregate = {
     overridden:boolean;
     overrideReason:string|null;
   }>;
+  structureProposal:{
+    contract:"brebo-calc-structure-proposal-v1";
+    chapter:{key:string;label:string};
+    groups:Array<{
+      key:string;
+      label:string;
+      recipeRef:string|null;
+      positionRefs:string[];
+      reviewRequired:boolean;
+    }>;
+    unresolvedPositionRefs:string[];
+    ready:boolean;
+  };
   recipeProposals: Array<{
     positionRef: string;
     recipeRef: string;
@@ -597,6 +610,7 @@ function App() {
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
+  const [structureProposalStatus,setStructureProposalStatus]=useState("");
   const [documentTriageStatus,setDocumentTriageStatus]=useState("");
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
@@ -1113,6 +1127,54 @@ function App() {
     void boot();
   }, []);
 
+  const applyStructureProposal=()=>{
+    if(!aggregate?.structureProposal.ready){
+      setStructureProposalStatus("Er is nog geen bruikbaar structuurvoorstel.");
+      return;
+    }
+    let id=nextId;
+    const created:Line[]=[];
+    const chapterLabel=aggregate.structureProposal.chapter.label;
+    const existingChapter=lines.find(line=>line.lineType==="chapter"&&line.description.trim().toLocaleLowerCase("nl-NL")===chapterLabel.trim().toLocaleLowerCase("nl-NL"))??null;
+    let chapterId=existingChapter?.id??null;
+    if(chapterId==null){
+      chapterId=id--;
+      created.push({
+        id:chapterId,parentId:null,structureKey:"auto-concept",lineType:"chapter",code:"",description:chapterLabel,
+        unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+        labour:0,material:0,equipment:0,subcontracting:0,other:0,
+        priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+        sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+        sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+      });
+    }
+    for(const group of aggregate.structureProposal.groups){
+      const key=("auto-"+group.key).slice(0,36);
+      const exists=lines.some(line=>line.lineType==="paragraph"&&line.parentId===chapterId&&(
+        line.structureKey===key||
+        line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
+      ))||created.some(line=>line.lineType==="paragraph"&&line.parentId===chapterId&&line.description===group.label);
+      if(exists)continue;
+      created.push({
+        id:id--,parentId:chapterId,structureKey:key,lineType:"paragraph",code:"",description:group.label,
+        unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+        labour:0,material:0,equipment:0,subcontracting:0,other:0,
+        priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+        sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+        sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+      });
+    }
+    if(!created.length){
+      setStructureProposalStatus("De voorgestelde structuur staat al in de calculatie.");
+      return;
+    }
+    setNextId(id);
+    setLines(current=>[...current,...created]);
+    setStatus("Concept — niet opgeslagen");
+    const firstParagraph=created.find(line=>line.lineType==="paragraph"&&line.structureKey);
+    if(firstParagraph?.structureKey)setRecipeParagraphKey(firstParagraph.structureKey);
+    setStructureProposalStatus(created.length+" structuurregel(s) toegevoegd aan het concept. Controleer en sla daarna de calculatie op.");
+  };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
@@ -1147,9 +1209,9 @@ function App() {
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
-      const paragraphNode = aggregate.structure.find(node => node.node_key === recipeParagraphKey);
-      if (!paragraphNode || paragraphNode.node_type !== "paragraph") throw new Error("De gekozen Calc-paragraaf bestaat niet meer.");
-      const paragraphLine = lines.find(line => line.lineType === "paragraph" && line.structureKey === paragraphNode.node_key);
+      const paragraphLine = recipeParagraphKey.startsWith("local:")
+        ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(recipeParagraphKey.slice(6)))
+        : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===recipeParagraphKey);
       if (!paragraphLine) throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
 
       let id = nextId;
@@ -1924,7 +1986,10 @@ function App() {
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
                 <option value="">Kies paragraaf…</option>
-                {aggregate.structure.filter(node => node.node_type === "paragraph").map(node => <option key={node.node_key} value={node.node_key}>{node.code ? `${node.code} · ` : ""}{node.label}</option>)}
+                {lines.filter(line=>line.lineType==="paragraph").map(line => {
+                  const key=line.structureKey??("local:"+line.id);
+                  return <option key={key} value={key}>{line.code ? line.code+" · " : ""}{line.description}</option>;
+                })}
               </select></label>
               <span className="recipeActionStatus" role="status" aria-live="polite">{recipeActionStatus || (aggregate.editable ? "Office-brondata beschikbaar voor Calc." : "Office-brondata is alleen-lezen; Calc kan er wel mee rekenen.")}</span>
             </div>
@@ -1958,6 +2023,21 @@ function App() {
               </div>
             </div>
             {documentTriageStatus&&<div className="managementStatus">{documentTriageStatus}</div>}
+            <div className="structureProposalPanel">
+              <div className="structureProposalHead">
+                <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
+                <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
+              </div>
+              {aggregate.structureProposal.groups.length===0?<p className="muted">Nog geen structuurvoorstel mogelijk.</p>:
+                <div className="structureProposalGroups">{aggregate.structureProposal.groups.map(group=>
+                  <div className={"structureProposalGroup"+(group.recipeRef===null?" is-review":"")} key={group.key}>
+                    <div><strong>{group.label}</strong><span>{group.recipeRef?("Recept #"+group.recipeRef):"Handmatige keuze nodig"}</span></div>
+                    <div>{group.positionRefs.map(ref=><span className="structurePosition" key={ref}>{ref}</span>)}</div>
+                  </div>
+                )}</div>
+              }
+              {structureProposalStatus&&<div className="managementStatus">{structureProposalStatus}</div>}
+            </div>
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
               <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map((position,index) => {

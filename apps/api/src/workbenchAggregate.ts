@@ -3,6 +3,7 @@ import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import type { CalcDocumentTriageItem } from "./documentTriage.js";
+import { buildCalcStructureProposal } from "./structureProposal.js";
 
 export type CalcWorkbenchStructureNode={
   node_key:string;
@@ -46,6 +47,7 @@ export function buildWorkbenchAggregate(input:{
   const documentTriage=input.documentTriage;
   const concept=buildConceptFromOfficeContext(input.context,documentTriage);
   const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
+  const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
   return {
     contract:"brebo-calc-workbench-aggregate-v1",
     officeVersion:String(input.workspace.version.version),
@@ -54,6 +56,7 @@ export function buildWorkbenchAggregate(input:{
     documentTriage,
     takeoffs: input.context.context.takeoff,
     recipeProposals:proposals,
+    structureProposal,
     structure:input.structure,
     readiness:{
       source:"calc",
