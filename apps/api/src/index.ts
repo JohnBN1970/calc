@@ -44,6 +44,7 @@ type LineInput = {
   equipmentUnitCost?: number;
   subcontractingUnitCost?: number;
   otherUnitCost?: number;
+  vatRegimeId?: number | null;
   priceSourceType?: PriceSourceType;
   officeSourceId?: string | null;
   sourceReference?: string | null;
@@ -953,7 +954,7 @@ app.get("/api/workbench/current", async (req, res) => {
   const [lines] = await db.execute<RowDataPacket[]>(
     `SELECT id, parent_id, sort_order, line_type, code, description, unit, quantity,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
-            subcontracting_unit_cost, other_unit_cost, price_source_type,
+            subcontracting_unit_cost, other_unit_cost, vat_regime_id, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
             source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary
        FROM calculation_lines
@@ -1080,14 +1081,15 @@ app.put("/api/workbench/current", async (req, res) => {
         `INSERT INTO calculation_lines
           (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
            labour_norm, labour_total_hours, labour_hours_input_mode,
-           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost,
+           labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost, vat_regime_id,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
           line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode, labour, material, equipment, subcontracting, other,
+          line.vatRegimeId == null ? null : Number(line.vatRegimeId),
           priceSourceType,
           line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
           line.sourceReference ? String(line.sourceReference).slice(0, 255) : null,
