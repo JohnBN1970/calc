@@ -1,4 +1,5 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
+import { triageCalculationDocuments, type CalcDocumentTriageItem } from "./documentTriage.js";
 
 export type CalculationConceptPosition = {
   positionRef: string;
@@ -28,11 +29,17 @@ function factStatus(statuses: string[]): "reviewed" | "proposed" {
     : "proposed";
 }
 
-export function buildConceptFromOfficeContext(snapshot: OfficeCalculationContextSnapshot): CalculationConcept {
+export function buildConceptFromOfficeContext(
+  snapshot: OfficeCalculationContextSnapshot,
+  documentTriage: CalcDocumentTriageItem[] = triageCalculationDocuments(snapshot)
+): CalculationConcept {
   const context = snapshot.context;
+  const acceptedDocumentIds=new Set(documentTriage.filter(item=>item.status!=="review").map(item=>item.documentId));
+  const primaryDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary").map(item=>item.documentId));
   const factsByPosition = new Map<string, typeof context.facts>();
 
   for (const fact of context.facts) {
+    if(!acceptedDocumentIds.has(Number(fact.document_id))) continue;
     const ref = fact.position_ref?.trim();
     if (!ref) continue;
     const rows = factsByPosition.get(ref) ?? [];
@@ -66,6 +73,15 @@ export function buildConceptFromOfficeContext(snapshot: OfficeCalculationContext
 
     const row = completeTakeoffs[0];
     const facts = factsByPosition.get(positionRef) ?? [];
+    const primaryGeometryTypes=new Set(
+      facts
+        .filter(f=>primaryDocumentIds.has(Number(f.document_id))&&["quantity","width_mm","height_mm"].includes(f.fact_type))
+        .map(f=>f.fact_type)
+    );
+    if(!["quantity","width_mm","height_mm"].every(type=>primaryGeometryTypes.has(type))){
+      unresolved.push(`Positie ${positionRef} mist complete geometrische bronfeiten uit een door Calc primair geselecteerd document.`);
+      continue;
+    }
     const descriptions = facts.filter(f => f.fact_type === "description" && f.value_text?.trim());
     const prices = facts.filter(f => f.fact_type === "supplier_unit_price" && f.value_number !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
@@ -99,7 +115,12 @@ export function buildConceptFromOfficeContext(snapshot: OfficeCalculationContext
     });
   }
 
-  if (!positions.length) unresolved.push("Geen complete calculatieposities uit de Office-context opgebouwd.");
+  const ignoredRelevantFacts=context.facts.filter(fact=>
+    !acceptedDocumentIds.has(Number(fact.document_id)) &&
+    ["quantity","width_mm","height_mm","description","supplier_unit_price"].includes(fact.fact_type)
+  ).length;
+  if(ignoredRelevantFacts>0) unresolved.push(`${ignoredRelevantFacts} calculatiefeit(en) uit review-documenten zijn bewust niet meegerekend.`);
+  if (!positions.length) unresolved.push("Geen complete calculatieposities uit door Calc geaccepteerde bronnen opgebouwd.");
 
   return {
     contract: "brebo-calc-concept-v1",
