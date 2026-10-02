@@ -15,6 +15,16 @@ export function generatedScopeTags(input:{priceSourceType?:string|null;sourceDet
     const recipe=String(details?.recipe?.key??"").trim();
     if(position)tags.push({scopeType:"position",scopeRef:position,source:"generated"});
     if(recipe)tags.push({scopeType:"recipe",scopeRef:recipe,source:"generated"});
+    const allowed=new Set<LineScopeTag["scopeType"]>(["building","facade","dwelling","dwelling_type","building_part"]);
+    if(Array.isArray(details?.context_scopes)){
+      for(const item of details.context_scopes){
+        const scopeType=String(item?.type??"") as LineScopeTag["scopeType"];
+        const scopeRef=String(item?.ref??"").trim();
+        if(allowed.has(scopeType)&&scopeRef){
+          tags.push({scopeType,scopeRef,source:"office_context"});
+        }
+      }
+    }
     return tags;
   }catch{return [];}
 }
