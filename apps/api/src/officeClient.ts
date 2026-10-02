@@ -1,5 +1,5 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
 import { config } from "./config.js";
+import { signedOfficeHeaders } from "./officeTransport.js";
 
 export type OfficeProjectContext = {
   contract: "brebo-office-calc-context-v1";
@@ -17,19 +17,6 @@ export type OfficeProjectContext = {
   };
 };
 
-function signedHeaders(method: string, path: string, body: string | Buffer = ""): Record<string, string> {
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const requestId = randomUUID();
-  const bodyHash = createHash("sha256").update(body).digest("hex");
-  const canonical = [method.toUpperCase(), path, bodyHash, timestamp, requestId].join("\n");
-  const signature = createHmac("sha256", config.office.sharedSecret).update(canonical).digest("hex");
-  return {
-    Accept: "application/json",
-    "X-BREBO-Timestamp": timestamp,
-    "X-BREBO-Request-Id": requestId,
-    "X-BREBO-Signature": `v1=${signature}`
-  };
-}
 
 export async function fetchOfficeProjectContext(projectId: number): Promise<OfficeProjectContext> {
   if (!Number.isInteger(projectId) || projectId <= 0) {
@@ -38,7 +25,7 @@ export async function fetchOfficeProjectContext(projectId: number): Promise<Offi
   const path = `/api/workbench/v1/projects/${projectId}/calculation-context`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(5000)
   });
@@ -92,7 +79,7 @@ export async function searchOfficeArticles(params: {
   const path = `/api/workbench/v1/articles?${search.toString()}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(5000)
   });
@@ -124,7 +111,7 @@ export async function uploadSupplierQuoteToOffice(input: {
   };
 }> {
   const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes`;
-  const headers = signedHeaders("POST", path, input.bytes);
+  const headers = signedOfficeHeaders("POST", path, input.bytes);
   headers["Content-Type"] = input.mimeType;
   headers["X-BREBO-Calculation-Id"] = String(input.calculationId);
   headers["X-BREBO-Line-Ref"] = input.lineRef;
@@ -155,7 +142,7 @@ export async function fetchSupplierQuotePositionVisual(input: {
   const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/visual/${input.page}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(15000)
   });
@@ -171,7 +158,7 @@ export async function fetchSupplierQuotePreview(input: {
   const path = `/api/workbench/v2/calculations/${input.calculationId}/supplier-quotes/${input.fileId}/preview`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(10000)
   });
@@ -210,7 +197,7 @@ export async function proposeCalculationDocumentSet(input: {
 
   const path = `/api/workbench/v2/calculations/${input.calculationId}/document-set/propose`;
   const body = JSON.stringify({ project_id: input.projectId });
-  const headers = signedHeaders("POST", path, body);
+  const headers = signedOfficeHeaders("POST", path, body);
   headers["Content-Type"] = "application/json";
 
   const response = await fetch(config.office.baseUrl + path, {
@@ -305,7 +292,7 @@ export async function fetchCalculationContextSnapshot(calculationId: number): Pr
   const path = `/api/workbench/v2/calculations/${calculationId}/calculation-context`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(10000)
   });
@@ -364,7 +351,7 @@ export async function fetchOfficeWorkspaceState(calculationId:number): Promise<O
   const path = `/api/workbench/v2/calculations/${calculationId}`;
   const response = await fetch(config.office.baseUrl + path, {
     method: "GET",
-    headers: signedHeaders("GET", path),
+    headers: signedOfficeHeaders("GET", path),
     redirect: "error",
     signal: AbortSignal.timeout(10000)
   });
@@ -375,46 +362,6 @@ export async function fetchOfficeWorkspaceState(calculationId:number): Promise<O
   }
   return payload;
 }
-
-export type OfficeCommercialSummary={
-  purchase:number;
-  sales:number;
-  margin:number;
-  margin_pct:number;
-  vat:number;
-  vat_rate:number|null;
-};
-
-export async function publishCalcResult(input:{
-  calculationId:number;
-  officeVersion:string;
-  calcVersion:string;
-  actorId:number;
-  commercialSummary:OfficeCommercialSummary;
-}): Promise<{ok:true;snapshot_id:number;content_hash:string;created:boolean}> {
-  const path = `/api/workbench/v2/calculations/${input.calculationId}/calc-results`;
-  const body = JSON.stringify({
-    office_version: input.officeVersion,
-    calc_version: input.calcVersion,
-    actor_id: input.actorId,
-    commercial_summary: input.commercialSummary
-  });
-  const headers = signedHeaders("POST", path, body);
-  headers["Content-Type"] = "application/json";
-  const response = await fetch(config.office.baseUrl + path, {
-    method: "POST",
-    headers,
-    body,
-    redirect: "error",
-    signal: AbortSignal.timeout(10000)
-  });
-  const text = await response.text();
-  let payload:any={};
-  try { payload=text?JSON.parse(text):{}; } catch {}
-  if(!response.ok) throw new Error(payload?.message || `Office Calc-result publication failed with status ${response.status}.`);
-  return payload;
-}
-
 
 export type OfficeCalcSourceResolution = {
   contract: "brebo-office-calc-source-resolution-v1";
@@ -453,7 +400,7 @@ export async function resolveOfficeCalcSources(input:{
     project_id:input.projectId,
     sources:input.sources
   });
-  const headers=signedHeaders("POST",path,body);
+  const headers=signedOfficeHeaders("POST",path,body);
   headers["Content-Type"]="application/json";
   const response=await fetch(config.office.baseUrl+path,{
     method:"POST",
