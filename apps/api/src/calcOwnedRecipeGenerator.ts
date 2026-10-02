@@ -55,6 +55,7 @@ export function generateCalcOwnedRecipeLines(input:{
   };
   resolution:OfficeCalcSourceResolution;
   evidence?:{documentIds:number[];pages:number[]};
+  scopes?:Array<{type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";ref:string}>;
 }):CalcOwnedGeneratedLine[] {
   const widthMm=Number(input.takeoff.width_mm??0);
   const heightMm=Number(input.takeoff.height_mm??0);
@@ -143,6 +144,7 @@ export function generateCalcOwnedRecipeLines(input:{
           document_ids:input.evidence?.documentIds??[],
           pages:input.evidence?.pages??[]
         },
+        context_scopes:input.scopes??[],
         quantity_rule:{
           basis:line.takeoffBasis,
           factor:line.factor,
