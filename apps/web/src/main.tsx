@@ -2240,14 +2240,16 @@ function App() {
           }))
         })
       });
-      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string}};
-      if (!response.ok) throw new Error("Opslaan mislukt");
+      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string};error?:string};
+      if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
       if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
       else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
       await loadWorkbench();
       await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
-    } catch {
-      setStatus("Opslaan mislukt");
+    } catch(error) {
+      const message=error instanceof Error?error.message:"Opslaan mislukt";
+      setStatus(message);
+      if(message.includes("Staartkosten kunnen niet veilig worden berekend"))setFinancialIntegrityStatus(message);
     }
   };
 
