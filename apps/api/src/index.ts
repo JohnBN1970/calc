@@ -387,7 +387,7 @@ app.post("/api/workbench/current/document-candidates/refresh", async (req, res) 
   if (!session) return;
 
   try {
-    const proposal = await proposeCalculationDocumentSet({
+    const proposal = await refreshCalculationDocumentCandidates({
       calculationId: session.officeCalculationId,
       projectId: session.officeProjectId
     });
