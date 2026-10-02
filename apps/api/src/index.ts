@@ -24,6 +24,8 @@ import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
+import { triageCalculationDocuments } from "./documentTriage.js";
+import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -417,6 +419,52 @@ app.get("/api/workbench/current/calculation-context", async (req, res) => {
   }
 });
 
+app.put("/api/workbench/current/document-triage/:documentId", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const documentId=Number(req.params.documentId);
+  const decision=String(req.body?.decision??"") as DocumentTriageDecision;
+  const reason=req.body?.reason==null||String(req.body.reason).trim()===""?null:String(req.body.reason).trim().slice(0,500);
+  if(!Number.isInteger(documentId)||documentId<=0||!["primary","supporting","review","excluded"].includes(decision)){
+    res.status(400).json({error:"Ongeldig documenttriage-besluit."});
+    return;
+  }
+  try{
+    const snapshot=await fetchCalculationContextSnapshot(session.officeCalculationId);
+    if(!snapshot.context.documents.some(document=>Number(document.document_id)===documentId)){
+      res.status(404).json({error:"Document staat niet in de actuele calculatiecontext."});
+      return;
+    }
+    await setDocumentTriageOverride({
+      calculationId:session.calculationId,
+      officeDocumentId:documentId,
+      decision,
+      reason,
+      decidedBy:session.actorId
+    });
+    const overrides=await listDocumentTriageOverrides(session.calculationId);
+    const item=triageCalculationDocuments(snapshot,overrides).find(row=>row.documentId===documentId);
+    res.json({item});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Documenttriage kon niet worden opgeslagen."});
+  }
+});
+
+app.delete("/api/workbench/current/document-triage/:documentId", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const documentId=Number(req.params.documentId);
+  if(!Number.isInteger(documentId)||documentId<=0){res.status(400).json({error:"Ongeldig document."});return;}
+  try{
+    await clearDocumentTriageOverride(session.calculationId,documentId);
+    const snapshot=await fetchCalculationContextSnapshot(session.officeCalculationId);
+    const item=triageCalculationDocuments(snapshot).find(row=>row.documentId===documentId);
+    res.json({item});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Documenttriage kon niet worden hersteld."});
+  }
+});
+
 app.get("/api/workbench/current/concept", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
@@ -427,7 +475,8 @@ app.get("/api/workbench/current/concept", async (req, res) => {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
-    const concept = buildConceptFromOfficeContext(snapshot);
+    const overrides=await listDocumentTriageOverrides(session.calculationId);
+    const concept = buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
     res.setHeader("Cache-Control", "no-store, private");
     res.json(concept);
   } catch (error) {
@@ -463,7 +512,8 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
-    const concept = buildConceptFromOfficeContext(snapshot);
+    const overrides=await listDocumentTriageOverrides(session.calculationId);
+    const concept = buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
     const proposals = proposeRecipesForConcept(concept, proposalRulesFromCalcRecipes(recipes));
     res.setHeader("Cache-Control", "no-store, private");
     res.json({
@@ -533,7 +583,8 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       return;
     }
 
-    const concept = buildConceptFromOfficeContext(snapshot);
+    const overrides=await listDocumentTriageOverrides(session.calculationId);
+    const concept = buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
     const proposals = proposeRecipesForConcept(concept, proposalRulesFromCalcRecipes(recipes));
     if (!proposals.some(item => item.positionRef === positionRef && Number(item.recipeRef) === recipeVersionId)) {
       res.status(409).json({ error: "Dit Calc-recept is niet toepasbaar op deze positie." });
@@ -913,14 +964,15 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
   if (!session) return;
 
   try {
-    const [context, recipes, workspace, versions] = await Promise.all([
+    const [context, recipes, workspace, versions, triageOverrides] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
       listCalcRecipes(),
       fetchOfficeWorkspaceState(session.officeCalculationId),
       db.execute<RowDataPacket[]>(
         "SELECT id FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
         [session.calculationId]
-      )
+      ),
+      listDocumentTriageOverrides(session.calculationId)
     ]);
     if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
@@ -942,6 +994,7 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
       context,
       recipes,
       workspace,
+      documentTriage:triageCalculationDocuments(context,triageOverrides),
       structure: calcWorkbenchStructureFromLines(structureLines.map(row=>({
         id:Number(row.id),
         parent_id:row.parent_id==null?null:Number(row.parent_id),
