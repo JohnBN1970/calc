@@ -240,7 +240,7 @@ type TailCostComponent={
   id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
   componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
   value:number;baseScope:"direct_cost"|"running_total"|"selected_lines"|"subcalculation"|"quantity"|"owner_direct_cost"|"owner_running_total"|"consolidated_direct_cost"|"consolidated_running_total";
-  baseRef:string|null;quantity:number|null;sortOrder:number;active:boolean;
+  baseRef:string|null;quantity:number|null;vatRegimeId:number|null;sortOrder:number;active:boolean;
 };
 type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;ownerRunningTotal:number;consolidatedRunningTotal:number};
 
@@ -589,7 +589,7 @@ function App() {
   const [mainDirectCost,setMainDirectCost]=useState(0);
   const [tailCostDraft,setTailCostDraft]=useState({
     ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,
-    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null
+    baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null,vatRegimeId:null as number|null
   });
   const [tailCostStatus,setTailCostStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
@@ -811,7 +811,7 @@ function App() {
       });
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"Staartkostencomponent kon niet worden toegevoegd."));
-      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null});
+      setTailCostDraft({ownerType:"calculation",ownerRef:"",componentKey:"",description:"",basis:"percentage",value:0,baseScope:"owner_direct_cost",baseRef:"",quantity:null,vatRegimeId:null});
       await loadTailCosts();
       setTailCostStatus("Staartkostencomponent toegevoegd.");
     }catch(error){setTailCostStatus(error instanceof Error?error.message:"Staartkostencomponent kon niet worden toegevoegd.");}
@@ -1994,6 +1994,7 @@ function App() {
                 <option value="quantity">Hoeveelheid</option>
               </select></label>
               {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              <label><span>BTW</span><select value={tailCostDraft.vatRegimeId??""} onChange={e=>setTailCostDraft(v=>({...v,vatRegimeId:e.target.value===""?null:Number(e.target.value)}))}><option value="">—</option>{vatRegimes.filter(regime=>regime.active).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select></label>
               <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
             </section>
             <section className="managementCard managementWide"><h3>Opbouw verkoopprijs</h3>
