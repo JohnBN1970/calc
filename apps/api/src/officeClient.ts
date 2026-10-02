@@ -325,18 +325,15 @@ export async function fetchCalculationContextSnapshot(calculationId: number): Pr
 
 export type OfficeWorkspaceState = {
   contract: "brebo-calculation-workspace-v2";
-  calculation: { calculation_id: number; project_id?: number | null; [key:string]: unknown };
+  calculation: {
+    calculation_id: number;
+    project_id?: number | null;
+    [key:string]: unknown;
+  };
   version: {
     version: string;
     status: string;
     locked_at: string | null;
-    pricing_mode?: string;
-    commercial_method?: string;
-    general_cost_pct?: number | string;
-    risk_pct?: number | string;
-    profit_pct?: number | string;
-    single_margin_pct?: number | string;
-    commercial_adjustment?: number | string;
     [key:string]: unknown;
   };
   editable: boolean;
@@ -358,70 +355,8 @@ export type OfficeWorkspaceState = {
       vat_rate:number|null;
     };
   };
-  result?: {
-    calculation_id?: number;
-    version?: string;
-    content_hash?: string;
-    status?: string;
-    parameters?: {
-      pricing_mode?: string;
-      commercial_method?: string;
-      general_cost_pct?: number;
-      risk_pct?: number;
-      profit_pct?: number;
-      single_margin_pct?: number;
-      commercial_adjustment?: number;
-      price_date?: string | null;
-      price_level?: string | null;
-    };
-    priced_direct_cost?: number;
-    options_direct_cost?: number;
-    options_sales_price?: number;
-    commercial_factor?: number;
-    commercial_result?: Record<string, unknown>;
-    components?: Record<string, unknown>;
-    source?: string;
-  };
-  recipes?: Array<{
-    id: number;
-    recipe_id: number | null;
-    recipe_version_id: number | null;
-    name: string;
-    quantity: number;
-    unit: string | null;
-    paragraph_key: string;
-    snapshot_hash: string;
-    parameters?: Array<{
-      parameter_key: string;
-      value: string | null;
-      calculated_value: string | null;
-    }>;
-    lines?: Array<{
-      id: number;
-      line_key: string;
-      line_type: string;
-      description: string;
-      unit: string | null;
-      calculated_quantity: number | string;
-      manual_quantity: number | string | null;
-      waste_pct: number | string;
-      material_ref: string | null;
-      price_source_ref: string | null;
-      unit_cost: number | string | null;
-      sort_order: number;
-      is_custom: number;
-      cost_components?: Array<{
-        id: number;
-        component_key: string;
-        description: string;
-        basis: string;
-        value: number | string;
-        quantity: number | string | null;
-        source_ref: string | null;
-        sort_order: number;
-      }>;
-    }>;
-  }>;
+  structure?: unknown[];
+  readiness?: unknown;
   [key:string]: unknown;
 };
 
