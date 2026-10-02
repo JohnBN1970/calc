@@ -758,6 +758,11 @@ function App() {
     if(activeScopeRef&&!availableScopeValues.includes(activeScopeRef))setActiveScopeRef("");
   },[activeScopeRef,availableScopeValues]);
 
+  const activeScopeCoverage=useMemo(()=>{
+    if(activeScopeType==="position")return null;
+    return aggregate?.scopeCoverage.find(item=>item.scopeType===activeScopeType)??null;
+  },[aggregate,activeScopeType]);
+
   const scopeOverview=useMemo(()=>availableScopeValues.map(scopeRef=>{
     const scopedCostLines=lines.filter(line=>isCostLine(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
     const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line),0);
@@ -1161,7 +1166,10 @@ function App() {
       setManagementStatus("Alle gevonden "+label.toLowerCase()+"-waarden hebben al een deelcalculatie.");
       return;
     }
-    setManagementStatus(pending.length+" deelcalculatie(s) voor "+label.toLowerCase()+" aanmaken…");
+    const coverageWarning=activeScopeCoverage&&activeScopeCoverage.covered<activeScopeCoverage.total
+      ? " · "+activeScopeCoverage.missingPositionRefs.length+" positie(s) zonder "+label.toLowerCase()+": "+activeScopeCoverage.missingPositionRefs.join(", ")
+      : "";
+    setManagementStatus(pending.length+" deelcalculatie(s) voor "+label.toLowerCase()+" aanmaken…"+coverageWarning);
     const prefix={
       building:"GEBOUW",
       facade:"GEVEL",
@@ -1189,6 +1197,9 @@ function App() {
     const parts=[createdRefs.length+" deelcalculatie(s) aangemaakt"];
     if(existingRefs.size)parts.push(existingRefs.size+" bestonden al");
     if(failedRefs.length)parts.push("mislukt: "+failedRefs.join(", "));
+    if(activeScopeCoverage&&activeScopeCoverage.covered<activeScopeCoverage.total){
+      parts.push(activeScopeCoverage.missingPositionRefs.length+" positie(s) zonder "+label.toLowerCase()+" blijven buiten deze doorsnede: "+activeScopeCoverage.missingPositionRefs.join(", "));
+    }
     setManagementStatus(parts.join(" · "));
   };
 
@@ -2631,6 +2642,10 @@ function App() {
           {availableScopeValues.length>1&&<button type="button" className="scopeBulkButton" onClick={()=>void createAllSubcalculationsForScope()}>
             Maak alle {scopeLabels[activeScopeType].toLowerCase()}s als deelcalculaties
           </button>}
+          {activeScopeCoverage&&activeScopeCoverage.covered<activeScopeCoverage.total&&<div className="scopeCoverageWarning" role="status">
+            <strong>Context niet volledig</strong>
+            <span>{activeScopeCoverage.missingPositionRefs.length} positie(s) hebben geen {scopeLabels[activeScopeType].toLowerCase()}: {activeScopeCoverage.missingPositionRefs.join(", ")}. Deze vallen niet in de deelcalculaties van deze doorsnede.</span>
+          </div>}
           {activeScopeRef&&<div className="positionFilterActions">
             <span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>
             <button type="button" onClick={()=>void createSubcalculationForScope(activeScopeType,activeScopeRef)}>

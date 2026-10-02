@@ -324,3 +324,7 @@
 .scopeCoverageBar span{display:block;height:100%;background:#111}
 .scopeCoverageItem.is-complete small{color:#3f4a44}
 @media(max-width:800px){.scopeCoverageItem{grid-template-columns:1fr 64px}.scopeCoverageBar,.scopeCoverageItem small{grid-column:1/-1}}
+
+.scopeCoverageWarning{display:grid;gap:3px;max-width:620px;padding:8px 10px;border:1px solid #d9dee3;border-radius:7px;background:#fafbfc}
+.scopeCoverageWarning strong{font-size:.82rem}
+.scopeCoverageWarning span{color:#66707a;font-size:.78rem}
