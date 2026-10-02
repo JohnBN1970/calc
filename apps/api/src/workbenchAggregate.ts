@@ -2,7 +2,7 @@ import type { OfficeCalculationContextSnapshot, OfficeWorkspaceState } from "./o
 import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
-import { triageCalculationDocuments } from "./documentTriage.js";
+import type { CalcDocumentTriageItem } from "./documentTriage.js";
 
 export type CalcWorkbenchStructureNode={
   node_key:string;
@@ -41,8 +41,9 @@ export function buildWorkbenchAggregate(input:{
   recipes: CalcRecipeVersion[];
   workspace: OfficeWorkspaceState;
   structure: CalcWorkbenchStructureNode[];
+  documentTriage: CalcDocumentTriageItem[];
 }) {
-  const documentTriage=triageCalculationDocuments(input.context);
+  const documentTriage=input.documentTriage;
   const concept=buildConceptFromOfficeContext(input.context,documentTriage);
   const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   return {
