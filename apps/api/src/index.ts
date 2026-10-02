@@ -18,7 +18,8 @@ import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
+import { publishCalcResult } from "./officeResultClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
