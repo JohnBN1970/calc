@@ -11,7 +11,9 @@ test("gegenereerde scope-tags bevatten positie recept en Office-context",()=>{
       context_scopes:[
         {type:"building",ref:"Gebouw A"},
         {type:"facade",ref:"Noord"},
+        {type:"dwelling",ref:"A-01"},
         {type:"dwelling_type",ref:"Type A"},
+        {type:"building_part",ref:"Voorgevel"},
         {type:"unknown",ref:"NEE"}
       ]
     })
@@ -21,6 +23,13 @@ test("gegenereerde scope-tags bevatten positie recept en Office-context",()=>{
     {scopeType:"recipe",scopeRef:"kozijn",source:"generated"},
     {scopeType:"building",scopeRef:"Gebouw A",source:"office_context"},
     {scopeType:"facade",scopeRef:"Noord",source:"office_context"},
-    {scopeType:"dwelling_type",scopeRef:"Type A",source:"office_context"}
+    {scopeType:"dwelling",scopeRef:"A-01",source:"office_context"},
+    {scopeType:"dwelling_type",scopeRef:"Type A",source:"office_context"},
+    {scopeType:"building_part",scopeRef:"Voorgevel",source:"office_context"}
   ]);
+});
+
+
+test("handmatige regel krijgt geen automatische scopes uit sourceDetails",()=>{
+  assert.deepEqual(generatedScopeTags({priceSourceType:"manual",sourceDetails:JSON.stringify({position_ref:"K1",context_scopes:[{type:"facade",ref:"Noord"}]})}),[]);
 });
