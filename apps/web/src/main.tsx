@@ -249,6 +249,27 @@ const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
 
+function compactQuoteLineDescription(text:string,filename:string):string{
+  let value=String(text??"").replace(/\s+/g," ").trim();
+  value=value.replace(/^(?:voorstel|kandidaat\s*\d*)\s*[·:\-–—]*\s*/i,"").trim();
+
+  // Alleen een aantoonbare kolomstaart verwijderen: hoeveelheid + eenheid + eindprijs.
+  // Technische waarden zoals "100 m2 Rc 3,5" blijven daardoor onderdeel van de omschrijving.
+  value=value.replace(
+    /\s+\d+(?:[.,]\d+)?\s+(?:st|stuk|stuks|m|m1|m2|m3|meter|kg|uur|uren)\s+(?:€\s*)?-?\d[\d.]*[,.]\d{2}\s*$/i,
+    ""
+  ).trim();
+
+  // Losse valuta-eindkolom mag eveneens weg, maar alleen als die echt aan het einde staat.
+  value=value.replace(/\s+€\s*-?\d[\d.]*[,.]\d{2}\s*$/i,"").trim();
+
+  // Duidelijke boekhoudkundige staart alleen verwijderen wanneer deze als eindsegment staat.
+  value=value.replace(/\s+[|;·-]\s*(?:subtotaal|totaal|btw|kredietbeperking)\b.*$/i,"").trim();
+
+  if(!value)return filename;
+  return value.length>180?value.slice(0,177).trimEnd()+"…":value;
+}
+
 const classificationScheme: ClassificationScheme = "custom";
 const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
 function parseSourceDetails(details: string | null): Array<[string,string]> {
@@ -1646,7 +1667,7 @@ function App() {
       parentId: parent?.id ?? null,
       lineType: "item",
       code: "",
-      description: quoteProposal.target.description || candidate.text || quoteProposal.filename,
+      description: quoteProposal.target.description || compactQuoteLineDescription(candidate.text,quoteProposal.filename),
       unit: quoteProposal.target.unit || "st",
       quantity: quoteProposal.target.quantity && quoteProposal.target.quantity > 0 ? quoteProposal.target.quantity : 1,
       labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
