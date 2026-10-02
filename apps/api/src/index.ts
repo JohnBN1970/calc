@@ -596,7 +596,16 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       ? await resolveOfficeCalcSources({ projectId: session.officeProjectId, sources: sourceRequests })
       : { contract: "brebo-office-calc-source-resolution-v1" as const, project_id: session.officeProjectId, results: [] };
 
-    const generated = generateCalcOwnedRecipeLines({ recipe, takeoff, resolution });
+    const conceptPosition=concept.positions.find(item=>item.positionRef===positionRef)??null;
+    const generated = generateCalcOwnedRecipeLines({
+      recipe,
+      takeoff,
+      resolution,
+      evidence:conceptPosition?{
+        documentIds:conceptPosition.sourceDocumentIds,
+        pages:conceptPosition.sourcePages
+      }:undefined
+    });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
     res.setHeader("Cache-Control", "no-store, private");
