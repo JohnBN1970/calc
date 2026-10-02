@@ -42,9 +42,9 @@ export function buildWorkbenchAggregate(input:{
   workspace: OfficeWorkspaceState;
   structure: CalcWorkbenchStructureNode[];
 }) {
-  const concept=buildConceptFromOfficeContext(input.context);
-  const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   const documentTriage=triageCalculationDocuments(input.context);
+  const concept=buildConceptFromOfficeContext(input.context,documentTriage);
+  const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   return {
     contract:"brebo-calc-workbench-aggregate-v1",
     officeVersion:String(input.workspace.version.version),
