@@ -1032,7 +1032,9 @@ function App() {
         const nextAggregate = await aggregateResponse.json() as WorkbenchAggregate;
         setAggregate(nextAggregate);
         setRecipeParagraphKey(current => {
+          if (current==="__auto__"&&nextAggregate.structureProposal.ready) return current;
           if (current && nextAggregate.structure.some(node => node.node_key === current)) return current;
+          if(nextAggregate.structureProposal.ready) return "__auto__";
           const paragraph = nextAggregate.structure.find(node => node.node_type === "paragraph");
           return paragraph?.node_key ?? "";
         });
@@ -1171,8 +1173,7 @@ function App() {
     setNextId(id);
     setLines(current=>[...current,...created]);
     setStatus("Concept — niet opgeslagen");
-    const firstParagraph=created.find(line=>line.lineType==="paragraph"&&line.structureKey);
-    if(firstParagraph?.structureKey)setRecipeParagraphKey(firstParagraph.structureKey);
+    if(aggregate.structureProposal.groups.some(group=>group.recipeRef!==null))setRecipeParagraphKey("__auto__");
     setStructureProposalStatus(created.length+" structuurregel(s) toegevoegd aan het concept. Controleer en sla daarna de calculatie op.");
   };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
@@ -1209,9 +1210,23 @@ function App() {
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
-      const paragraphLine = recipeParagraphKey.startsWith("local:")
-        ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(recipeParagraphKey.slice(6)))
-        : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===recipeParagraphKey);
+      let paragraphLine:Line|undefined;
+      if(recipeParagraphKey==="__auto__"){
+        const group=aggregate.structureProposal.groups.find(item=>
+          item.recipeRef===proposal.recipeRef&&item.positionRefs.includes(proposal.positionRef)
+        );
+        if(!group)throw new Error("Voor deze positie is de receptplaatsing niet eenduidig. Kies handmatig een Calc-paragraaf.");
+        const key=("auto-"+group.key).slice(0,36);
+        paragraphLine=lines.find(line=>line.lineType==="paragraph"&&(
+          line.structureKey===key||
+          line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
+        ));
+        if(!paragraphLine)throw new Error("Pas eerst het Calc-structuurvoorstel toe.");
+      }else{
+        paragraphLine=recipeParagraphKey.startsWith("local:")
+          ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(recipeParagraphKey.slice(6)))
+          : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===recipeParagraphKey);
+      }
       if (!paragraphLine) throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
 
       let id = nextId;
@@ -1985,6 +2000,7 @@ function App() {
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
+                {aggregate.structureProposal.ready&&<option value="__auto__">Automatisch volgens structuurvoorstel</option>}
                 <option value="">Kies paragraaf…</option>
                 {lines.filter(line=>line.lineType==="paragraph").map(line => {
                   const key=line.structureKey??("local:"+line.id);
