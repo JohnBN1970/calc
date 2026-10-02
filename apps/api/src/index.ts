@@ -18,7 +18,7 @@ import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
-import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
+import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, refreshCalculationDocumentCandidates, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
@@ -382,12 +382,12 @@ app.get("/api/quotes/:fileId/visual/:page", async (req, res) => {
   }
 });
 
-app.post("/api/workbench/current/document-set/propose", async (req, res) => {
+app.post("/api/workbench/current/document-candidates/refresh", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
 
   try {
-    const proposal = await proposeCalculationDocumentSet({
+    const proposal = await refreshCalculationDocumentCandidates({
       calculationId: session.officeCalculationId,
       projectId: session.officeProjectId
     });
@@ -395,8 +395,8 @@ app.post("/api/workbench/current/document-set/propose", async (req, res) => {
     res.status(201).json(proposal);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
-    console.error("BREBO Calc document-set proposal failed:", detail);
-    res.status(502).json({ error: `Documentselectie kon niet door BREBO Office worden opgebouwd: ${detail}` });
+    console.error("BREBO Calc document candidate refresh failed:", detail);
+    res.status(502).json({ error: `Kandidaatbronnen konden niet uit BREBO Office worden ververst: ${detail}` });
   }
 });
 

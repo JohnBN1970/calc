@@ -173,7 +173,7 @@ export async function fetchSupplierQuotePreview(input: {
 }
 
 
-export type OfficeCalculationDocumentSetResponse = {
+export type OfficeCalculationDocumentCandidatesResponse = {
   contract: "brebo-calculation-document-set-v1";
   set: {
     id: number;
@@ -184,10 +184,10 @@ export type OfficeCalculationDocumentSetResponse = {
   };
 };
 
-export async function proposeCalculationDocumentSet(input: {
+export async function refreshCalculationDocumentCandidates(input: {
   calculationId: number;
   projectId: number;
-}): Promise<OfficeCalculationDocumentSetResponse> {
+}): Promise<OfficeCalculationDocumentCandidatesResponse> {
   if (!Number.isInteger(input.calculationId) || input.calculationId <= 0) {
     throw new Error("Invalid Office calculation id.");
   }
@@ -212,13 +212,13 @@ export async function proposeCalculationDocumentSet(input: {
     throw new Error(`Office document-set proposal failed with status ${response.status}: ${detail || response.statusText}`);
   }
 
-  const payload = await response.json() as OfficeCalculationDocumentSetResponse;
+  const payload = await response.json() as OfficeCalculationDocumentCandidatesResponse;
   if (
     payload.contract !== "brebo-calculation-document-set-v1" ||
     Number(payload.set?.calculation_id) !== input.calculationId ||
     Number(payload.set?.project_id) !== input.projectId
   ) {
-    throw new Error("Office returned an invalid calculation document-set contract.");
+    throw new Error("Office returned an invalid calculation document candidate contract.");
   }
   return payload;
 }
