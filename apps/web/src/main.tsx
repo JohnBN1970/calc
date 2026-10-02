@@ -530,7 +530,6 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
-  const [vatRate,setVatRate]=useState<number|null>(null);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
   const [status, setStatus] = useState("Laden…");
@@ -1714,7 +1713,6 @@ function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vatRate,
           allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
@@ -1973,7 +1971,7 @@ function App() {
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div>}
         {tailCostOpen && <div className="managementWorkspace">
-          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><label className="vatRateField"><span>Btw %</span><input type="number" min="0" max="100" step="0.01" value={vatRate??""} placeholder="—" onChange={e=>{setVatRate(e.target.value===""?null:Number(e.target.value));setStatus("Concept — niet opgeslagen");}} /></label><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
+          <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
               <label><span>Hoort bij</span><select value={tailCostDraft.ownerType+":"+tailCostDraft.ownerRef} onChange={e=>{
