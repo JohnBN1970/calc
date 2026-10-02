@@ -15,13 +15,13 @@ import { evaluateOfficeAdditionalCosts } from "./additionalCostComponents.js";
 import { buildOfficeCostRollup } from "./officeCostRollup.js";
 import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
-import { verifyOfficeCalcResultSync } from "./calcResultSync.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, storeLineScopeTags } from "./lineScopeRepository.js";
 import { createTailCostComponent, listTailCostComponents } from "./tailCostRepository.js";
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
+import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, publishCalcResult, resolveOfficeCalcSources } from "./officeClient.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -936,7 +936,7 @@ app.get("/api/workbench/current", async (req, res) => {
   }
 
   const [versions] = await db.execute<RowDataPacket[]>(
-    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
+    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price, vat_rate FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
     [session.calculationId]
   );
   const version = versions[0];
@@ -990,6 +990,11 @@ app.put("/api/workbench/current", async (req, res) => {
   }
   const lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
+  const vatRate = req.body?.vatRate == null || req.body.vatRate === "" ? null : Number(req.body.vatRate);
+  if (vatRate !== null && (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100)) {
+    res.status(400).json({ error: "Ongeldig btw-tarief." });
+    return;
+  }
   if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
@@ -1135,8 +1140,8 @@ app.put("/api/workbench/current", async (req, res) => {
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
-      [directCost, markupAmount, salesPrice, version.id]
+      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ?, vat_rate = ? WHERE id = ?",
+      [directCost, markupAmount, salesPrice, vatRate, version.id]
     );
     await connection.execute(
       "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
@@ -1147,96 +1152,45 @@ app.put("/api/workbench/current", async (req, res) => {
     let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
     try {
       const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
+      const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
+      const commercialSummary = {
+        purchase: summary.purchase,
+        sales: summary.sales,
+        margin: summary.margin,
+        margin_pct: summary.marginPct,
+        vat: summary.vat,
+        vat_rate: summary.vatRate
+      };
       const published = await publishCalcResult({
         calculationId: session.officeCalculationId,
         officeVersion: String(officeState.version.version),
         calcVersion: String(version.id),
         actorId: session.actorId,
-        lines: lines.map(line => ({
-          sort_order: line.sortOrder,
-          line_type: line.lineType,
-          parent_ref: line.parentId ?? null,
-          code: line.code ?? null,
-          description: String(line.description ?? ""),
-          unit: line.unit ?? null,
-          quantity: line.quantity ?? null,
-          labour_norm: line.labourNorm ?? null,
-          labour_total_hours: line.labourTotalHours ?? null,
-          labour_hours_input_mode: line.labourHoursInputMode ?? null,
-          unit_costs: {
-            labour: line.labourUnitCost ?? 0,
-            material: line.materialUnitCost ?? 0,
-            equipment: line.equipmentUnitCost ?? 0,
-            subcontracting: line.subcontractingUnitCost ?? 0,
-            other: line.otherUnitCost ?? 0
-          },
-          source: {
-            type: line.priceSourceType ?? "manual",
-            office_source_id: line.officeSourceId ?? null,
-            reference: line.sourceReference ?? null,
-            supplier: line.sourceSupplier ?? null,
-            unit_price: line.sourceUnitPrice ?? null,
-            price_date: line.sourcePriceDate ?? null,
-            document_id: line.sourceDocumentId ?? null,
-            details: line.sourceDetails ?? null
-          }
-        })),
-        totals: {
-          direct_cost: directCost,
-          markup_amount: markupAmount,
-          sales_price: salesPrice
-        },
-        source: {
-          engine: "brebo-calc",
-          calculation_id: session.calculationId,
-          office_calculation_id: session.officeCalculationId,
-          office_project_id: session.officeProjectId,
-          tail_costs: [
-            ...tailHierarchy.calculationTailCosts.map(row => ({
-              owner_type: row.ownerType,
-              owner_ref: row.ownerRef,
-              component_key: row.componentKey,
-              description: row.description,
-              basis: row.basis,
-              value: row.value,
-              base_scope: row.baseScope,
-              base_ref: row.baseRef,
-              base_amount: row.baseAmount,
-              amount: row.amount
-            })),
-            ...tailHierarchy.subcalculations.flatMap(sub => sub.tailCosts.map(row => ({
-              owner_type: row.ownerType,
-              owner_ref: row.ownerRef,
-              component_key: row.componentKey,
-              description: row.description,
-              basis: row.basis,
-              value: row.value,
-              base_scope: row.baseScope,
-              base_ref: row.baseRef,
-              base_amount: row.baseAmount,
-              amount: row.amount
-            })))
-          ]
-        }
+        commercialSummary
       });
       const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      verifyOfficeCalcResultSync({
-        publishedContentHash: published.content_hash,
-        expectedOfficeVersion: String(officeState.version.version),
-        expectedTotals: {
-          direct_cost: directCost,
-          markup_amount: markupAmount,
-          sales_price: salesPrice
-        },
-        expectedLineCount: lines.length,
-        calcResult: verifiedState.calc_result
-      });
+      const officeSummary = verifiedState.calc_result?.commercial_summary;
+      if (!officeSummary) throw new Error("Office bevestigde geen commerciele Calc-samenvatting.");
+      const tolerance = 0.005;
+      const checks:[number,number,string][] = [
+        [Number(officeSummary.purchase), commercialSummary.purchase, "inkoop"],
+        [Number(officeSummary.sales), commercialSummary.sales, "verkoop"],
+        [Number(officeSummary.margin), commercialSummary.margin, "marge"],
+        [Number(officeSummary.margin_pct), commercialSummary.margin_pct, "margepercentage"],
+        [Number(officeSummary.vat), commercialSummary.vat, "btw"]
+      ];
+      for (const [actual, expected, label] of checks) {
+        if (!Number.isFinite(actual) || Math.abs(actual - expected) > tolerance) {
+          throw new Error(`Office bevestigde een afwijkende ${label}.`);
+        }
+      }
       officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
     } catch(error) {
       officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
     }
 
-    res.json({ directCost, markupAmount, salesPrice, officeSync });
+    const summary = buildCommercialSummary({purchase:directCost,sales:salesPrice,vatRate});
+    res.json({ directCost, markupAmount, salesPrice, margin:summary.margin, marginPct:summary.marginPct, vat:summary.vat, vatRate:summary.vatRate, officeSync });
   } catch (error) {
     await connection.rollback();
     throw error;
