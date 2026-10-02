@@ -292,3 +292,6 @@
 .traceCell{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#4b5563;font-size:.82rem}
 
 .positionFilterNotice{align-self:end;padding:7px 10px;border:1px solid #d9dee3;border-radius:7px;background:#fafbfc;color:#66707a;font-size:.8rem}
+
+.positionFilterActions{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+.positionFilterActions button{padding:7px 10px}
