@@ -299,3 +299,14 @@
 .scopeBulkButton{align-self:end;padding:7px 10px}
 
 .bulkScopeRef{min-width:180px;padding:7px 9px;border:1px solid #cfd5da;border-radius:6px}
+
+.scopeOverview{margin:12px 0 14px;border:1px solid #dfe4e8;border-radius:10px;background:#fff;overflow:hidden}
+.scopeOverviewHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid #e8ecef;background:#fafbfc}
+.scopeOverviewHead>div{display:grid;gap:3px}
+.scopeOverviewHead span,.scopeOverviewHead small{color:#66707a;font-size:.82rem}
+.scopeOverviewGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;padding:10px}
+.scopeOverviewCard{display:grid;gap:4px;text-align:left;padding:10px 11px;border:1px solid #d9dee3;border-radius:8px;background:#fff;cursor:pointer}
+.scopeOverviewCard:hover{background:#fafbfc}
+.scopeOverviewCard.is-active{outline:2px solid #111;outline-offset:-2px}
+.scopeOverviewCard span,.scopeOverviewCard small{color:#66707a;font-size:.78rem}
+.scopeOverviewCard b{font-size:.95rem}
