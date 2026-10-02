@@ -328,3 +328,7 @@
 .scopeCoverageWarning{display:grid;gap:3px;max-width:620px;padding:8px 10px;border:1px solid #d9dee3;border-radius:7px;background:#fafbfc}
 .scopeCoverageWarning strong{font-size:.82rem}
 .scopeCoverageWarning span{color:#66707a;font-size:.78rem}
+
+.financialIntegrityWarning{display:grid;gap:4px;margin:12px 0;padding:10px 12px;border:1px solid #cfd5da;border-radius:8px;background:#fafbfc}
+.financialIntegrityWarning strong{font-size:.88rem}
+.financialIntegrityWarning span{color:#4b5563;font-size:.82rem;line-height:1.4}

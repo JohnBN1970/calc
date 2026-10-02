@@ -831,7 +831,7 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
       results
     });
   }catch(error){
-    res.status(500).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden berekend."});
+    res.status(422).json({error:error instanceof Error?error.message:"Deelcalculaties konden niet worden berekend."});
   }
 });
 

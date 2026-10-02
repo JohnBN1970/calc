@@ -727,6 +727,7 @@ function App() {
     baseScope:"owner_direct_cost",baseRef:"",quantity:null as number|null,vatRegimeId:null as number|null
   });
   const [tailCostStatus,setTailCostStatus]=useState("");
+  const [financialIntegrityStatus,setFinancialIntegrityStatus]=useState("");
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
@@ -976,10 +977,15 @@ function App() {
       setEvaluatedTailCosts(Array.isArray(evaluated.calculationComponents)?evaluated.calculationComponents:[]);
       setTailCostTotal(Number(evaluated.tailCost??0));
       setMainDirectCost(Number(evaluated.mainDirectCost??0));
+      setFinancialIntegrityStatus("");
     }else{
+      const errorPayload=await evalResponse.json().catch(()=>({})) as {error?:string};
+      const message=String(errorPayload.error??"Staartkosten konden niet veilig worden berekend.");
       setEvaluatedTailCosts([]);
       setTailCostTotal(0);
       setMainDirectCost(0);
+      setTailCostStatus(message);
+      setFinancialIntegrityStatus(message);
     }
   };
 
@@ -1015,9 +1021,17 @@ function App() {
 
   const loadSubcalculationResults=async()=>{
     const response=await fetch("/api/workbench/current/subcalculations/evaluate",{headers:{Accept:"application/json"}});
-    if(!response.ok){setSubcalculationResults([]);return;}
+    if(!response.ok){
+      const payload=await response.json().catch(()=>({})) as {error?:string};
+      const message=String(payload.error??"Deelcalculaties konden niet veilig worden berekend.");
+      setSubcalculationResults([]);
+      setManagementStatus(message);
+      setFinancialIntegrityStatus(message);
+      return;
+    }
     const payload=await response.json() as {results:CalcSubcalculationResult[]};
     setSubcalculationResults(Array.isArray(payload.results)?payload.results:[]);
+    setFinancialIntegrityStatus("");
   };
 
   const createRecipe = async () => {
@@ -2226,14 +2240,16 @@ function App() {
           }))
         })
       });
-      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string}};
-      if (!response.ok) throw new Error("Opslaan mislukt");
+      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string};error?:string};
+      if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
       if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
       else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
       await loadWorkbench();
       await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
-    } catch {
-      setStatus("Opslaan mislukt");
+    } catch(error) {
+      const message=error instanceof Error?error.message:"Opslaan mislukt";
+      setStatus(message);
+      if(message.includes("Staartkosten kunnen niet veilig worden berekend"))setFinancialIntegrityStatus(message);
     }
   };
 
@@ -2620,6 +2636,11 @@ function App() {
             </div>)}
           </div>}
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
+        </div>}
+
+        {financialIntegrityStatus&&<div className="financialIntegrityWarning" role="alert">
+          <strong>Financiële overlap geblokkeerd</strong>
+          <span>{financialIntegrityStatus}</span>
         </div>}
 
         <div className="subcalcWorkmode">
