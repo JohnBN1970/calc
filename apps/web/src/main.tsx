@@ -1043,6 +1043,36 @@ function App() {
     }
   };
 
+  const createSubcalculationForPosition=async(positionRef:string)=>{
+    const ref=positionRef.trim();
+    if(!ref)return;
+    const existing=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType==="position"&&scope.scopeRef===ref));
+    if(existing){
+      setActiveSubcalculationId(existing.id);
+      setManagementStatus("Positie "+ref+" is al gekoppeld aan deelcalculatie "+existing.description+".");
+      return;
+    }
+    setManagementStatus("Deelcalculatie voor positie "+ref+" aanmaken…");
+    try{
+      const createResponse=await fetch("/api/workbench/current/subcalculations",{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({ref:"POS-"+ref,description:"Positie "+ref})
+      });
+      const created=await createResponse.json().catch(()=>({})) as {subcalculationId?:number;error?:string};
+      if(!createResponse.ok||!created.subcalculationId)throw new Error(String(created.error??"Deelcalculatie kon niet worden aangemaakt."));
+      const scopeResponse=await fetch("/api/workbench/current/subcalculations/"+created.subcalculationId+"/scopes",{
+        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({scopeType:"position",scopeRef:ref})
+      });
+      const scopePayload=await scopeResponse.json().catch(()=>({})) as {error?:string};
+      if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Positiescope kon niet worden gekoppeld."));
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
+      setActiveSubcalculationId(created.subcalculationId);
+      setManagementStatus("Deelcalculatie Positie "+ref+" aangemaakt. Regels met deze positie vallen er automatisch onder.");
+    }catch(error){
+      setManagementStatus(error instanceof Error?error.message:"Deelcalculatie voor positie kon niet worden aangemaakt.");
+    }
+  };
   const createSubcalculation = async () => {
     setManagementStatus("Deelcalculatie aanmaken…");
     try {
@@ -2412,7 +2442,14 @@ function App() {
             <option value="">Alle posities</option>
             {availablePositions.map(position=><option key={position} value={position}>{position}</option>)}
           </select></label>
-          {activePositionFilter&&<span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>}
+          {activePositionFilter&&<div className="positionFilterActions">
+            <span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>
+            <button type="button" onClick={()=>void createSubcalculationForPosition(activePositionFilter)}>
+              {subcalculations.some(item=>item.scopes.some(scope=>scope.scopeType==="position"&&scope.scopeRef===activePositionFilter))
+                ?"Open deelcalculatie"
+                :"Maak deelcalculatie van positie"}
+            </button>
+          </div>}
           {activeSubcalculationResult && <div className="subcalcWorkmodeTotals">
             <span><small>Direct</small><strong>{money.format(activeSubcalculationResult.directCost)}</strong></span>
             <span><small>Staartkosten</small><strong>{money.format(activeSubcalculationResult.allocatedTailCost)}</strong></span>
