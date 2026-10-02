@@ -604,7 +604,8 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       evidence:conceptPosition?{
         documentIds:conceptPosition.sourceDocumentIds,
         pages:conceptPosition.sourcePages
-      }:undefined
+      }:undefined,
+      scopes:conceptPosition?.scopes
     });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
