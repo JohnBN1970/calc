@@ -1055,6 +1055,22 @@ function App() {
     }
   };
 
+  const refreshDocumentCandidates=async()=>{
+    setDocumentTriageStatus("Kandidaatbronnen verversen…");
+    try{
+      const response=await fetch("/api/workbench/current/document-candidates/refresh",{
+        method:"POST",
+        headers:{Accept:"application/json"}
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Kandidaatbronnen konden niet worden ververst."));
+      await loadWorkbench();
+      setDocumentTriageStatus("Kandidaatbronnen ververst; Calc-triage opnieuw uitgevoerd.");
+    }catch(error){
+      setDocumentTriageStatus(error instanceof Error?error.message:"Kandidaatbronnen konden niet worden ververst.");
+    }
+  };
+
   const resetDocumentDecision=async(documentId:number)=>{
     setDocumentTriageStatus("Automatische documentkeuze herstellen…");
     try{
@@ -1920,7 +1936,7 @@ function App() {
               <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
             </div>
             <div className="documentTriagePanel">
-              <div className="documentTriageHead"><div><strong>Calc-documenttriage</strong><span>Calc beoordeelt welke Office-bronnen daadwerkelijk calculatie-informatie opleveren.</span></div><small>{aggregate.documentTriage.length} document(en)</small></div>
+              <div className="documentTriageHead"><div><strong>Calc-documenttriage</strong><span>Office levert kandidaatbronnen; Calc bepaalt welke documenten calculatief bruikbaar zijn.</span></div><div className="documentTriageHeadActions"><small>{aggregate.documentTriage.length} document(en)</small><button type="button" onClick={()=>void refreshDocumentCandidates()}>Bronnen verversen</button></div></div>
               <div className="documentTriageList">
                 {aggregate.documentTriage.length===0?<p className="muted">Nog geen documenten in de calculatiecontext.</p>:aggregate.documentTriage.map(item=>
                   <div className={"documentTriageItem status-"+item.status} key={item.documentId}>
