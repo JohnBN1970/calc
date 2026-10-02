@@ -583,6 +583,7 @@ function App() {
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [vatRegimes,setVatRegimes]=useState<VatRegime[]>([]);
   const [vatComponents,setVatComponents]=useState<CalculationVatComponent[]>([]);
+  const [vatComponentsLoaded,setVatComponentsLoaded]=useState(false);
   const [vatAllocationOpen,setVatAllocationOpen]=useState(false);
   const [vatAllocationStatus,setVatAllocationStatus]=useState("");
   const [vatSettingsStatus,setVatSettingsStatus]=useState("");
@@ -707,6 +708,7 @@ function App() {
         vatAmount:Number(item.vatAmount??0),
         sortOrder:Number(item.sortOrder??0)
       })));
+      setVatComponentsLoaded(true);
       setVatAllocationStatus("");
     }catch(error){
       setVatAllocationStatus(error instanceof Error?error.message:"Btw-opbouw kon niet worden geladen.");
@@ -1713,7 +1715,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vatRate: vatComponents.length ? null : vatRate,
-          vatComponents: vatComponents.map(item=>({vatRegimeId:item.vatRegimeId,taxableBase:item.taxableBase})),
+          vatComponents: vatComponentsLoaded ? vatComponents.map(item=>({vatRegimeId:item.vatRegimeId,taxableBase:item.taxableBase})) : undefined,
           allocations,
           lines: lines.map((line, index) => ({
             id: line.id,
