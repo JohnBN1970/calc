@@ -241,3 +241,20 @@
   .settingsPanel{padding:18px}
   .vatRegimeRow,.vatRegimeCreate{grid-template-columns:1fr 1fr}
 }
+
+
+.vatAllocationList{display:grid;gap:10px}
+.vatAllocationRow{
+  display:grid;grid-template-columns:minmax(180px,2fr) minmax(150px,1fr) 130px auto;
+  gap:12px;align-items:end;padding:12px;border:1px solid #e2e6ea;border-radius:8px;background:#fafbfc
+}
+.vatAllocationRow>div:first-child{display:grid;gap:4px}
+.vatAllocationRow small{color:#666}
+.vatAllocationRow label{display:grid;gap:5px}
+.vatAllocationRow input{padding:9px 10px;border:1px solid #cfd4da;border-radius:6px}
+.vatAllocationRow>div:nth-child(3){display:grid;gap:5px}
+.vatAllocationAdd{display:flex;gap:8px;flex-wrap:wrap}
+.vatAllocationAdd button,.vatAllocationRow button{padding:9px 12px}
+@media(max-width:760px){
+  .vatAllocationRow{grid-template-columns:1fr 1fr}
+}
