@@ -21,6 +21,7 @@ import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, proposeCalculationDocumentSet, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
+import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, listCalculationVatComponents, replaceCalculationVatComponents, type VatTreatment } from "./vatSettingsRepository.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -1327,6 +1328,40 @@ app.put("/api/settings/vat-regimes/:id", async (req,res)=>{
     res.json(await updateVatRegime(id,patch));
   }catch(error){
     res.status(400).json({error:error instanceof Error?error.message:"Btw-regime kon niet worden bijgewerkt."});
+  }
+});
+
+app.get("/api/settings/user/columns", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    const columns=await getUserPreference<unknown[]>(session.actorId,"workbench.columns.v1");
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({columns});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Kolomvoorkeuren konden niet worden geladen."});
+  }
+});
+
+app.put("/api/settings/user/columns", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  if(!Array.isArray(req.body?.columns)){res.status(400).json({error:"Ongeldige kolominstellingen."});return;}
+  const allowedKeys=new Set(["code","description","type","unit","quantity","norm","hours","hourlyRate","material","equipment","subcontracting","other","total"]);
+  const columns=req.body.columns.map((item:any)=>({
+    key:String(item?.key??""),
+    visible:item?.visible!==false,
+    width:Math.max(55,Math.min(600,Number(item?.width)||100))
+  })).filter((item:{key:string})=>allowedKeys.has(item.key));
+  if(columns.length!==allowedKeys.size||new Set(columns.map((item:{key:string})=>item.key)).size!==allowedKeys.size){
+    res.status(400).json({error:"Kolominstellingen zijn onvolledig."});
+    return;
+  }
+  try{
+    await setUserPreference(session.actorId,"workbench.columns.v1",columns);
+    res.json({ok:true,columns});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Kolomvoorkeuren konden niet worden opgeslagen."});
   }
 });
 
