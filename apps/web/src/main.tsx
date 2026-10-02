@@ -1176,6 +1176,92 @@ function App() {
     if(aggregate.structureProposal.groups.some(group=>group.recipeRef!==null))setRecipeParagraphKey("__auto__");
     setStructureProposalStatus(created.length+" structuurregel(s) toegevoegd aan het concept. Controleer en sla daarna de calculatie op.");
   };
+  const generateUnambiguousRecipes=async()=>{
+    if(!aggregate){setRecipeActionStatus("Calc-concept is nog niet geladen.");return;}
+    const eligible=aggregate.structureProposal.groups
+      .filter(group=>group.recipeRef!==null)
+      .flatMap(group=>group.positionRefs.map(positionRef=>({
+        group,
+        proposal:aggregate.recipeProposals.find(item=>item.positionRef===positionRef&&item.recipeRef===group.recipeRef)
+      })))
+      .filter((item):item is {group:WorkbenchAggregate["structureProposal"]["groups"][number];proposal:WorkbenchAggregate["recipeProposals"][number]}=>Boolean(item.proposal));
+    if(!eligible.length){setRecipeActionStatus("Geen eenduidige receptvoorstellen om te genereren.");return;}
+
+    setRecipeActionStatus("Eenduidige recepten voorbereiden…");
+    let id=nextId;
+    const created:Line[]=[];
+    const skipped:string[]=[];
+    let incomplete=0;
+
+    for(const {group,proposal} of eligible){
+      const alreadyExists=lines.some(line=>line.priceSourceType==="recipe"&&Boolean(line.sourceOfferSummary?.trim().endsWith("· "+proposal.positionRef)));
+      if(alreadyExists){skipped.push(proposal.positionRef+" bestaat al");continue;}
+      const takeoffs=aggregate.takeoffs.filter(row=>row.position_ref.trim()===proposal.positionRef);
+      if(takeoffs.length>1&&!selectedTakeoffByPosition[proposal.positionRef]){
+        skipped.push(proposal.positionRef+" heeft meerdere geometrieën");
+        continue;
+      }
+      const key=("auto-"+group.key).slice(0,36);
+      const paragraphLine=lines.find(line=>line.lineType==="paragraph"&&(
+        line.structureKey===key||
+        line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
+      ));
+      if(!paragraphLine){skipped.push(proposal.positionRef+" mist voorgestelde paragraaf");continue;}
+
+      try{
+        const response=await fetch("/api/workbench/current/concept/recipe-proposals/accept",{
+          method:"POST",
+          headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({
+            positionRef:proposal.positionRef,
+            recipeVersionId:Number(proposal.recipeRef),
+            takeoffId:selectedTakeoffByPosition[proposal.positionRef]??undefined,
+            passes:1,
+            parameters:{}
+          })
+        });
+        const payload=await response.json().catch(()=>({})) as {
+          error?:string;recipeName?:string;
+          lines?:Array<{
+            code:string;description:string;unit:string;quantity:number;
+            labourNorm:number|null;labourTotalHours:number|null;labourHoursInputMode:"norm"|"total_hours"|null;
+            labour:number;material:number;equipment:number;subcontracting:number;other:number;
+            priceSourceType:"recipe";officeSourceId:string|null;sourceReference:string;sourceUnitPrice:number|null;sourceDetails:string;
+            resolutionStatus:"resolved"|"unresolved";resolutionReason:string|null;
+          }>;
+        };
+        if(!response.ok||!Array.isArray(payload.lines)||payload.lines.length===0){
+          skipped.push(proposal.positionRef+" kon niet worden gegenereerd");
+          continue;
+        }
+        for(const generated of payload.lines){
+          if(generated.resolutionStatus==="unresolved")incomplete++;
+          created.push({
+            id:id--,parentId:paragraphLine.id,lineType:"item",code:generated.code,description:generated.description,
+            unit:generated.unit,quantity:generated.quantity,labourNorm:generated.labourNorm,labourTotalHours:generated.labourTotalHours,
+            labourHoursInputMode:generated.labourHoursInputMode,labour:generated.labour,material:generated.material,equipment:generated.equipment,
+            subcontracting:generated.subcontracting,other:generated.other,priceSourceType:"recipe",officeSourceId:generated.officeSourceId,
+            sourceReference:generated.sourceReference,sourceSupplier:null,sourceUnitPrice:generated.sourceUnitPrice,sourcePriceDate:null,
+            sourceDocumentId:null,sourceDetails:generated.sourceDetails,sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,
+            sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:(payload.recipeName??proposal.label)+" · "+proposal.positionRef,
+            resolutionStatus:generated.resolutionStatus,resolutionReason:generated.resolutionReason
+          });
+        }
+      }catch{
+        skipped.push(proposal.positionRef+" gaf een bronfout");
+      }
+    }
+
+    if(created.length){
+      setNextId(id);
+      setLines(current=>[...current,...created]);
+      setStatus("Concept — niet opgeslagen");
+    }
+    const parts=[created.length+" Calc-regel(s) gegenereerd"];
+    if(incomplete)parts.push(incomplete+" regel(s) met ontbrekende bron");
+    if(skipped.length)parts.push("overgeslagen: "+skipped.join(", "));
+    setRecipeActionStatus(parts.join(" · ")+(created.length?". Nog opslaan.":"."));
+  };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
@@ -2042,7 +2128,10 @@ function App() {
             <div className="structureProposalPanel">
               <div className="structureProposalHead">
                 <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
-                <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
+                <div className="structureProposalActions">
+                  <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
+                  <button type="button" disabled={!aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Eenduidige recepten genereren</button>
+                </div>
               </div>
               {aggregate.structureProposal.groups.length===0?<p className="muted">Nog geen structuurvoorstel mogelijk.</p>:
                 <div className="structureProposalGroups">{aggregate.structureProposal.groups.map(group=>
