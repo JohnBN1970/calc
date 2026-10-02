@@ -156,6 +156,19 @@ type WorkbenchAggregate = {
     overridden:boolean;
     overrideReason:string|null;
   }>;
+  structureProposal:{
+    contract:"brebo-calc-structure-proposal-v1";
+    chapter:{key:string;label:string};
+    groups:Array<{
+      key:string;
+      label:string;
+      recipeRef:string|null;
+      positionRefs:string[];
+      reviewRequired:boolean;
+    }>;
+    unresolvedPositionRefs:string[];
+    ready:boolean;
+  };
   recipeProposals: Array<{
     positionRef: string;
     recipeRef: string;
@@ -597,6 +610,7 @@ function App() {
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
+  const [structureProposalStatus,setStructureProposalStatus]=useState("");
   const [documentTriageStatus,setDocumentTriageStatus]=useState("");
   const [priceSearch, setPriceSearch] = useState("");
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
@@ -1113,6 +1127,54 @@ function App() {
     void boot();
   }, []);
 
+  const applyStructureProposal=()=>{
+    if(!aggregate?.structureProposal.ready){
+      setStructureProposalStatus("Er is nog geen bruikbaar structuurvoorstel.");
+      return;
+    }
+    let id=nextId;
+    const created:Line[]=[];
+    const chapterLabel=aggregate.structureProposal.chapter.label;
+    const existingChapter=lines.find(line=>line.lineType==="chapter"&&line.description.trim().toLocaleLowerCase("nl-NL")===chapterLabel.trim().toLocaleLowerCase("nl-NL"))??null;
+    let chapterId=existingChapter?.id??null;
+    if(chapterId==null){
+      chapterId=id--;
+      created.push({
+        id:chapterId,parentId:null,structureKey:"auto-concept",lineType:"chapter",code:"",description:chapterLabel,
+        unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+        labour:0,material:0,equipment:0,subcontracting:0,other:0,
+        priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+        sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+        sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+      });
+    }
+    for(const group of aggregate.structureProposal.groups){
+      const key=("auto-"+group.key).slice(0,36);
+      const exists=lines.some(line=>line.lineType==="paragraph"&&line.parentId===chapterId&&(
+        line.structureKey===key||
+        line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
+      ))||created.some(line=>line.lineType==="paragraph"&&line.parentId===chapterId&&line.description===group.label);
+      if(exists)continue;
+      created.push({
+        id:id--,parentId:chapterId,structureKey:key,lineType:"paragraph",code:"",description:group.label,
+        unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+        labour:0,material:0,equipment:0,subcontracting:0,other:0,
+        priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+        sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+        sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+      });
+    }
+    if(!created.length){
+      setStructureProposalStatus("De voorgestelde structuur staat al in de calculatie.");
+      return;
+    }
+    setNextId(id);
+    setLines(current=>[...current,...created]);
+    setStatus("Concept — niet opgeslagen");
+    const firstParagraph=created.find(line=>line.lineType==="paragraph"&&line.structureKey);
+    if(firstParagraph?.structureKey)setRecipeParagraphKey(firstParagraph.structureKey);
+    setStructureProposalStatus(created.length+" structuurregel(s) toegevoegd aan het concept. Controleer en sla daarna de calculatie op.");
+  };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
