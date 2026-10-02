@@ -58,6 +58,8 @@ type LineInput = {
   sourceVisualSearchRegion?: { x: number; y: number; width: number; height: number } | null;
   sourceTextRegions?: Array<{ x: number; y: number; width: number; height: number }> | null;
   sourceOfferSummary?: string | null;
+  resolutionStatus?: "resolved" | "unresolved";
+  resolutionReason?: string | null;
 };
 
 type LaunchPayload = {
@@ -541,6 +543,7 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       : { contract: "brebo-office-calc-source-resolution-v1" as const, project_id: session.officeProjectId, results: [] };
 
     const generated = generateCalcOwnedRecipeLines({ recipe, takeoff, resolution });
+    const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json({
@@ -549,6 +552,8 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       takeoffId: takeoff.id,
       recipeVersionId,
       recipeName: recipe.name,
+      readiness: unresolved.length ? "incomplete" : "ready",
+      unresolvedCount: unresolved.length,
       lines: generated
     });
   } catch (error) {
@@ -997,6 +1002,19 @@ app.put("/api/workbench/current", async (req, res) => {
   }
   if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
+    return;
+  }
+  const unresolvedLines = lines.filter(line => line.resolutionStatus === "unresolved");
+  if (unresolvedLines.length) {
+    res.status(409).json({
+      error: "Calculatie bevat onopgeloste prijs- of normbronnen.",
+      readiness: "incomplete",
+      unresolved: unresolvedLines.map(line => ({
+        code: line.code ?? "",
+        description: line.description,
+        reason: line.resolutionReason ?? "Bron niet beschikbaar."
+      }))
+    });
     return;
   }
 

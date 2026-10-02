@@ -594,16 +594,29 @@ export async function publishCalcResult(input:{
 export type OfficeCalcSourceResolution = {
   contract: "brebo-office-calc-source-resolution-v1";
   project_id: number | null;
-  results: Array<{
-    request_index: number;
-    type: string;
-    ref: string;
-    status: "resolved";
-    value: number;
-    unit: string | null;
-    description: string;
-    source: Record<string,unknown>;
-  }>;
+  results: Array<
+    | {
+        request_index:number;
+        type:string;
+        ref:string;
+        status:"resolved";
+        value:number;
+        unit:string|null;
+        description:string;
+        source:Record<string,unknown>;
+      }
+    | {
+        request_index:number;
+        type:string;
+        ref:string;
+        status:"unresolved";
+        value:null;
+        unit:null;
+        description:string;
+        source:Record<string,unknown>;
+        reason:string;
+      }
+  >;
 };
 
 export async function resolveOfficeCalcSources(input:{
