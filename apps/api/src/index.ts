@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import express, { type Request, type Response } from "express";
@@ -9,7 +9,7 @@ import { calculateTakeoff } from "./takeoff.js";
 import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
-import { buildWorkbenchAggregate } from "./workbenchAggregate.js";
+import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
 import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
@@ -31,6 +31,7 @@ type AllocationInput = { sourceLineId:number; targetLineId:number; method:"quant
 type LineInput = {
   id?: number;
   parentId?: number | null;
+  structureKey?: string | null;
   sortOrder: number;
   lineType: LineType;
   code?: string;
@@ -912,16 +913,44 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
   if (!session) return;
 
   try {
-    const [context, recipes, workspace] = await Promise.all([
+    const [context, recipes, workspace, versions] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
       listCalcRecipes(),
-      fetchOfficeWorkspaceState(session.officeCalculationId)
+      fetchOfficeWorkspaceState(session.officeCalculationId),
+      db.execute<RowDataPacket[]>(
+        "SELECT id FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
+        [session.calculationId]
+      )
     ]);
     if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
       return;
     }
-    const aggregate = buildWorkbenchAggregate({ context, recipes, workspace });
+    const versionId = Number(versions[0][0]?.id ?? 0);
+    if (!versionId) {
+      res.status(409).json({ error: "Calc heeft geen actieve calculatieversie." });
+      return;
+    }
+    const [structureLines] = await db.execute<RowDataPacket[]>(
+      `SELECT structure_key, parent_id, line_type, code, description, id
+         FROM calculation_lines
+        WHERE version_id = ? AND line_type IN ('chapter','paragraph')
+        ORDER BY sort_order, id`,
+      [versionId]
+    );
+    const aggregate = buildWorkbenchAggregate({
+      context,
+      recipes,
+      workspace,
+      structure: calcWorkbenchStructureFromLines(structureLines.map(row=>({
+        id:Number(row.id),
+        parent_id:row.parent_id==null?null:Number(row.parent_id),
+        structure_key:String(row.structure_key),
+        line_type:String(row.line_type),
+        code:row.code==null?null:String(row.code),
+        description:String(row.description??"")
+      })))
+    });
     res.setHeader("Cache-Control", "no-store, private");
     res.json(aggregate);
   } catch (error) {
@@ -954,7 +983,7 @@ app.get("/api/workbench/current", async (req, res) => {
   }
 
   const [lines] = await db.execute<RowDataPacket[]>(
-    `SELECT id, parent_id, sort_order, line_type, code, description, unit, quantity,
+    `SELECT id, parent_id, structure_key, sort_order, line_type, code, description, unit, quantity,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, vat_regime_id, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
@@ -1082,14 +1111,14 @@ app.put("/api/workbench/current", async (req, res) => {
       const parentId = line.parentId != null ? (temporaryIds.get(line.parentId) ?? null) : null;
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO calculation_lines
-          (version_id, parent_id, sort_order, line_type, code, description, unit, quantity,
+          (version_id, parent_id, structure_key, sort_order, line_type, code, description, unit, quantity,
            labour_norm, labour_total_hours, labour_hours_input_mode,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost, vat_regime_id,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          version.id, parentId, line.sortOrder, line.lineType, line.code ?? null,
+          version.id, parentId, line.structureKey ? String(line.structureKey).slice(0,36) : randomUUID(), line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
           line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode, labour, material, equipment, subcontracting, other,
           line.vatRegimeId == null ? null : Number(line.vatRegimeId),
