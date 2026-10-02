@@ -11,6 +11,10 @@ export type CalculationConceptPosition = {
   sourceDocumentIds: number[];
   sourcePages: number[];
   reviewStatus: "reviewed" | "proposed";
+  scopes: Array<{
+    type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
+    ref:string;
+  }>;
   warnings: string[];
 };
 
@@ -49,6 +53,22 @@ export function buildConceptFromOfficeContext(
 
   const positions: CalculationConceptPosition[] = [];
   const unresolved = [...context.review.unresolved];
+  const scopesByPosition=new Map<string,CalculationConceptPosition["scopes"]>();
+  for(const row of context.position_scopes??[]){
+    const ref=String(row.position_ref??"").trim();
+    if(!ref)continue;
+    const scopes:CalculationConceptPosition["scopes"]=[];
+    const push=(type:CalculationConceptPosition["scopes"][number]["type"],value:unknown)=>{
+      const normalized=String(value??"").trim();
+      if(normalized)scopes.push({type,ref:normalized});
+    };
+    push("building",row.building);
+    push("facade",row.facade);
+    push("dwelling",row.dwelling);
+    push("dwelling_type",row.dwelling_type);
+    push("building_part",row.building_part);
+    scopesByPosition.set(ref,scopes);
+  }
 
   const takeoffsByPosition = new Map<string, typeof context.takeoff>();
   for (const row of context.takeoff) {
@@ -111,6 +131,7 @@ export function buildConceptFromOfficeContext(
       sourceDocumentIds,
       sourcePages,
       reviewStatus,
+      scopes:scopesByPosition.get(positionRef)??[],
       warnings
     });
   }
