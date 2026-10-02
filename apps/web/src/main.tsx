@@ -1116,6 +1116,53 @@ function App() {
     }
   };
 
+  const createAllSubcalculationsForScope=async()=>{
+    const label=scopeLabels[activeScopeType];
+    const existingRefs=new Set(
+      subcalculations.flatMap(item=>item.scopes.filter(scope=>scope.scopeType===activeScopeType).map(scope=>scope.scopeRef))
+    );
+    const pending=availableScopeValues.filter(ref=>!existingRefs.has(ref));
+    if(!pending.length){
+      setManagementStatus("Alle gevonden "+label.toLowerCase()+"-waarden hebben al een deelcalculatie.");
+      return;
+    }
+    setManagementStatus(pending.length+" deelcalculatie(s) voor "+label.toLowerCase()+" aanmaken…");
+    const prefix={
+      building:"GEBOUW",
+      facade:"GEVEL",
+      dwelling:"WONING",
+      dwelling_type:"WONINGTYPE",
+      building_part:"BOUWDEEL",
+      position:"POS"
+    }[activeScopeType];
+    const createdRefs:string[]=[];
+    const failedRefs:string[]=[];
+    for(const ref of pending){
+      try{
+        const createResponse=await fetch("/api/workbench/current/subcalculations",{
+          method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref})
+        });
+        const created=await createResponse.json().catch(()=>({})) as {subcalculationId?:number;error?:string};
+        if(!createResponse.ok||!created.subcalculationId)throw new Error(String(created.error??"Deelcalculatie kon niet worden aangemaakt."));
+        const scopeResponse=await fetch("/api/workbench/current/subcalculations/"+created.subcalculationId+"/scopes",{
+          method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({scopeType:activeScopeType,scopeRef:ref})
+        });
+        const scopePayload=await scopeResponse.json().catch(()=>({})) as {error?:string};
+        if(!scopeResponse.ok)throw new Error(String(scopePayload.error??"Scope kon niet worden gekoppeld."));
+        createdRefs.push(ref);
+      }catch{
+        failedRefs.push(ref);
+      }
+    }
+    await Promise.all([loadSubcalculations(),loadSubcalculationResults()]);
+    const parts=[createdRefs.length+" deelcalculatie(s) aangemaakt"];
+    if(existingRefs.size)parts.push(existingRefs.size+" bestonden al");
+    if(failedRefs.length)parts.push("mislukt: "+failedRefs.join(", "));
+    setManagementStatus(parts.join(" · "));
+  };
+
   const createSubcalculation = async () => {
     setManagementStatus("Deelcalculatie aanmaken…");
     try {
@@ -2493,6 +2540,9 @@ function App() {
             <option value="">Alle {scopeLabels[activeScopeType].toLowerCase()}s</option>
             {availableScopeValues.map(value=><option key={value} value={value}>{value}</option>)}
           </select></label>
+          {availableScopeValues.length>1&&<button type="button" className="scopeBulkButton" onClick={()=>void createAllSubcalculationsForScope()}>
+            Maak alle {scopeLabels[activeScopeType].toLowerCase()}s als deelcalculaties
+          </button>}
           {activeScopeRef&&<div className="positionFilterActions">
             <span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>
             <button type="button" onClick={()=>void createSubcalculationForScope(activeScopeType,activeScopeRef)}>
