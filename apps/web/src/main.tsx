@@ -37,6 +37,8 @@ type Line = {
   sourceVisualSearchRegion: VisualCrop | null;
   sourceTextRegions: VisualCrop[] | null;
   sourceOfferSummary: string | null;
+  resolutionStatus?: "resolved" | "unresolved";
+  resolutionReason?: string | null;
 };
 type ColumnKey = "code"|"description"|"type"|"unit"|"quantity"|"norm"|"hours"|"hourlyRate"|"material"|"equipment"|"subcontracting"|"other"|"total";
 type ColumnSetting = { key: ColumnKey; label: string; width: number; visible: boolean };
@@ -910,8 +912,11 @@ function App() {
           code:string;description:string;unit:string;quantity:number;
           labourNorm:number|null;labourTotalHours:number|null;labourHoursInputMode:"norm"|"total_hours"|null;
           labour:number;material:number;equipment:number;subcontracting:number;other:number;
-          priceSourceType:"recipe";officeSourceId:string;sourceReference:string;sourceUnitPrice:number|null;sourceDetails:string;
+          priceSourceType:"recipe";officeSourceId:string|null;sourceReference:string;sourceUnitPrice:number|null;sourceDetails:string;
+          resolutionStatus:"resolved"|"unresolved";resolutionReason:string|null;
         }>;
+        readiness?:"ready"|"incomplete";
+        unresolvedCount?:number;
       };
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Office-recept leverde geen Calc-regels op.");
@@ -984,14 +989,19 @@ function App() {
           sourceVisualCrop:null,
           sourceVisualSearchRegion:null,
           sourceTextRegions:null,
-          sourceOfferSummary:`${payload.recipeName ?? proposal.label} · ${proposal.positionRef}`
+          sourceOfferSummary:`${payload.recipeName ?? proposal.label} · ${proposal.positionRef}`,
+          resolutionStatus:generated.resolutionStatus,
+          resolutionReason:generated.resolutionReason
         });
       }
 
       setNextId(id);
       setLines(current => [...current, ...created]);
       setStatus("Concept — niet opgeslagen");
-      setRecipeActionStatus(`${payload.recipeName ?? proposal.label}: ${payload.lines.length} Calc-regel(s) gegenereerd. Nog opslaan.`);
+      const unresolvedCount=payload.lines.filter(line=>line.resolutionStatus==="unresolved").length;
+      setRecipeActionStatus(unresolvedCount
+        ? `${payload.recipeName ?? proposal.label}: ${unresolvedCount} bron(nen) ontbreken. Regels zijn zichtbaar, maar de calculatie kan zo niet worden opgeslagen.`
+        : `${payload.recipeName ?? proposal.label}: ${payload.lines.length} Calc-regel(s) gegenereerd. Nog opslaan.`);
     } catch (error) {
       setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden gegenereerd.");
     }
