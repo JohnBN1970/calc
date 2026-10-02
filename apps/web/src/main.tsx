@@ -634,6 +634,7 @@ function App() {
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
   const [subcalculationResults,setSubcalculationResults]=useState<CalcSubcalculationResult[]>([]);
   const [activeSubcalculationId,setActiveSubcalculationId]=useState<number|null>(null);
+  const [activePositionFilter,setActivePositionFilter]=useState("");
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
   const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
   const [recipeLineDraft, setRecipeLineDraft] = useState({
@@ -703,20 +704,38 @@ function App() {
     [activeSubcalculationId, subcalculationResults]
   );
 
+  const availablePositions=useMemo(()=>Array.from(new Set(
+    lines.map(line=>lineTrace(line).position).filter((value):value is string=>Boolean(value))
+  )).sort((a,b)=>a.localeCompare(b,"nl")),[lines]);
+
   const workbenchLines = useMemo(() => {
-    if (!activeSubcalculationResult) return lines;
-    const included = new Set(activeSubcalculationResult.lineIds);
-    const lineById = new Map(lines.map(line => [line.id, line]));
-    for (const id of [...included]) {
-      let parentId = lineById.get(id)?.parentId ?? null;
-      while (parentId != null) {
-        if (included.has(parentId)) break;
+    let base=lines;
+    if (activeSubcalculationResult) {
+      const included = new Set(activeSubcalculationResult.lineIds);
+      const lineById = new Map(lines.map(line => [line.id, line]));
+      for (const id of [...included]) {
+        let parentId = lineById.get(id)?.parentId ?? null;
+        while (parentId != null) {
+          if (included.has(parentId)) break;
+          included.add(parentId);
+          parentId = lineById.get(parentId)?.parentId ?? null;
+        }
+      }
+      base=lines.filter(line => included.has(line.id));
+    }
+    if(!activePositionFilter)return base;
+    const included=new Set(base.filter(line=>lineTrace(line).position===activePositionFilter).map(line=>line.id));
+    const lineById=new Map(base.map(line=>[line.id,line]));
+    for(const id of [...included]){
+      let parentId=lineById.get(id)?.parentId??null;
+      while(parentId!=null){
+        if(included.has(parentId))break;
         included.add(parentId);
-        parentId = lineById.get(parentId)?.parentId ?? null;
+        parentId=lineById.get(parentId)?.parentId??null;
       }
     }
-    return lines.filter(line => included.has(line.id));
-  }, [lines, activeSubcalculationResult]);
+    return base.filter(line=>included.has(line.id));
+  }, [lines, activeSubcalculationResult,activePositionFilter]);
 
   const displayedTotals = activeSubcalculationResult
     ? {
@@ -2389,6 +2408,11 @@ function App() {
             <option value="">Volledige calculatie</option>
             {subcalculations.map(item=><option key={item.id} value={item.id}>{item.description}</option>)}
           </select></label>
+          <label><span>Positie</span><select value={activePositionFilter} onChange={event=>{setActivePositionFilter(event.target.value);setSelectedLineIds([]);}}>
+            <option value="">Alle posities</option>
+            {availablePositions.map(position=><option key={position} value={position}>{position}</option>)}
+          </select></label>
+          {activePositionFilter&&<span className="positionFilterNotice">Alleen weergave · totalen blijven ongewijzigd</span>}
           {activeSubcalculationResult && <div className="subcalcWorkmodeTotals">
             <span><small>Direct</small><strong>{money.format(activeSubcalculationResult.directCost)}</strong></span>
             <span><small>Staartkosten</small><strong>{money.format(activeSubcalculationResult.allocatedTailCost)}</strong></span>
@@ -2488,7 +2512,11 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
-          {activeSubcalculationId == null ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button> : <div className="subcalcFilteredNotice">Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan.</div>}
+          {activeSubcalculationId==null&&!activePositionFilter
+            ? <button className="newrow" onClick={() => addLine("item")}>+ Nieuwe calculatieregel</button>
+            : <div className="subcalcFilteredNotice">{activeSubcalculationId!=null
+              ? "Je werkt nu in een deelcalculatie. Nieuwe regels maak je in de volledige calculatie en koppel je daarna hieraan."
+              : "Positiefilter is actief. Nieuwe regels maak je in de volledige weergave zodat ze niet zonder positie ontstaan."}</div>}
         </div>
       </section>
     </main>
