@@ -226,6 +226,10 @@ type WorkbenchAggregate = {
     overridden:boolean;
     overrideReason:string|null;
   }>;
+  automationReadiness:{
+    canAutoSaveConcept:boolean;
+    reasons:string[];
+  };
   scopeCoverage:Array<{
     scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
     covered:number;
@@ -1589,9 +1593,7 @@ function App() {
       created.length>0 &&
       incomplete===0 &&
       skipped.length===0 &&
-      aggregate.structureProposal.unresolvedPositionRefs.length===0 &&
-      aggregate.concept.unresolved.length===0 &&
-      aggregate.concept.positions.every(position=>position.reviewStatus==="reviewed"&&position.warnings.length===0);
+      aggregate.automationReadiness.canAutoSaveConcept;
 
     if(autoSaveSafe){
       try{
@@ -1603,7 +1605,8 @@ function App() {
         if(message.includes("Staartkosten kunnen niet veilig worden berekend"))setFinancialIntegrityStatus(message);
       }
     }else if(created.length){
-      parts.push("menselijke controle nodig vóór opslaan");
+      const reason=aggregate.automationReadiness.reasons[0];
+      parts.push(reason?("menselijke controle nodig: "+reason):"menselijke controle nodig vóór opslaan");
     }
     setRecipeActionStatus(parts.join(" · ")+".");
   };

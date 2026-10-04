@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcWorkbenchStructureFromLines, calculateScopeCoverage } from "./workbenchAggregate.js";
+import { calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage } from "./workbenchAggregate.js";
 
 test("Calc structuur gebruikt stabiele sleutel en niet database-id",()=>{
   const first=calcWorkbenchStructureFromLines([
@@ -33,4 +33,27 @@ test("scope-dekking toont alleen dimensies die daadwerkelijk in context voorkome
     scopeType:"dwelling_type",covered:2,total:3,missingPositionRefs:["K3"]
   });
   assert.equal(coverage.some(item=>item.scopeType==="dwelling"),false);
+});
+
+
+test("automatische conceptopslag vereist gereviewde, waarschuwingvrije en eenduidige posities",()=>{
+  assert.deepEqual(calculateAutomationReadiness({
+    concept:{unresolved:[],positions:[{positionRef:"K1",reviewStatus:"reviewed",warnings:[]}]},
+    structureProposal:{unresolvedPositionRefs:[]}
+  }),{canAutoSaveConcept:true,reasons:[]});
+
+  const blocked=calculateAutomationReadiness({
+    concept:{
+      unresolved:["Documentselectie bevat nog een open punt."],
+      positions:[
+        {positionRef:"K1",reviewStatus:"proposed",warnings:["Meerdere bronbeschrijvingen gevonden."]},
+        {positionRef:"K2",reviewStatus:"reviewed",warnings:[]}
+      ]
+    },
+    structureProposal:{unresolvedPositionRefs:["K2"]}
+  });
+  assert.equal(blocked.canAutoSaveConcept,false);
+  assert.equal(blocked.reasons.some(reason=>reason.includes("menselijke bronreview")),true);
+  assert.equal(blocked.reasons.some(reason=>reason.includes("Meerdere bronbeschrijvingen")),true);
+  assert.equal(blocked.reasons.some(reason=>reason.includes("K2")),true);
 });
