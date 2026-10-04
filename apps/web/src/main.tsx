@@ -1416,27 +1416,59 @@ function App() {
         proposal:aggregate.recipeProposals.find(item=>item.positionRef===positionRef&&item.recipeRef===group.recipeRef)
       })))
       .filter((item):item is {group:WorkbenchAggregate["structureProposal"]["groups"][number];proposal:WorkbenchAggregate["recipeProposals"][number]}=>Boolean(item.proposal));
-    if(!eligible.length){setRecipeActionStatus("Geen eenduidige receptvoorstellen om te genereren.");return;}
+    if(!eligible.length){setRecipeActionStatus("Geen eenduidige receptvoorstellen om op te bouwen.");return;}
 
-    setRecipeActionStatus("Eenduidige recepten voorbereiden…");
+    setRecipeActionStatus("Calc-concept opbouwen…");
     let id=nextId;
-    const created:Line[]=[];
+    const createdStructure:Line[]=[];
+    const createdRecipeLines:Line[]=[];
     const skipped:string[]=[];
     let incomplete=0;
 
+    const chapterLabel=aggregate.structureProposal.chapter.label;
+    let chapterLine=lines.find(line=>line.lineType==="chapter"&&line.description.trim().toLocaleLowerCase("nl-NL")===chapterLabel.trim().toLocaleLowerCase("nl-NL"));
+    if(!chapterLine){
+      chapterLine={
+        id:id--,parentId:null,structureKey:"auto-concept",lineType:"chapter",code:"",description:chapterLabel,
+        unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+        labour:0,material:0,equipment:0,subcontracting:0,other:0,
+        priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+        sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+        sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+      };
+      createdStructure.push(chapterLine);
+    }
+
+    const paragraphByGroupKey=new Map<string,Line>();
+    for(const group of aggregate.structureProposal.groups){
+      const key=("auto-"+group.key).slice(0,36);
+      let paragraphLine=lines.find(line=>line.lineType==="paragraph"&&(
+        line.structureKey===key||
+        (line.parentId===chapterLine.id&&line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL"))
+      ));
+      if(!paragraphLine){
+        paragraphLine={
+          id:id--,parentId:chapterLine.id,structureKey:key,lineType:"paragraph",code:"",description:group.label,
+          unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+          labour:0,material:0,equipment:0,subcontracting:0,other:0,
+          priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+          sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,sourceVisualPage:null,
+          sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+        };
+        createdStructure.push(paragraphLine);
+      }
+      paragraphByGroupKey.set(group.key,paragraphLine);
+    }
+
     for(const {group,proposal} of eligible){
-      const alreadyExists=lines.some(line=>line.priceSourceType==="recipe"&&Boolean(line.sourceOfferSummary?.trim().endsWith("· "+proposal.positionRef)));
+      const alreadyExists=[...lines,...createdRecipeLines].some(line=>line.priceSourceType==="recipe"&&Boolean(line.sourceOfferSummary?.trim().endsWith("· "+proposal.positionRef)));
       if(alreadyExists){skipped.push(proposal.positionRef+" bestaat al");continue;}
       const takeoffs=aggregate.takeoffs.filter(row=>row.position_ref.trim()===proposal.positionRef);
       if(takeoffs.length>1&&!selectedTakeoffByPosition[proposal.positionRef]){
         skipped.push(proposal.positionRef+" heeft meerdere geometrieën");
         continue;
       }
-      const key=("auto-"+group.key).slice(0,36);
-      const paragraphLine=lines.find(line=>line.lineType==="paragraph"&&(
-        line.structureKey===key||
-        line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
-      ));
+      const paragraphLine=paragraphByGroupKey.get(group.key);
       if(!paragraphLine){skipped.push(proposal.positionRef+" mist voorgestelde paragraaf");continue;}
 
       try{
@@ -1467,7 +1499,7 @@ function App() {
         }
         for(const generated of payload.lines){
           if(generated.resolutionStatus==="unresolved")incomplete++;
-          created.push({
+          createdRecipeLines.push({
             id:id--,parentId:paragraphLine.id,lineType:"item",code:generated.code,description:generated.description,
             unit:generated.unit,quantity:generated.quantity,labourNorm:generated.labourNorm,labourTotalHours:generated.labourTotalHours,
             labourHoursInputMode:generated.labourHoursInputMode,labour:generated.labour,material:generated.material,equipment:generated.equipment,
@@ -1483,15 +1515,23 @@ function App() {
       }
     }
 
+    const created=[...createdStructure,...createdRecipeLines];
     if(created.length){
       setNextId(id);
       setLines(current=>[...current,...created]);
       setStatus("Concept — niet opgeslagen");
+      setRecipeParagraphKey("__auto__");
     }
-    const parts=[created.length+" Calc-regel(s) gegenereerd"];
+    if(createdStructure.length){
+      setStructureProposalStatus(createdStructure.length+" structuurregel(s) automatisch opgebouwd door Calc.");
+    }
+    const parts=[
+      createdStructure.length+" structuurregel(s)",
+      createdRecipeLines.length+" Calc-regel(s) gegenereerd"
+    ];
     if(incomplete)parts.push(incomplete+" regel(s) met ontbrekende bron");
     if(skipped.length)parts.push("overgeslagen: "+skipped.join(", "));
-    setRecipeActionStatus(parts.join(" · ")+(created.length?". Nog opslaan.":"."));
+    setRecipeActionStatus(parts.join(" · ")+(created.length?". Controleer en sla daarna de calculatie op.":"."));
   };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
@@ -2422,7 +2462,7 @@ function App() {
                 <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
                 <div className="structureProposalActions">
                   <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
-                  <button type="button" disabled={!aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Eenduidige recepten genereren</button>
+                  <button type="button" disabled={!aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
                 </div>
               </div>
               {aggregate.structureProposal.groups.length===0?<p className="muted">Nog geen structuurvoorstel mogelijk.</p>:
