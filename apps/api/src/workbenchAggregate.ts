@@ -24,6 +24,30 @@ export function calculateScopeCoverage(positions:Array<{
   }).filter(item=>item.covered>0);
 }
 
+export type CalcAutomationReadiness={
+  canAutoSaveConcept:boolean;
+  reasons:string[];
+};
+
+export function calculateAutomationReadiness(input:{
+  concept:{
+    unresolved:string[];
+    positions:Array<{positionRef:string;reviewStatus:"reviewed"|"proposed";warnings:string[]}>;
+  };
+  structureProposal:{unresolvedPositionRefs:string[]};
+}):CalcAutomationReadiness{
+  const reasons:string[]=[];
+  if(input.concept.unresolved.length)reasons.push(...input.concept.unresolved.map(item=>"Concept: "+item));
+  if(input.structureProposal.unresolvedPositionRefs.length){
+    reasons.push("Receptkeuze niet eenduidig voor: "+input.structureProposal.unresolvedPositionRefs.join(", "));
+  }
+  for(const position of input.concept.positions){
+    if(position.reviewStatus!=="reviewed")reasons.push(`Positie ${position.positionRef} wacht nog op menselijke bronreview.`);
+    for(const warning of position.warnings)reasons.push(`Positie ${position.positionRef}: ${warning}`);
+  }
+  return{canAutoSaveConcept:reasons.length===0,reasons:[...new Set(reasons)]};
+}
+
 export type CalcWorkbenchStructureNode={
   node_key:string;
   parent_key:string|null;
@@ -68,6 +92,7 @@ export function buildWorkbenchAggregate(input:{
   const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
   const scopeCoverage=calculateScopeCoverage(concept.positions);
+  const automationReadiness=calculateAutomationReadiness({concept,structureProposal});
   return {
     contract:"brebo-calc-workbench-aggregate-v1",
     officeVersion:String(input.workspace.version.version),
@@ -78,6 +103,7 @@ export function buildWorkbenchAggregate(input:{
     recipeProposals:proposals,
     structureProposal,
     scopeCoverage,
+    automationReadiness,
     structure:input.structure,
     readiness:{
       source:"calc",
