@@ -19,6 +19,9 @@ import { createTailCostComponent, listTailCostComponents } from "./tailCostRepos
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, refreshCalculationDocumentCandidates, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
+import { publishCalcResult } from "./officeResultClient.js";
+import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
+import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot } from "./workbenchVersionSnapshot.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
@@ -1342,6 +1345,283 @@ app.put("/api/workbench/current", async (req, res) => {
     await connection.rollback();
     throw error;
   } finally {
+    connection.release();
+  }
+});
+
+
+app.post("/api/workbench/current/publish", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+
+  const connection=await db.getConnection();
+  try{
+    await connection.beginTransaction();
+    const [versions]=await connection.execute<RowDataPacket[]>(
+      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price
+         FROM calculation_versions
+        WHERE calculation_id=?
+        ORDER BY version_no DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [session.calculationId]
+    );
+    const version=versions[0];
+    if(!version){
+      await connection.rollback();
+      res.status(404).json({error:"Calculatieversie niet gevonden."});
+      return;
+    }
+    if(String(version.status)!=="draft"){
+      await connection.rollback();
+      res.status(409).json({error:"Alleen een conceptversie kan worden vastgesteld en gepubliceerd."});
+      return;
+    }
+
+    const [lineRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT id,parent_id,structure_key,sort_order,line_type,code,description,unit,quantity,
+              labour_norm,labour_total_hours,labour_hours_input_mode,
+              labour_unit_cost,material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,
+              vat_regime_id,price_source_type,office_source_id,source_reference,source_supplier,source_unit_price,
+              source_price_date,source_document_id,source_details
+         FROM calculation_lines
+        WHERE version_id=?
+        ORDER BY sort_order,id
+        FOR UPDATE`,
+      [version.id]
+    );
+    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
+
+    const lineSales:VatSource[]=costRows.map(row=>{
+      const quantity=Number(row.quantity??0);
+      const labourHours=Number(row.labour_total_hours??0);
+      const labour=Number(row.labour_unit_cost??0);
+      const material=Number(row.material_unit_cost??0);
+      const equipment=Number(row.equipment_unit_cost??0);
+      const subcontracting=Number(row.subcontracting_unit_cost??0);
+      const other=Number(row.other_unit_cost??0);
+      return{
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+        salesAmount:labourHours*labour+quantity*(material+equipment+subcontracting+other)
+      };
+    });
+    const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
+
+    const [tailRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT * FROM calculation_tail_cost_components
+        WHERE version_id=? AND active=1
+        ORDER BY sort_order,id
+        FOR UPDATE`,
+      [version.id]
+    );
+    const tailComponents=tailRows.map(row=>({
+      id:Number(row.id),versionId:Number(row.version_id),
+      ownerType:String(row.owner_type??"calculation") as "calculation"|"subcalculation",
+      ownerRef:row.owner_ref==null?null:String(row.owner_ref),
+      componentKey:String(row.component_key),description:String(row.description),
+      basis:String(row.basis) as "fixed"|"percentage"|"per_unit",value:Number(row.value),
+      baseScope:String(row.base_scope) as any,baseRef:row.base_ref==null?null:String(row.base_ref),
+      quantity:row.quantity==null?null:Number(row.quantity),
+      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+      sortOrder:Number(row.sort_order),active:Boolean(row.active)
+    }));
+    const partitions=await evaluateCalculationPartitions(Number(version.id),connection);
+    const tailHierarchy=evaluateTailCostHierarchy({
+      totalDirectCost:directCost,
+      mainDirectCost:partitions.mainDirectCost,
+      subcalculations:partitions.subcalculations,
+      components:tailComponents
+    });
+    const markupAmount=tailHierarchy.tailCost;
+    const salesPrice=tailHierarchy.salesPrice;
+
+    if(Math.abs(Number(version.direct_cost)-directCost)>0.01||
+       Math.abs(Number(version.markup_amount)-markupAmount)>0.01||
+       Math.abs(Number(version.sales_price)-salesPrice)>0.01){
+      throw new Error("De opgeslagen versie wijkt af van de actuele Calc-doorrekening. Sla de calculatie opnieuw op.");
+    }
+
+    const vatRegimes=await listVatRegimes(true);
+    const vatBreakdown=aggregateVat({
+      regimes:vatRegimes,
+      lineSales,
+      tailCosts:[
+        ...tailHierarchy.calculationTailCosts,
+        ...tailHierarchy.subcalculations.flatMap(row=>row.tailCosts)
+      ]
+    });
+    const taxableBase=vatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
+    if(Math.abs(taxableBase-salesPrice)>0.01){
+      throw new Error("BTW-regime ontbreekt op een of meer verkoopregels of staartkostenregels.");
+    }
+
+    const summary=buildCommercialSummary({
+      purchase:directCost,
+      sales:salesPrice,
+      vatRate:null,
+      vatBreakdown:vatBreakdown.map(item=>({
+        code:item.code,label:item.label,rate:item.rate,taxableBase:item.taxableBase,
+        vatAmount:item.vatAmount,reverseCharged:item.reverseCharged
+      }))
+    });
+
+    const byId=new Map(lineRows.map(row=>[Number(row.id),row]));
+    const snapshotLines=lineRows.map(row=>{
+      const parent=row.parent_id==null?null:byId.get(Number(row.parent_id))??null;
+      return{
+        structureKey:String(row.structure_key),
+        parentStructureKey:parent?String(parent.structure_key):null,
+        lineType:String(row.line_type),
+        code:row.code==null?null:String(row.code),
+        description:String(row.description??""),
+        unit:row.unit==null?null:String(row.unit),
+        quantity:row.quantity==null?null:Number(row.quantity),
+        labourNorm:row.labour_norm==null?null:Number(row.labour_norm),
+        labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+        labourHoursInputMode:row.labour_hours_input_mode==null?null:String(row.labour_hours_input_mode),
+        labourUnitCost:Number(row.labour_unit_cost??0),
+        materialUnitCost:Number(row.material_unit_cost??0),
+        equipmentUnitCost:Number(row.equipment_unit_cost??0),
+        subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+        otherUnitCost:Number(row.other_unit_cost??0),
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+        priceSourceType:String(row.price_source_type??"manual"),
+        officeSourceId:row.office_source_id==null?null:String(row.office_source_id),
+        sourceReference:row.source_reference==null?null:String(row.source_reference),
+        sourceSupplier:row.source_supplier==null?null:String(row.source_supplier),
+        sourceUnitPrice:row.source_unit_price==null?null:Number(row.source_unit_price),
+        sourcePriceDate:row.source_price_date==null?null:String(row.source_price_date),
+        sourceDocumentId:row.source_document_id==null?null:String(row.source_document_id),
+        sourceDetails:row.source_details==null?null:String(row.source_details)
+      };
+    });
+
+    const [allocationRows]=await connection.execute<RowDataPacket[]>(
+      "SELECT source_line_id,target_line_id,allocation_method,share,amount FROM calculation_line_allocations WHERE version_id=? ORDER BY id",
+      [version.id]
+    );
+    const allocations=allocationRows.map(row=>({
+      sourceStructureKey:String(byId.get(Number(row.source_line_id))?.structure_key??""),
+      targetStructureKey:String(byId.get(Number(row.target_line_id))?.structure_key??""),
+      method:String(row.allocation_method),share:Number(row.share),amount:Number(row.amount)
+    }));
+
+    const [subRows]=await connection.execute<RowDataPacket[]>(
+      "SELECT id,ref,description,dimension_type,dimension_ref,sort_order FROM calculation_subcalculations WHERE version_id=? ORDER BY sort_order,id",
+      [version.id]
+    );
+    const subRefById=new Map(subRows.map(row=>[Number(row.id),String(row.ref)]));
+    const [scopeRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT s.subcalculation_id,s.scope_type,s.scope_ref,s.include_descendants,s.sort_order
+         FROM calculation_subcalculation_scopes s
+         JOIN calculation_subcalculations c ON c.id=s.subcalculation_id
+        WHERE c.version_id=?
+        ORDER BY c.sort_order,s.sort_order,s.id`,
+      [version.id]
+    );
+    const [membershipRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT m.subcalculation_id,m.calculation_line_id,m.membership_source
+         FROM calculation_subcalculation_line_memberships m
+         JOIN calculation_subcalculations c ON c.id=m.subcalculation_id
+        WHERE c.version_id=?
+        ORDER BY m.subcalculation_id,m.calculation_line_id`,
+      [version.id]
+    );
+    const [lineScopeRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT t.line_id,t.scope_type,t.scope_ref,t.source
+         FROM calculation_line_scope_tags t
+         JOIN calculation_lines l ON l.id=t.line_id
+        WHERE l.version_id=?
+        ORDER BY t.line_id,t.scope_type,t.scope_ref`,
+      [version.id]
+    );
+
+    const establishedAt=new Date().toISOString();
+    const snapshot=createWorkbenchEstablishedSnapshot({
+      calculationId:session.calculationId,
+      versionId:Number(version.id),
+      versionNo:Number(version.version_no),
+      establishedAt,
+      lines:snapshotLines,
+      allocations,
+      subcalculations:subRows.map(row=>({
+        ref:String(row.ref),description:String(row.description),dimensionType:String(row.dimension_type),
+        dimensionRef:row.dimension_ref==null?null:String(row.dimension_ref),sortOrder:Number(row.sort_order)
+      })),
+      subcalculationScopes:scopeRows.map(row=>({
+        subcalculationRef:subRefById.get(Number(row.subcalculation_id))??"",
+        scopeType:String(row.scope_type),scopeRef:String(row.scope_ref),
+        includeDescendants:Boolean(row.include_descendants),sortOrder:Number(row.sort_order)
+      })),
+      subcalculationMemberships:membershipRows.map(row=>({
+        subcalculationRef:subRefById.get(Number(row.subcalculation_id))??"",
+        lineStructureKey:String(byId.get(Number(row.calculation_line_id))?.structure_key??""),
+        source:String(row.membership_source)
+      })),
+      tailCosts:tailComponents.map(row=>({
+        ownerType:row.ownerType,ownerRef:row.ownerRef,componentKey:row.componentKey,
+        description:row.description,basis:row.basis,value:row.value,baseScope:row.baseScope,
+        baseRef:row.baseRef,quantity:row.quantity,vatRegimeId:row.vatRegimeId,sortOrder:row.sortOrder
+      })),
+      lineScopes:lineScopeRows.map(row=>({
+        lineStructureKey:String(byId.get(Number(row.line_id))?.structure_key??""),
+        scopeType:String(row.scope_type),scopeRef:String(row.scope_ref),source:String(row.source)
+      })),
+      commercial:{directCost,markupAmount,salesPrice,summary}
+    });
+    const contentHash=fingerprintWorkbenchSnapshot(snapshot);
+
+    const officeState=await fetchOfficeWorkspaceState(session.officeCalculationId);
+    const commercialSummary={
+      purchase:summary.purchase,
+      sales:summary.sales,
+      margin:summary.margin,
+      margin_pct:summary.marginPct,
+      vat:summary.vat,
+      vat_rate:summary.vatRate,
+      vat_breakdown:summary.vatBreakdown.map(item=>({
+        code:item.code,label:item.label,rate:item.rate,taxable_base:item.taxableBase,
+        vat_amount:item.vatAmount,reverse_charged:item.reverseCharged
+      }))
+    };
+    const published=await publishCalcResult({
+      calculationId:session.officeCalculationId,
+      officeVersion:String(officeState.version.version),
+      calcVersion:String(version.id),
+      actorId:session.actorId,
+      commercialSummary
+    });
+    const verifiedState=await fetchOfficeWorkspaceState(session.officeCalculationId);
+    verifyOfficeCommercialSummary(verifiedState.calc_result?.commercial_summary,commercialSummary);
+
+    await connection.execute(
+      `INSERT INTO calculation_version_snapshots(version_id,snapshot_contract,snapshot_json,content_hash)
+       VALUES(?,?,?,?)`,
+      [version.id,snapshot.contract,JSON.stringify(snapshot),contentHash]
+    );
+    await connection.execute(
+      `UPDATE calculation_versions
+          SET status='established',content_hash=?,established_at=?
+        WHERE id=?`,
+      [contentHash,establishedAt.slice(0,23).replace("T"," "),version.id]
+    );
+    await connection.execute("UPDATE calculations SET status='established',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",[session.calculationId]);
+    await connection.commit();
+
+    res.json({
+      status:"established",
+      versionId:Number(version.id),
+      versionNo:Number(version.version_no),
+      contentHash,
+      officeSync:{ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash},
+      commercialSummary
+    });
+  }catch(error){
+    try{await connection.rollback();}catch{}
+    const detail=error instanceof Error?error.message:"Publiceren mislukt.";
+    res.status(422).json({error:detail});
+  }finally{
     connection.release();
   }
 });
