@@ -21,7 +21,7 @@ import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, refreshCalculationDocumentCandidates, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
-import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot } from "./workbenchVersionSnapshot.js";
+import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snapshotDate, snapshotJson } from "./workbenchVersionSnapshot.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
@@ -1502,14 +1502,14 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         sourceReference:row.source_reference==null?null:String(row.source_reference),
         sourceSupplier:row.source_supplier==null?null:String(row.source_supplier),
         sourceUnitPrice:row.source_unit_price==null?null:Number(row.source_unit_price),
-        sourcePriceDate:row.source_price_date==null?null:String(row.source_price_date),
+        sourcePriceDate:snapshotDate(row.source_price_date),
         sourceDocumentId:row.source_document_id==null?null:String(row.source_document_id),
         sourceDetails:row.source_details==null?null:String(row.source_details),
         sourceVisualPage:row.source_visual_page==null?null:Number(row.source_visual_page),
-        sourcePositionBounds:row.source_position_bounds==null?null:String(row.source_position_bounds),
-        sourceVisualCrop:row.source_visual_crop==null?null:String(row.source_visual_crop),
-        sourceVisualSearchRegion:row.source_visual_search_region==null?null:String(row.source_visual_search_region),
-        sourceTextRegions:row.source_text_regions==null?null:String(row.source_text_regions),
+        sourcePositionBounds:snapshotJson(row.source_position_bounds),
+        sourceVisualCrop:snapshotJson(row.source_visual_crop),
+        sourceVisualSearchRegion:snapshotJson(row.source_visual_search_region),
+        sourceTextRegions:snapshotJson(row.source_text_regions),
         sourceOfferSummary:row.source_offer_summary==null?null:String(row.source_offer_summary)
       };
     });
