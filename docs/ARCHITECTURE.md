@@ -50,6 +50,25 @@ No shared database.
 
 Every cross-system record uses stable identifiers. Calculatie may cache read models for performance, but Office remains authoritative for Office-owned data.
 
+## Calculation version lifecycle
+
+Calc deliberately separates work-in-progress persistence from publication:
+
+```
+Office context -> Calc draft -> readiness gate -> explicit publish
+             -> immutable Calc snapshot -> commercial summary to Office
+             -> new Calc draft from snapshot when later changes are needed
+```
+
+Rules:
+
+- saving a draft never publishes to Office;
+- publication is an explicit Calc action;
+- publication requires financial consistency and complete line-level VAT coverage;
+- an established version is immutable;
+- Office receives only the commercial summary + VAT breakdown and a canonical reference;
+- later changes always start a new Calc draft version from the immutable Calc snapshot.
+
 ## UX rule
 
 The main calculation screen is a spreadsheet-like work surface inspired by established estimating workflows, without copying third-party UI or code.
