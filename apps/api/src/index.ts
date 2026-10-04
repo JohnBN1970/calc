@@ -25,6 +25,7 @@ import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snaps
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
+import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
@@ -739,6 +740,112 @@ async function currentCalcDraftVersionId(calculationId:number):Promise<number> {
   if(version.status!=="draft")throw new Error("Deze calculatieversie is vastgesteld en kan niet meer worden gewijzigd. Start eerst een nieuwe versie.");
   return version.id;
 }
+
+app.get("/api/workbench/current/versions", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const [rows]=await db.execute<RowDataPacket[]>(
+      `SELECT v.id,v.version_no,v.status,v.direct_cost,v.markup_amount,v.sales_price,
+              v.content_hash,v.established_at,v.created_at,s.snapshot_contract
+         FROM calculation_versions v
+         LEFT JOIN calculation_version_snapshots s ON s.version_id=v.id
+        WHERE v.calculation_id=?
+        ORDER BY v.version_no DESC`,
+      [session.calculationId]
+    );
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({
+      contract:"brebo-calc-version-history-v1",
+      versions:rows.map(row=>({
+        id:Number(row.id),
+        versionNo:Number(row.version_no),
+        status:String(row.status),
+        directCost:Number(row.direct_cost??0),
+        markupAmount:Number(row.markup_amount??0),
+        salesPrice:Number(row.sales_price??0),
+        contentHash:row.content_hash==null?null:String(row.content_hash),
+        establishedAt:row.established_at instanceof Date?row.established_at.toISOString():row.established_at==null?null:String(row.established_at),
+        createdAt:row.created_at instanceof Date?row.created_at.toISOString():String(row.created_at),
+        snapshotContract:row.snapshot_contract==null?null:String(row.snapshot_contract)
+      }))
+    });
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Versiehistorie kon niet worden geladen."});
+  }
+});
+
+app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const [versions]=await db.execute<RowDataPacket[]>(
+      `SELECT id,status,direct_cost,markup_amount,sales_price
+         FROM calculation_versions
+        WHERE calculation_id=?
+        ORDER BY version_no DESC
+        LIMIT 1`,
+      [session.calculationId]
+    );
+    const version=versions[0];
+    if(!version){
+      res.status(404).json({error:"Calculatieversie niet gevonden."});
+      return;
+    }
+    const [lineRows]=await db.execute<RowDataPacket[]>(
+      `SELECT line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
+              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id
+         FROM calculation_lines
+        WHERE version_id=?`,
+      [version.id]
+    );
+    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    const lineSales:VatSource[]=costRows.map(row=>({
+      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+      salesAmount:Number(row.labour_total_hours??0)*Number(row.labour_unit_cost??0)+
+        Number(row.quantity??0)*(Number(row.material_unit_cost??0)+Number(row.equipment_unit_cost??0)+
+        Number(row.subcontracting_unit_cost??0)+Number(row.other_unit_cost??0))
+    }));
+    const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
+    const [components,partitions,vatRegimes]=await Promise.all([
+      listTailCostComponents(Number(version.id)),
+      evaluateCalculationPartitions(Number(version.id)),
+      listVatRegimes(true)
+    ]);
+    const hierarchy=evaluateTailCostHierarchy({
+      totalDirectCost:directCost,
+      mainDirectCost:partitions.mainDirectCost,
+      subcalculations:partitions.subcalculations,
+      components
+    });
+    const vatBreakdown=aggregateVat({
+      regimes:vatRegimes,
+      lineSales,
+      tailCosts:[
+        ...hierarchy.calculationTailCosts,
+        ...hierarchy.subcalculations.flatMap(row=>row.tailCosts)
+      ]
+    });
+    const vatTaxableBase=vatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
+    const readiness=calculatePublicationReadiness({
+      versionStatus:String(version.status),
+      costLineCount:costRows.length,
+      directCost,
+      storedDirectCost:Number(version.direct_cost??0),
+      markupAmount:hierarchy.tailCost,
+      storedMarkupAmount:Number(version.markup_amount??0),
+      salesPrice:hierarchy.salesPrice,
+      storedSalesPrice:Number(version.sales_price??0),
+      vatTaxableBase
+    });
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({
+      contract:"brebo-calc-publication-readiness-v1",
+      ...readiness,
+      totals:{directCost,markupAmount:hierarchy.tailCost,salesPrice:hierarchy.salesPrice,vatTaxableBase}
+    });
+  }catch(error){
+    res.status(422).json({error:error instanceof Error?error.message:"Publicatiegereedheid kon niet worden bepaald."});
+  }
+});
 
 app.get("/api/workbench/current/tail-costs", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
