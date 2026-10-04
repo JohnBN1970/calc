@@ -2504,6 +2504,7 @@ function App() {
               }
               {structureProposalStatus&&<div className="managementStatus">{structureProposalStatus}</div>}
             </div>
+            {!aggregate.automationReadiness.canAutoSaveConcept && aggregate.automationReadiness.reasons.length>0 && <div className="recipeWarnings"><strong>Automatische conceptopslag geblokkeerd</strong>{aggregate.automationReadiness.reasons.map((reason,index)=><span key={index}>{reason}</span>)}</div>}
             {aggregate.concept.unresolved.length > 0 && <div className="recipeWarnings"><strong>Open punten</strong>{aggregate.concept.unresolved.map((warning,index)=><span key={index}>{warning}</span>)}</div>}
             <div className="recipeColumns">
               <div className="recipePanel"><h3>Posities</h3>{aggregate.concept.positions.length === 0 ? <p className="muted">Nog geen complete posities.</p> : aggregate.concept.positions.map((position,index) => {
