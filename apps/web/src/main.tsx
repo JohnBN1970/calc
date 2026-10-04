@@ -1408,10 +1408,9 @@ function App() {
         }))
       })
     });
-    const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string};error?:string};
+    const payload = await response.json().catch(() => ({})) as {directCost?:number;publication?:{status?:"draft_only"};error?:string};
     if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
-    if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
-    else setStatus(`Opgeslagen in Calc · Office-sync uitgesteld${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
+    setStatus("Concept opgeslagen in Calc");
     await loadWorkbench();
     await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
     return payload;
@@ -2358,7 +2357,7 @@ function App() {
       </section>
 
       {!calculationReady && <div className="readinessBanner" role="alert">
-        <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Opslaan en publiceren is geblokkeerd.</span></div>
+        <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
       </div>}
 

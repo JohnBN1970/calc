@@ -19,8 +19,6 @@ import { createTailCostComponent, listTailCostComponents } from "./tailCostRepos
 import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, refreshCalculationDocumentCandidates, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
-import { publishCalcResult } from "./officeResultClient.js";
-import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
@@ -1309,66 +1307,6 @@ app.put("/api/workbench/current", async (req, res) => {
     );
     await connection.commit();
 
-    let officeSync:{ok:boolean;snapshotId?:number;contentHash?:string;error?:string}={ok:false};
-    try {
-      const officeState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      const vatRegimes = await listVatRegimes(true);
-      const evaluatedTailCosts = [
-        ...tailHierarchy.calculationTailCosts,
-        ...tailHierarchy.subcalculations.flatMap(row=>row.tailCosts)
-      ];
-      const vatBreakdown = aggregateVat({
-        regimes:vatRegimes,
-        lineSales:lineVatSources,
-        tailCosts:evaluatedTailCosts
-      });
-      const taxableBaseTotal = vatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
-      if(Math.abs(taxableBaseTotal-salesPrice)>0.01){
-        throw new Error("BTW-regime ontbreekt op een of meer verkoopregels of staartkostenregels.");
-      }
-      const summary = buildCommercialSummary({
-        purchase:directCost,
-        sales:salesPrice,
-        vatRate:null,
-        vatBreakdown:vatBreakdown.map(item=>({
-          code:item.code,
-          label:item.label,
-          rate:item.rate,
-          taxableBase:item.taxableBase,
-          vatAmount:item.vatAmount,
-          reverseCharged:item.reverseCharged
-        }))
-      });
-      const commercialSummary = {
-        purchase: summary.purchase,
-        sales: summary.sales,
-        margin: summary.margin,
-        margin_pct: summary.marginPct,
-        vat: summary.vat,
-        vat_rate: summary.vatRate,
-        vat_breakdown: summary.vatBreakdown.map(item=>({
-          code:item.code,
-          label:item.label,
-          rate:item.rate,
-          taxable_base:item.taxableBase,
-          vat_amount:item.vatAmount,
-          reverse_charged:item.reverseCharged
-        }))
-      };
-      const published = await publishCalcResult({
-        calculationId: session.officeCalculationId,
-        officeVersion: String(officeState.version.version),
-        calcVersion: String(version.id),
-        actorId: session.actorId,
-        commercialSummary
-      });
-      const verifiedState = await fetchOfficeWorkspaceState(session.officeCalculationId);
-      verifyOfficeCommercialSummary(verifiedState.calc_result?.commercial_summary, commercialSummary);
-      officeSync={ok:true,snapshotId:published.snapshot_id,contentHash:published.content_hash};
-    } catch(error) {
-      officeSync={ok:false,error:error instanceof Error?error.message:"Office-sync mislukt."};
-    }
-
     const finalVatRegimes=await listVatRegimes(true);
     const finalVatBreakdown=aggregateVat({
       regimes:finalVatRegimes,
@@ -1398,7 +1336,7 @@ app.put("/api/workbench/current", async (req, res) => {
       margin:summary.margin, marginPct:summary.marginPct,
       vat:summary.vat, vatRate:summary.vatRate,
       vatBreakdown:finalVatBreakdown, vatReady,
-      officeSync
+      publication:{status:"draft_only" as const}
     });
   } catch (error) {
     await connection.rollback();
