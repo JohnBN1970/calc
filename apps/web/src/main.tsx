@@ -1360,6 +1360,59 @@ function App() {
     void boot();
   }, []);
 
+  async function persistWorkbenchDraft(linesToSave:Line[]){
+    setStatus("Opslaan…");
+    const response = await fetch("/api/workbench/current", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        allocations,
+        lines: linesToSave.map((line, index) => ({
+          id: line.id,
+          parentId: line.parentId,
+          structureKey: line.structureKey ?? null,
+          sortOrder: index,
+          lineType: line.lineType,
+          code: line.code,
+          description: line.description,
+          unit: line.unit,
+          quantity: line.quantity,
+          labourNorm: line.labourNorm,
+          labourTotalHours: line.labourTotalHours,
+          labourHoursInputMode: line.labourHoursInputMode,
+          labourUnitCost: line.labour,
+          materialUnitCost: line.material,
+          equipmentUnitCost: line.equipment,
+          subcontractingUnitCost: line.subcontracting,
+          otherUnitCost: line.other,
+          vatRegimeId: line.vatRegimeId,
+          priceSourceType: line.priceSourceType,
+          officeSourceId: line.officeSourceId,
+          sourceReference: line.sourceReference,
+          sourceSupplier: line.sourceSupplier,
+          sourceUnitPrice: line.sourceUnitPrice,
+          sourcePriceDate: line.sourcePriceDate,
+          sourceDocumentId: line.sourceDocumentId,
+          sourceDetails: line.sourceDetails,
+          sourceVisualPage: line.sourceVisualPage,
+          sourcePositionBounds: line.sourcePositionBounds,
+          sourceVisualCrop: line.sourceVisualCrop,
+          sourceVisualSearchRegion: line.sourceVisualSearchRegion,
+          sourceTextRegions: line.sourceTextRegions,
+          sourceOfferSummary: line.sourceOfferSummary,
+          manualScopes: line.manualScopes ?? []
+        }))
+      })
+    });
+    const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string};error?:string};
+    if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
+    if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
+    else setStatus(`Opgeslagen in Calc · Office-sync uitgesteld${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
+    await loadWorkbench();
+    await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
+    return payload;
+  }
+
   const applyStructureProposal=()=>{
     if(!aggregate?.structureProposal.ready){
       setStructureProposalStatus("Er is nog geen bruikbaar structuurvoorstel.");
@@ -1531,7 +1584,28 @@ function App() {
     ];
     if(incomplete)parts.push(incomplete+" regel(s) met ontbrekende bron");
     if(skipped.length)parts.push("overgeslagen: "+skipped.join(", "));
-    setRecipeActionStatus(parts.join(" · ")+(created.length?". Controleer en sla daarna de calculatie op.":"."));
+
+    const autoSaveSafe=
+      created.length>0 &&
+      incomplete===0 &&
+      skipped.length===0 &&
+      aggregate.structureProposal.unresolvedPositionRefs.length===0 &&
+      aggregate.concept.unresolved.length===0 &&
+      aggregate.concept.positions.every(position=>position.reviewStatus==="reviewed"&&position.warnings.length===0);
+
+    if(autoSaveSafe){
+      try{
+        await persistWorkbenchDraft([...lines,...created]);
+        parts.push("concept automatisch opgeslagen");
+      }catch(error){
+        const message=error instanceof Error?error.message:"automatisch opslaan mislukt";
+        parts.push("automatisch opslaan geblokkeerd: "+message);
+        if(message.includes("Staartkosten kunnen niet veilig worden berekend"))setFinancialIntegrityStatus(message);
+      }
+    }else if(created.length){
+      parts.push("menselijke controle nodig vóór opslaan");
+    }
+    setRecipeActionStatus(parts.join(" · ")+".");
   };
   const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
     if (!recipeParagraphKey || !aggregate) {
@@ -2236,56 +2310,8 @@ function App() {
   };
 
   const save = async () => {
-    setStatus("Opslaan…");
     try {
-      const response = await fetch("/api/workbench/current", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          allocations,
-          lines: lines.map((line, index) => ({
-            id: line.id,
-            parentId: line.parentId,
-            structureKey: line.structureKey ?? null,
-            sortOrder: index,
-            lineType: line.lineType,
-            code: line.code,
-            description: line.description,
-            unit: line.unit,
-            quantity: line.quantity,
-            labourNorm: line.labourNorm,
-            labourTotalHours: line.labourTotalHours,
-            labourHoursInputMode: line.labourHoursInputMode,
-            labourUnitCost: line.labour,
-            materialUnitCost: line.material,
-            equipmentUnitCost: line.equipment,
-            subcontractingUnitCost: line.subcontracting,
-            otherUnitCost: line.other,
-            vatRegimeId: line.vatRegimeId,
-            priceSourceType: line.priceSourceType,
-            officeSourceId: line.officeSourceId,
-            sourceReference: line.sourceReference,
-            sourceSupplier: line.sourceSupplier,
-            sourceUnitPrice: line.sourceUnitPrice,
-            sourcePriceDate: line.sourcePriceDate,
-            sourceDocumentId: line.sourceDocumentId,
-            sourceDetails: line.sourceDetails,
-            sourceVisualPage: line.sourceVisualPage,
-            sourcePositionBounds: line.sourcePositionBounds,
-            sourceVisualCrop: line.sourceVisualCrop,
-            sourceVisualSearchRegion: line.sourceVisualSearchRegion,
-            sourceTextRegions: line.sourceTextRegions,
-            sourceOfferSummary: line.sourceOfferSummary,
-            manualScopes: line.manualScopes ?? []
-          }))
-        })
-      });
-      const payload = await response.json().catch(() => ({})) as {directCost?:number;officeSync?:{ok?:boolean;error?:string};error?:string};
-      if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
-      if (payload.officeSync?.ok) setStatus("Opgeslagen · resultaat gesynchroniseerd met Office");
-      else setStatus(`Opgeslagen in Calc · Office-sync mislukt${payload.officeSync?.error ? `: ${payload.officeSync.error}` : ""}`);
-      await loadWorkbench();
-      await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
+      await persistWorkbenchDraft(lines);
     } catch(error) {
       const message=error instanceof Error?error.message:"Opslaan mislukt";
       setStatus(message);
