@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot } from "./workbenchVersionSnapshot.js";
+import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snapshotDate, snapshotJson } from "./workbenchVersionSnapshot.js";
 
 const base=()=>({
   calculationId:1,
@@ -55,4 +55,14 @@ test("workbench snapshot fails on missing structural parent",()=>{
   const input=base();
   input.lines[1].parentStructureKey="missing";
   assert.throws(()=>createWorkbenchEstablishedSnapshot(input),/Missing parent structure key/);
+});
+
+
+test("snapshot bronvelden worden canoniek geserialiseerd",()=>{
+  assert.equal(snapshotDate(new Date("2026-10-04T12:34:56.000Z")),"2026-10-04");
+  assert.equal(snapshotDate("2026-10-04 00:00:00"),"2026-10-04");
+  assert.equal(snapshotJson({x:1,y:[2,3]}),JSON.stringify({x:1,y:[2,3]}));
+  assert.equal(snapshotJson('{"x":1}'),'{"x":1}');
+  assert.throws(()=>snapshotDate("04-10-2026"),/Invalid snapshot date/);
+  assert.throws(()=>snapshotJson("[object Object]"));
 });

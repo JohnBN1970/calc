@@ -55,6 +55,29 @@ export type WorkbenchEstablishedSnapshot={
   };
 };
 
+export function snapshotDate(value:unknown):string|null{
+  if(value==null||value==="")return null;
+  if(value instanceof Date){
+    if(Number.isNaN(value.getTime()))throw new Error("Invalid snapshot date.");
+    return value.toISOString().slice(0,10);
+  }
+  const text=String(value).trim();
+  const match=text.match(/^\d{4}-\d{2}-\d{2}/);
+  if(!match)throw new Error("Invalid snapshot date.");
+  return match[0];
+}
+
+export function snapshotJson(value:unknown):string|null{
+  if(value==null||value==="")return null;
+  if(typeof value==="string"){
+    const text=value.trim();
+    if(!text)return null;
+    JSON.parse(text);
+    return text;
+  }
+  return JSON.stringify(value);
+}
+
 function stable(value:unknown):string{
   if(Array.isArray(value))return `[${value.map(stable).join(",")}]`;
   if(value&&typeof value==="object"){
