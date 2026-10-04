@@ -1590,7 +1590,8 @@ function App() {
       incomplete===0 &&
       skipped.length===0 &&
       aggregate.structureProposal.unresolvedPositionRefs.length===0 &&
-      aggregate.concept.unresolved.length===0;
+      aggregate.concept.unresolved.length===0 &&
+      aggregate.concept.positions.every(position=>position.reviewStatus==="reviewed"&&position.warnings.length===0);
 
     if(autoSaveSafe){
       try{
