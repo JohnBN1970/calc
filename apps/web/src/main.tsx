@@ -1718,6 +1718,7 @@ function App() {
   };
 
   const patchLine = (id: number, patch: Partial<Line>) => {
+    if(versionStatus==="established")return;
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
     setStatus("Concept — niet opgeslagen");
   };
@@ -1738,6 +1739,7 @@ function App() {
   const clearAllocation=(sourceLineId:number)=>{setAllocations(current=>current.filter(item=>item.sourceLineId!==sourceLineId));setStatus("Kostenverdeling opgeheven — nog opslaan");};
 
   const addLine = (lineType: LineType, initialScope?:{scopeType:ScopeFilterType;scopeRef:string}) => {
+    if(versionStatus==="established")return;
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
     const latestParagraph = [...lines].reverse().find(line => line.lineType === "paragraph");
     const parent = lineType === "paragraph" ? latestChapter : (lineType === "chapter" ? undefined : (latestParagraph ?? latestChapter));
@@ -2402,6 +2404,7 @@ function App() {
         <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
 
+      {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
       {!calculationReady && <div className="readinessBanner" role="alert">
         <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
@@ -2450,20 +2453,20 @@ function App() {
           <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
           <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
           <div className="commandDivider" />
-          <button className="command" type="button" onClick={() => addLine("chapter")} title="Nieuw hoofdstuk"><Icon name="chapter" /><span>Hoofdstuk</span></button>
-          <button className="command" type="button" onClick={() => addLine("paragraph")} title="Nieuwe paragraaf"><Icon name="paragraph" /><span>Paragraaf</span></button>
+          <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
+          <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
           <button className="command" type="button"
-            disabled={activeSubcalculationId!=null&&!activeScopeRef}
+            disabled={versionStatus==="established"||(activeSubcalculationId!=null&&!activeScopeRef)}
             onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
             title={activeScopeRef?"Nieuwe regel in "+scopeLabels[activeScopeType]+" "+activeScopeRef:activeSubcalculationId!=null?"Kies eerst een scope om een regel in deze deelcalculatie toe te voegen":"Nieuwe calculatieregel"}>
             <Icon name="line" /><span>Regel</span>
           </button>
           <div className="commandDivider" />
-          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Calc-recept toepassen op Office-brondata" onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
+          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om recepten toe te passen":"Calc-recept toepassen op Office-brondata"} onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
           <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
-          <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" title="Deelcalculaties beheren in Calc" onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
-          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" title="Staartkosten beheren in Calc" onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
-          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+          <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
+          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
+          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
           {versionStatus==="established"
@@ -2855,7 +2858,7 @@ function App() {
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
-        <div className="grid">
+        <div className={"grid"+(versionStatus==="established"?" is-readonly":"")} aria-readonly={versionStatus==="established"}>
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
             {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
               {column.key === "code" && <input type="checkbox" aria-label="Alle regels selecteren" checked={workbenchLines.length > 0 && selectedLineIds.length === workbenchLines.length} onChange={event => setSelectedLineIds(event.target.checked ? workbenchLines.map(line => line.id) : [])} />}

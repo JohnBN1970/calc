@@ -332,3 +332,17 @@
 .financialIntegrityWarning{display:grid;gap:4px;margin:12px 0;padding:10px 12px;border:1px solid #cfd5da;border-radius:8px;background:#fafbfc}
 .financialIntegrityWarning strong{font-size:.88rem}
 .financialIntegrityWarning span{color:#4b5563;font-size:.82rem;line-height:1.4}
+
+
+.grid.is-readonly {
+  pointer-events: none;
+  opacity: .88;
+}
+.grid.is-readonly input,
+.grid.is-readonly select,
+.grid.is-readonly textarea {
+  cursor: not-allowed;
+}
+.establishedBanner {
+  margin-bottom: 14px;
+}

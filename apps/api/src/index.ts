@@ -721,13 +721,23 @@ app.post("/api/session/logout", (req, res) => {
   res.status(204).end();
 });
 
-async function currentCalcVersionId(calculationId:number):Promise<number> {
+async function currentCalcVersionState(calculationId:number):Promise<{id:number;status:string}> {
   const [versions]=await db.execute<RowDataPacket[]>(
-    "SELECT id FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+    "SELECT id,status FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
     [calculationId]
   );
   if(!versions[0]) throw new Error("Calculatie heeft geen versie.");
-  return Number(versions[0].id);
+  return{id:Number(versions[0].id),status:String(versions[0].status)};
+}
+
+async function currentCalcVersionId(calculationId:number):Promise<number> {
+  return (await currentCalcVersionState(calculationId)).id;
+}
+
+async function currentCalcDraftVersionId(calculationId:number):Promise<number> {
+  const version=await currentCalcVersionState(calculationId);
+  if(version.status!=="draft")throw new Error("Deze calculatieversie is vastgesteld en kan niet meer worden gewijzigd. Start eerst een nieuwe versie.");
+  return version.id;
 }
 
 app.get("/api/workbench/current/tail-costs", async (req,res)=>{
@@ -743,7 +753,7 @@ app.get("/api/workbench/current/tail-costs", async (req,res)=>{
 app.post("/api/workbench/current/tail-costs", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
-    const versionId=await currentCalcVersionId(session.calculationId);
+    const versionId=await currentCalcDraftVersionId(session.calculationId);
     const ownerType=String(req.body?.ownerType??"calculation");
     const ownerRef=req.body?.ownerRef==null?null:String(req.body.ownerRef).trim();
     if(ownerType==="subcalculation"){
@@ -853,7 +863,7 @@ app.post("/api/workbench/current/subcalculations/scoped", async (req,res)=>{
   const session=requireSession(req,res);
   if(!session)return;
   try{
-    const versionId=await currentCalcVersionId(session.calculationId);
+    const versionId=await currentCalcDraftVersionId(session.calculationId);
     const scopeType=String(req.body?.scopeType??"custom") as any;
     const id=await createScopedCalcSubcalculation({
       versionId,
@@ -874,7 +884,7 @@ app.post("/api/workbench/current/subcalculations", async (req, res) => {
   const session=requireSession(req,res);
   if(!session) return;
   try {
-    const versionId=await currentCalcVersionId(session.calculationId);
+    const versionId=await currentCalcDraftVersionId(session.calculationId);
     const id=await createCalcSubcalculation({
       versionId,
       ref:String(req.body?.ref??""),
@@ -891,7 +901,7 @@ app.post("/api/workbench/current/subcalculations/:id/scopes", async (req, res) =
   const session=requireSession(req,res);
   if(!session) return;
   try {
-    const versionId=await currentCalcVersionId(session.calculationId);
+    const versionId=await currentCalcDraftVersionId(session.calculationId);
     const subcalculations=await listCalcSubcalculations(versionId);
     const subcalculationId=Number(req.params.id);
     if(!subcalculations.some(item=>item.id===subcalculationId)) {
@@ -915,7 +925,7 @@ app.put("/api/workbench/current/subcalculations/:id/lines/:lineId", async (req, 
   const session=requireSession(req,res);
   if(!session) return;
   try {
-    const versionId=await currentCalcVersionId(session.calculationId);
+    const versionId=await currentCalcDraftVersionId(session.calculationId);
     const subcalculations=await listCalcSubcalculations(versionId);
     const subcalculationId=Number(req.params.id);
     if(!subcalculations.some(item=>item.id===subcalculationId)) {
