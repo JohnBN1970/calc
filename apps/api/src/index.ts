@@ -1383,7 +1383,8 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
               labour_norm,labour_total_hours,labour_hours_input_mode,
               labour_unit_cost,material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,
               vat_regime_id,price_source_type,office_source_id,source_reference,source_supplier,source_unit_price,
-              source_price_date,source_document_id,source_details
+              source_price_date,source_document_id,source_details,source_visual_page,source_position_bounds,
+              source_visual_crop,source_visual_search_region,source_text_regions,source_offer_summary
          FROM calculation_lines
         WHERE version_id=?
         ORDER BY sort_order,id
@@ -1493,7 +1494,13 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         sourceUnitPrice:row.source_unit_price==null?null:Number(row.source_unit_price),
         sourcePriceDate:row.source_price_date==null?null:String(row.source_price_date),
         sourceDocumentId:row.source_document_id==null?null:String(row.source_document_id),
-        sourceDetails:row.source_details==null?null:String(row.source_details)
+        sourceDetails:row.source_details==null?null:String(row.source_details),
+        sourceVisualPage:row.source_visual_page==null?null:Number(row.source_visual_page),
+        sourcePositionBounds:row.source_position_bounds==null?null:String(row.source_position_bounds),
+        sourceVisualCrop:row.source_visual_crop==null?null:String(row.source_visual_crop),
+        sourceVisualSearchRegion:row.source_visual_search_region==null?null:String(row.source_visual_search_region),
+        sourceTextRegions:row.source_text_regions==null?null:String(row.source_text_regions),
+        sourceOfferSummary:row.source_offer_summary==null?null:String(row.source_offer_summary)
       };
     });
 
@@ -1621,6 +1628,198 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     try{await connection.rollback();}catch{}
     const detail=error instanceof Error?error.message:"Publiceren mislukt.";
     res.status(422).json({error:detail});
+  }finally{
+    connection.release();
+  }
+});
+
+
+app.post("/api/workbench/current/versions", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+
+  const connection=await db.getConnection();
+  try{
+    await connection.beginTransaction();
+    const [versions]=await connection.execute<RowDataPacket[]>(
+      `SELECT id,version_no,status
+         FROM calculation_versions
+        WHERE calculation_id=?
+        ORDER BY version_no DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [session.calculationId]
+    );
+    const current=versions[0];
+    if(!current){
+      await connection.rollback();
+      res.status(404).json({error:"Calculatieversie niet gevonden."});
+      return;
+    }
+    if(String(current.status)!=="established"){
+      await connection.rollback();
+      res.status(409).json({error:"Een nieuwe versie kan alleen vanuit een vastgestelde versie worden gestart."});
+      return;
+    }
+
+    const [snapshots]=await connection.execute<RowDataPacket[]>(
+      "SELECT snapshot_contract,snapshot_json,content_hash FROM calculation_version_snapshots WHERE version_id=? LIMIT 1",
+      [current.id]
+    );
+    const stored=snapshots[0];
+    if(!stored||String(stored.snapshot_contract)!=="brebo-calc-workbench-snapshot-v3"){
+      throw new Error("De vastgestelde versie heeft geen bruikbare workbench-snapshot v3.");
+    }
+    const snapshot=typeof stored.snapshot_json==="string"
+      ? JSON.parse(stored.snapshot_json)
+      : stored.snapshot_json;
+    if(!snapshot||snapshot.contract!=="brebo-calc-workbench-snapshot-v3"||!Array.isArray(snapshot.lines)){
+      throw new Error("De workbench-snapshot is ongeldig.");
+    }
+
+    const nextVersionNo=Number(current.version_no)+1;
+    const [insertVersion]=await connection.execute<ResultSetHeader>(
+      `INSERT INTO calculation_versions
+        (calculation_id,version_no,status,direct_cost,markup_amount,sales_price)
+       VALUES(?,?,'draft',?,?,?)`,
+      [
+        session.calculationId,nextVersionNo,
+        Number(snapshot.commercial?.directCost??0),
+        Number(snapshot.commercial?.markupAmount??0),
+        Number(snapshot.commercial?.salesPrice??0)
+      ]
+    );
+    const nextVersionId=insertVersion.insertId;
+
+    const subIdByRef=new Map<string,number>();
+    for(const sub of Array.isArray(snapshot.subcalculations)?snapshot.subcalculations:[]){
+      const [insert]=await connection.execute<ResultSetHeader>(
+        `INSERT INTO calculation_subcalculations
+          (version_id,ref,description,dimension_type,dimension_ref,sort_order)
+         VALUES(?,?,?,?,?,?)`,
+        [
+          nextVersionId,String(sub.ref),String(sub.description),
+          String(sub.dimensionType??"custom"),sub.dimensionRef==null?null:String(sub.dimensionRef),
+          Number(sub.sortOrder??0)
+        ]
+      );
+      subIdByRef.set(String(sub.ref),insert.insertId);
+    }
+
+    const lineIdByKey=new Map<string,number>();
+    let pending=[...snapshot.lines];
+    while(pending.length){
+      let progressed=false;
+      const remaining:any[]=[];
+      for(const line of pending){
+        const key=String(line.structureKey??"").trim();
+        const parentKey=line.parentStructureKey==null?null:String(line.parentStructureKey);
+        if(!key)throw new Error("Snapshotregel mist stabiele structuursleutel.");
+        if(parentKey&&!lineIdByKey.has(parentKey)){
+          remaining.push(line);
+          continue;
+        }
+        const parentId=parentKey?lineIdByKey.get(parentKey)!:null;
+        const [insert]=await connection.execute<ResultSetHeader>(
+          `INSERT INTO calculation_lines
+            (version_id,parent_id,structure_key,sort_order,line_type,code,description,unit,quantity,
+             labour_norm,labour_total_hours,labour_hours_input_mode,
+             labour_unit_cost,material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,
+             vat_regime_id,price_source_type,office_source_id,source_reference,source_supplier,source_unit_price,
+             source_price_date,source_document_id,source_details,source_visual_page,source_position_bounds,
+             source_visual_crop,source_visual_search_region,source_text_regions,source_offer_summary)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [
+            nextVersionId,parentId,key,lineIdByKey.size,String(line.lineType),line.code??null,String(line.description??""),
+            line.unit??null,line.quantity??null,line.labourNorm??null,line.labourTotalHours??null,line.labourHoursInputMode??null,
+            Number(line.labourUnitCost??0),Number(line.materialUnitCost??0),Number(line.equipmentUnitCost??0),
+            Number(line.subcontractingUnitCost??0),Number(line.otherUnitCost??0),line.vatRegimeId??null,
+            String(line.priceSourceType??"manual"),line.officeSourceId??null,line.sourceReference??null,line.sourceSupplier??null,
+            line.sourceUnitPrice??null,line.sourcePriceDate??null,line.sourceDocumentId??null,line.sourceDetails??null,
+            line.sourceVisualPage??null,line.sourcePositionBounds??null,line.sourceVisualCrop??null,
+            line.sourceVisualSearchRegion??null,line.sourceTextRegions??null,line.sourceOfferSummary??null
+          ]
+        );
+        lineIdByKey.set(key,insert.insertId);
+        progressed=true;
+      }
+      if(!progressed)throw new Error("Snapshot bevat een ongeldige of cyclische regelhiërarchie.");
+      pending=remaining;
+    }
+
+    for(const allocation of Array.isArray(snapshot.allocations)?snapshot.allocations:[]){
+      const sourceId=lineIdByKey.get(String(allocation.sourceStructureKey??""));
+      const targetId=lineIdByKey.get(String(allocation.targetStructureKey??""));
+      if(!sourceId||!targetId)throw new Error("Snapshotkostenverdeling verwijst naar een ontbrekende regel.");
+      await connection.execute(
+        `INSERT INTO calculation_line_allocations
+          (version_id,source_line_id,target_line_id,allocation_method,share,amount)
+         VALUES(?,?,?,?,?,?)`,
+        [nextVersionId,sourceId,targetId,String(allocation.method),Number(allocation.share??0),Number(allocation.amount??0)]
+      );
+    }
+
+    for(const scope of Array.isArray(snapshot.subcalculationScopes)?snapshot.subcalculationScopes:[]){
+      const subId=subIdByRef.get(String(scope.subcalculationRef??""));
+      if(!subId)throw new Error("Snapshotscope verwijst naar een ontbrekende deelcalculatie.");
+      await connection.execute(
+        `INSERT INTO calculation_subcalculation_scopes
+          (subcalculation_id,scope_type,scope_ref,include_descendants,sort_order)
+         VALUES(?,?,?,?,?)`,
+        [subId,String(scope.scopeType),String(scope.scopeRef),scope.includeDescendants?1:0,Number(scope.sortOrder??0)]
+      );
+    }
+
+    for(const membership of Array.isArray(snapshot.subcalculationMemberships)?snapshot.subcalculationMemberships:[]){
+      const subId=subIdByRef.get(String(membership.subcalculationRef??""));
+      const lineId=lineIdByKey.get(String(membership.lineStructureKey??""));
+      if(!subId||!lineId)throw new Error("Snapshotlidmaatschap verwijst naar ontbrekende Calc-data.");
+      await connection.execute(
+        `INSERT INTO calculation_subcalculation_line_memberships
+          (subcalculation_id,calculation_line_id,membership_source)
+         VALUES(?,?,?)`,
+        [subId,lineId,String(membership.source??"scope")]
+      );
+    }
+
+    for(const tail of Array.isArray(snapshot.tailCosts)?snapshot.tailCosts:[]){
+      await connection.execute(
+        `INSERT INTO calculation_tail_cost_components
+          (version_id,owner_type,owner_ref,component_key,description,basis,value,base_scope,base_ref,quantity,vat_regime_id,sort_order,active)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+        [
+          nextVersionId,String(tail.ownerType??"calculation"),tail.ownerRef??null,String(tail.componentKey),
+          String(tail.description),String(tail.basis),Number(tail.value??0),String(tail.baseScope),
+          tail.baseRef??null,tail.quantity??null,tail.vatRegimeId??null,Number(tail.sortOrder??0)
+        ]
+      );
+    }
+
+    for(const scope of Array.isArray(snapshot.lineScopes)?snapshot.lineScopes:[]){
+      const lineId=lineIdByKey.get(String(scope.lineStructureKey??""));
+      if(!lineId)throw new Error("Snapshotregelscope verwijst naar een ontbrekende regel.");
+      await connection.execute(
+        `INSERT INTO calculation_line_scope_tags(line_id,scope_type,scope_ref,source)
+         VALUES(?,?,?,?)`,
+        [lineId,String(scope.scopeType),String(scope.scopeRef),String(scope.source??"generated")]
+      );
+    }
+
+    await connection.execute(
+      "UPDATE calculations SET status='draft',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",
+      [session.calculationId]
+    );
+    await connection.commit();
+    res.status(201).json({
+      status:"draft",
+      versionId:nextVersionId,
+      versionNo:nextVersionNo,
+      sourceVersionId:Number(current.id),
+      sourceContentHash:String(stored.content_hash)
+    });
+  }catch(error){
+    try{await connection.rollback();}catch{}
+    res.status(422).json({error:error instanceof Error?error.message:"Nieuwe calculatieversie kon niet worden gestart."});
   }finally{
     connection.release();
   }

@@ -26,6 +26,12 @@ export type WorkbenchSnapshotLine={
   sourcePriceDate:string|null;
   sourceDocumentId:string|null;
   sourceDetails:string|null;
+  sourceVisualPage?:number|null;
+  sourcePositionBounds?:string|null;
+  sourceVisualCrop?:string|null;
+  sourceVisualSearchRegion?:string|null;
+  sourceTextRegions?:string|null;
+  sourceOfferSummary?:string|null;
 };
 
 export type WorkbenchEstablishedSnapshot={
