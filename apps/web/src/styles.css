@@ -346,3 +346,38 @@
 .establishedBanner {
   margin-bottom: 14px;
 }
+
+
+.versionHistory {
+  position: relative;
+}
+.versionHistory summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.versionHistoryList {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  min-width: 260px;
+  max-height: 320px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  padding: 8px;
+}
+.versionHistoryList > div {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 2px 8px;
+  padding: 8px;
+  border-bottom: 1px solid rgba(0,0,0,.07);
+}
+.versionHistoryList > div:last-child {
+  border-bottom: 0;
+}
+.versionHistoryList small {
+  grid-column: 2;
+}

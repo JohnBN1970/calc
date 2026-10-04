@@ -193,6 +193,24 @@ type ProjectContext = {
   buildings: Array<{ id: number; title: string }>;
 };
 
+type CalcVersionHistoryItem={
+  id:number;
+  versionNo:number;
+  status:"draft"|"established";
+  directCost:number;
+  markupAmount:number;
+  salesPrice:number;
+  contentHash:string|null;
+  establishedAt:string|null;
+  createdAt:string;
+  snapshotContract:string|null;
+};
+type PublicationReadiness={
+  canPublish:boolean;
+  reasons:string[];
+  totals:{directCost:number;markupAmount:number;salesPrice:number;vatTaxableBase:number};
+};
+
 type WorkbenchAggregate = {
   contract: "brebo-calc-workbench-aggregate-v1";
   officeVersion: string;
@@ -667,6 +685,9 @@ function App() {
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
   const [versionStatus,setVersionStatus]=useState<"draft"|"established">("draft");
+  const [versionNo,setVersionNo]=useState(1);
+  const [versionHistory,setVersionHistory]=useState<CalcVersionHistoryItem[]>([]);
+  const [publicationReadiness,setPublicationReadiness]=useState<PublicationReadiness|null>(null);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -1279,6 +1300,19 @@ function App() {
     } catch {
       setAggregate(null);
     }
+    const [historyResponse,readinessResponse]=await Promise.all([
+      fetch("/api/workbench/current/versions",{headers:{Accept:"application/json"}}),
+      fetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}})
+    ]);
+    if(historyResponse.ok){
+      const historyPayload=await historyResponse.json() as {versions?:CalcVersionHistoryItem[]};
+      setVersionHistory(Array.isArray(historyPayload.versions)?historyPayload.versions:[]);
+    }else setVersionHistory([]);
+    if(readinessResponse.ok){
+      const readinessPayload=await readinessResponse.json() as PublicationReadiness;
+      setPublicationReadiness(readinessPayload);
+    }else setPublicationReadiness(null);
+
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
@@ -1288,6 +1322,7 @@ function App() {
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     const loadedVersionStatus=String(data.version?.status??"draft")==="established"?"established":"draft";
     setVersionStatus(loadedVersionStatus);
+    setVersionNo(Number(data.version?.version_no??1));
     setAuthorized(true);
     setStatus(loadedVersionStatus==="established"?"Vastgesteld · gepubliceerd naar Office":"Opgeslagen");
   };
@@ -2395,7 +2430,10 @@ function App() {
           <p>{project?.title ?? "Projectcontext laden…"} · {status}</p>
           {project?.client_name && <p className="projectMeta">Opdrachtgever: {project.client_name}{project.project_kind ? ` · ${project.project_kind}` : ""}</p>}
         </div>
-        <div className="contextActions"><span className="saveState">{status}</span></div>
+        <div className="contextActions">
+          <span className="saveState">v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}</span>
+          {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · {money.format(item.salesPrice)}</span>{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
+        </div>
       </div>
 
       <section className="kpis">
@@ -2405,6 +2443,7 @@ function App() {
       </section>
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
+      {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Nog niet publiceerbaar</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
       {!calculationReady && <div className="readinessBanner" role="alert">
         <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
