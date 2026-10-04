@@ -666,6 +666,7 @@ function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
+  const [versionStatus,setVersionStatus]=useState<"draft"|"established">("draft");
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -1285,8 +1286,10 @@ function App() {
     })) : []);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
+    const loadedVersionStatus=String(data.version?.status??"draft")==="established"?"established":"draft";
+    setVersionStatus(loadedVersionStatus);
     setAuthorized(true);
-    setStatus("Opgeslagen");
+    setStatus(loadedVersionStatus==="established"?"Vastgesteld · gepubliceerd naar Office":"Opgeslagen");
   };
 
   const setDocumentDecision=async(documentId:number,decision:"primary"|"supporting"|"review"|"excluded")=>{
@@ -2321,6 +2324,28 @@ function App() {
     }
   };
 
+  const publish = async () => {
+    if(versionStatus!=="draft"){
+      setStatus("Deze calculatieversie is al vastgesteld.");
+      return;
+    }
+    try{
+      await persistWorkbenchDraft(lines);
+      setStatus("Vaststellen en publiceren naar Office…");
+      const response=await fetch("/api/workbench/current/publish",{
+        method:"POST",
+        headers:{Accept:"application/json"}
+      });
+      const payload=await response.json().catch(()=>({})) as {status?:string;contentHash?:string;error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Publiceren mislukt"));
+      setVersionStatus("established");
+      setStatus("Vastgesteld · gepubliceerd naar Office");
+      await loadWorkbench();
+    }catch(error){
+      setStatus(error instanceof Error?error.message:"Publiceren mislukt");
+    }
+  };
+
   if (authorized === false) {
     return <div className="entry">
       <div className="entryCard">
@@ -2420,7 +2445,8 @@ function App() {
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Calculatie opslaan" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
+          <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady||versionStatus!=="draft"} title={versionStatus!=="draft"?"Deze versie is vastgesteld":calculationReady ? "Concept opslaan in Calc" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
+          <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady||versionStatus!=="draft"} title={versionStatus!=="draft"?"Deze versie is al vastgesteld":calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="office" /><span>Publiceren</span></button>
         </div>
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
