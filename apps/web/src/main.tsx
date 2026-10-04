@@ -2346,6 +2346,27 @@ function App() {
     }
   };
 
+  const startNewVersion = async () => {
+    if(versionStatus!=="established"){
+      setStatus("Maak eerst de huidige versie definitief.");
+      return;
+    }
+    try{
+      setStatus("Nieuwe conceptversie maken…");
+      const response=await fetch("/api/workbench/current/versions",{
+        method:"POST",
+        headers:{Accept:"application/json"}
+      });
+      const payload=await response.json().catch(()=>({})) as {versionNo?:number;error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Nieuwe versie kon niet worden gestart."));
+      await loadWorkbench();
+      await Promise.all([loadSubcalculations(),loadSubcalculationResults(),loadTailCosts()]);
+      setStatus(`Nieuwe conceptversie v${payload.versionNo??""} gestart`);
+    }catch(error){
+      setStatus(error instanceof Error?error.message:"Nieuwe versie kon niet worden gestart.");
+    }
+  };
+
   if (authorized === false) {
     return <div className="entry">
       <div className="entryCard">
@@ -2445,8 +2466,12 @@ function App() {
           <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" title="Artikelen, prijzen en prijsbronnen" onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
           <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
           <span className="commandSpacer" />
-          <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady||versionStatus!=="draft"} title={versionStatus!=="draft"?"Deze versie is vastgesteld":calculationReady ? "Concept opslaan in Calc" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
-          <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady||versionStatus!=="draft"} title={versionStatus!=="draft"?"Deze versie is al vastgesteld":calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="office" /><span>Publiceren</span></button>
+          {versionStatus==="established"
+            ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
+            : <>
+                <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
+                <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="office" /><span>Publiceren</span></button>
+              </>}
         </div>
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
