@@ -1,5 +1,6 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
 import { triageCalculationDocuments, type CalcDocumentTriageItem } from "./documentTriage.js";
+import { measurementKindForFact, measurementKindLabel, type MeasurementKind } from "./measurementSemantics.js";
 
 export type CalculationConceptPosition = {
   positionRef: string;
@@ -93,20 +94,28 @@ export function buildConceptFromOfficeContext(
 
     const row = completeTakeoffs[0];
     const facts = factsByPosition.get(positionRef) ?? [];
-    const primaryGeometryTypes=new Set(
-      facts
-        .filter(f=>primaryDocumentIds.has(Number(f.document_id))&&["quantity","width_mm","height_mm"].includes(f.fact_type))
-        .map(f=>f.fact_type)
+    const primaryFacts=facts.filter(f=>primaryDocumentIds.has(Number(f.document_id)));
+    const hasQuantity=primaryFacts.some(f=>f.fact_type==="quantity");
+    const geometryKinds=[...new Set(primaryFacts.filter(f=>f.fact_type==="width_mm"||f.fact_type==="height_mm").map(f=>measurementKindForFact(f)))];
+    const completeKinds=geometryKinds.filter(kind=>
+      primaryFacts.some(f=>f.fact_type==="width_mm"&&measurementKindForFact(f)===kind)&&
+      primaryFacts.some(f=>f.fact_type==="height_mm"&&measurementKindForFact(f)===kind)
     );
-    if(!["quantity","width_mm","height_mm"].every(type=>primaryGeometryTypes.has(type))){
-      unresolved.push(`Positie ${positionRef} mist complete geometrische bronfeiten uit een door Calc primair geselecteerd document.`);
+    if(!hasQuantity||completeKinds.length===0){
+      unresolved.push(`Positie ${positionRef} mist complete hoeveelheid + B×H van dezelfde maatsoort uit een door Calc primair geselecteerd document.`);
       continue;
     }
+    if(completeKinds.length>1){
+      unresolved.push(`Positie ${positionRef} bevat meerdere complete maatsoorten (${completeKinds.map(kind=>measurementKindLabel(kind as MeasurementKind)).join(", ")}); expliciete keuze vereist.`);
+      continue;
+    }
+    const measurementKind=completeKinds[0] as MeasurementKind;
     const descriptions = facts.filter(f => f.fact_type === "description" && f.value_text?.trim());
     const prices = facts.filter(f => f.fact_type === "supplier_unit_price" && f.value_number !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
     const warnings: string[] = [];
 
+    warnings.push("Geometrie geïnterpreteerd als "+measurementKindLabel(measurementKind)+".");
     if (completeTakeoffs.length > 1) {
       warnings.push(`${completeTakeoffs.length} geometrische take-offs gevonden; expliciete keuze vereist vóór receptplaatsing.`);
     }
