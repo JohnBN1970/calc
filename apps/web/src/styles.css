@@ -425,3 +425,11 @@
 .configurableRow.is-recipe-drop-target{outline:2px solid #677d90;outline-offset:-2px;background:#eef3f6}.configurableRow.is-recipe-drop-target .cell{background:transparent}
 @media(max-width:1100px){.calcWorkspaceShell{grid-template-columns:210px minmax(0,1fr)}.calcWorkspaceShell.recipeTreeCollapsed{grid-template-columns:42px minmax(0,1fr)}}
 @media(max-width:760px){.calcWorkspaceShell,.calcWorkspaceShell.recipeTreeCollapsed{grid-template-columns:1fr}.recipeTreeSidebar{position:relative;top:auto;max-height:none}.recipeTreeCollapsed .recipeTreeSidebar{width:auto}.recipeTreeCollapsed .recipeTreeHeader{justify-content:flex-end}}
+
+/* Tool windows belong above the calculation instead of stretching the worksheet. */
+.dockWindow.is-floating{width:min(760px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 96px))}
+.dockWindow.is-floating .managementGrid{grid-template-columns:minmax(220px,300px) minmax(340px,1fr)}
+.dockWindow.is-floating .managementWide{grid-column:1/-1}
+.dockWindow.is-floating .recipeWorkspace,.dockWindow.is-floating .managementWorkspace,.dockWindow.is-floating .priceWorkspace{max-width:none}
+.dockWindow.is-floating .recipeSummary{grid-template-columns:repeat(3,minmax(120px,1fr))}
+@media(max-width:800px){.dockWindow.is-floating .managementGrid{grid-template-columns:1fr}.dockWindow.is-floating .recipeSummary{grid-template-columns:repeat(2,minmax(110px,1fr))}}
