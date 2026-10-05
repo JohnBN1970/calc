@@ -924,6 +924,47 @@ function App() {
         sales: activeSubcalculationResult.salesPrice
       }
     : totals;
+  const directCostMix = useMemo(() => {
+    const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
+    const sourceLines=lines.filter(line =>
+      isCostLine(line) &&
+      line.lineType!=="option" &&
+      (!activeLineIds||activeLineIds.has(line.id))
+    );
+    const amounts={
+      labour:0,
+      material:0,
+      equipment:0,
+      subcontracting:0,
+      other:0
+    };
+    for(const line of sourceLines){
+      amounts.labour+=(line.labourTotalHours??0)*line.labour;
+      amounts.material+=line.quantity*line.material;
+      amounts.equipment+=line.quantity*line.equipment;
+      amounts.subcontracting+=line.quantity*line.subcontracting;
+      amounts.other+=line.quantity*line.other;
+    }
+    const total=Object.values(amounts).reduce((sum,value)=>sum+value,0);
+    const rows=[
+      {key:"labour",label:"Arbeid",amount:amounts.labour},
+      {key:"material",label:"Materiaal",amount:amounts.material},
+      {key:"equipment",label:"Materieel",amount:amounts.equipment},
+      {key:"subcontracting",label:"Onderaanneming",amount:amounts.subcontracting},
+      {key:"other",label:"Overig",amount:amounts.other}
+    ].filter(item=>item.amount>0.000001).map(item=>({
+      ...item,
+      percentage:total>0?(item.amount/total)*100:0
+    }));
+    let offset=0;
+    const segments=rows.map(item=>{
+      const segment={...item,offset};
+      offset+=item.percentage;
+      return segment;
+    });
+    return{total,rows,segments};
+  },[lines,activeSubcalculationResult]);
+
   const visibleColumns = useMemo(() => columnSettings.filter(column => column.visible), [columnSettings]);
   const gridTemplateColumns = useMemo(() => visibleColumns.map(column => `${column.width}px`).join(" "), [visibleColumns]);
   useEffect(() => {
@@ -2533,6 +2574,27 @@ function App() {
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs excl. BTW</span><strong>{money.format(displayedTotals.sales)}</strong></div>
+        <div className="costMixKpi">
+          <span>Kostenverhouding directe kost</span>
+          {directCostMix.total>0?<div className="costMixBody">
+            <div className="costMixChart" aria-label="Verdeling directe kosten">
+              <svg viewBox="0 0 42 42" role="img">
+                <circle className="costMixTrack" cx="21" cy="21" r="15.9155" fill="transparent" pathLength="100"/>
+                {directCostMix.segments.map(item=><circle
+                  key={item.key}
+                  className={`costMixSegment costMix-${item.key}`}
+                  cx="21" cy="21" r="15.9155" fill="transparent" pathLength="100"
+                  strokeDasharray={`${item.percentage} ${100-item.percentage}`}
+                  strokeDashoffset={-item.offset}
+                ><title>{item.label}: {item.percentage.toFixed(1)}% · {money.format(item.amount)}</title></circle>)}
+              </svg>
+              <div className="costMixCenter"><strong>{money.format(directCostMix.total)}</strong><small>direct</small></div>
+            </div>
+            <div className="costMixLegend">
+              {directCostMix.rows.map(item=><div key={item.key}><i className={`costMixDot costMix-${item.key}`}></i><span>{item.label}</span><b>{item.percentage.toFixed(1)}%</b><small>{money.format(item.amount)}</small></div>)}
+            </div>
+          </div>:<small className="muted">Nog geen directe kosten.</small>}
+        </div>
       </section>
 
       {!activeSubcalculationResult&&<section className="vatTotalsPanel">
