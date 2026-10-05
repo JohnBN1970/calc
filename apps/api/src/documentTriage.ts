@@ -1,4 +1,5 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
+import { measurementKindForFact, measurementKindLabel } from "./measurementSemantics.js";
 
 export type CalcDocumentTriageStatus="primary"|"supporting"|"review"|"excluded";
 
@@ -49,17 +50,30 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
     const relevant=facts.filter(fact=>geometryFacts.has(fact.fact_type)||commercialFacts.has(fact.fact_type));
     const reviewed=relevant.filter(fact=>["reviewed","accepted","confirmed"].includes(fact.review_status));
     const byPosition=new Map<string,Set<string>>();
+    const geometryByPositionKind=new Map<string,Set<string>>();
     for(const fact of relevant){
       const ref=fact.position_ref?.trim();
       if(!ref)continue;
       const types=byPosition.get(ref)??new Set<string>();
       types.add(fact.fact_type);
       byPosition.set(ref,types);
+      if(geometryFacts.has(fact.fact_type)){
+        const kind=fact.fact_type==="quantity"?"quantity":measurementKindForFact(fact);
+        const key=ref+"\u0000"+kind;
+        const geometryTypes=geometryByPositionKind.get(key)??new Set<string>();
+        geometryTypes.add(fact.fact_type);
+        geometryByPositionKind.set(key,geometryTypes);
+      }
     }
 
-    const completeGeometry=[...byPosition.entries()]
-      .filter(([,types])=>[...geometryFacts].every(type=>types.has(type)))
-      .map(([ref])=>ref);
+    const completeGeometryKeys=[...geometryByPositionKind.entries()]
+      .filter(([key,types])=>{
+        const [ref,kind]=key.split("\u0000");
+        if(kind==="quantity")return false;
+        const quantityTypes=geometryByPositionKind.get(ref+"\u0000quantity");
+        return Boolean(quantityTypes?.has("quantity")&&types.has("width_mm")&&types.has("height_mm"));
+      });
+    const completeGeometry=[...new Set(completeGeometryKeys.map(([key])=>key.split("\u0000")[0]))];
 
     const positionRefs=[...byPosition.keys()].sort((a,b)=>a.localeCompare(b,"nl"));
     const signals:string[]=[];
@@ -74,9 +88,10 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
 
     if(completeGeometry.length){
       score+=(profile==="geometry"?68:60)+Math.min(20,(completeGeometry.length-1)*5);
-      signals.push(completeGeometry.length+" positie(s) met complete hoeveelheid + B×H");
+      signals.push(completeGeometry.length+" positie(s) met complete hoeveelheid + B×H van dezelfde maatsoort");
     }
     const geometryCount=relevant.filter(fact=>geometryFacts.has(fact.fact_type)).length;
+    for(const [key] of completeGeometryKeys){const kind=key.split("\u0000")[1];if(kind)signals.push("complete geometrie: "+measurementKindLabel(kind as any));}
     const exactGeometryFromPhoto=profile==="photo"&&relevant.some(fact=>
       geometryFacts.has(fact.fact_type)&&
       !["reviewed","accepted","confirmed"].includes(fact.review_status)
