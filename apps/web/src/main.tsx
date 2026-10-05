@@ -3327,7 +3327,7 @@ function App() {
             <div className="structureChooserList">
               <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("chapter")}>Nieuw hoofdstuk</button>
               <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("paragraph")}>Nieuwe paragraaf</button>
-              {classificationScheme!=="custom"&&<small>Hoofdgroepen en paragrafen komen uit de ${classificationLabel[classificationScheme]}-zoekboom.</small>}
+              {classificationScheme!=="custom"&&<small>Hoofdgroepen en paragrafen komen uit de {classificationLabel[classificationScheme]}-zoekboom.</small>}
               <hr />
               <button type="button" onClick={collapseAllStructure}>Alles inklappen</button>
               <button type="button" onClick={expandAllStructure}>Alles uitklappen</button>
