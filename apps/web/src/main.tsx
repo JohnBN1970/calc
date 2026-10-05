@@ -480,7 +480,7 @@ function mapClassification(classification: QuoteClassification | null, scheme: C
 }
 
 
-type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices" | "settings" | "help" | "subcalc" | "tail" | "rates";
+type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices" | "quote" | "settings" | "help" | "subcalc" | "tail" | "rates";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -491,6 +491,7 @@ function Icon({ name }: { name: IconName }) {
     line: <><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="M18 16v6"/><path d="M15 19h6"/></>,
     recipe: <><path d="M6 3h12v18H6z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></>,
     prices: <><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.8-1.8-1.2-3-1.2-1.7 0-3 1-3 2.3 0 3.2 6 1.8 6 5 0 1.4-1.3 2.4-3 2.4-1.3 0-2.5-.4-3.4-1.3"/><path d="M12 5v14"/></>,
+    quote: <><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5"/><path d="M8 12h8"/><path d="M8 16h5"/><path d="M8 8h3"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.55-1.03H5.4v-3h.09a1.7 1.7 0 0 0 1.55-1.03 1.7 1.7 0 0 0-.34-1.88L6.64 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.73 4.7V4.6h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.82 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.09v3h-.09A1.7 1.7 0 0 0 19.4 15Z"/></>,
     help: <><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 4.2 1.6c-.9.9-1.9 1.3-1.9 2.8"/><path d="M12 17h.01"/></>,
     subcalc: <><rect x="4" y="5" width="7" height="6" rx="1"/><rect x="13" y="5" width="7" height="6" rx="1"/><rect x="8.5" y="13" width="7" height="6" rx="1"/></>,
@@ -940,7 +941,6 @@ function App() {
   const [selectedQuotePositions, setSelectedQuotePositions] = useState<string[]>([]);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>(() => loadColumnSettings());
   const [columnPreferencesLoaded,setColumnPreferencesLoaded]=useState(false);
-  const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [helpOpen,setHelpOpen]=useState(false);
   const [helpQuery,setHelpQuery]=useState("");
@@ -1097,6 +1097,45 @@ function App() {
     }
     return base.filter(line=>included.has(line.id));
   }, [lines, activeSubcalculationResult,activeScopeType,activeScopeRef]);
+
+  const structureMetrics=useMemo(()=>{
+    const lineById=new Map(workbenchLines.map(line=>[line.id,line]));
+    const children=new Map<number|null,Line[]>();
+    for(const line of workbenchLines){
+      const list=children.get(line.parentId)??[];
+      list.push(line);
+      children.set(line.parentId,list);
+    }
+    const depthOf=(line:Line)=>{
+      let depth=1;
+      let parentId=line.parentId;
+      const seen=new Set<number>();
+      while(parentId!=null&&!seen.has(parentId)){
+        seen.add(parentId);
+        const parent=lineById.get(parentId);
+        if(!parent)break;
+        depth+=1;
+        parentId=parent.parentId;
+      }
+      return depth;
+    };
+    const subtotal=(id:number,seen=new Set<number>()):number=>{
+      if(seen.has(id))return 0;
+      seen.add(id);
+      return(children.get(id)??[]).reduce((sum,child)=>{
+        if(isCostLine(child)&&child.lineType!=="option")return sum+lineDirect(child);
+        if(child.lineType==="chapter"||child.lineType==="paragraph")return sum+subtotal(child.id,seen);
+        return sum;
+      },0);
+    };
+    const result=new Map<number,{depth:number;subtotal:number}>();
+    for(const line of workbenchLines){
+      if(line.lineType==="chapter"||line.lineType==="paragraph"){
+        result.set(line.id,{depth:depthOf(line),subtotal:subtotal(line.id)});
+      }
+    }
+    return result;
+  },[workbenchLines]);
 
   const displayedTotals = activeSubcalculationResult
     ? {
@@ -2878,8 +2917,20 @@ function App() {
         <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><Icon name="subcalc" /><span>Deelcalc</span></button>
         <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><Icon name="tail" /><span>Staartkosten</span></button>
         <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+        <button className="command commandSecondary" type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om een offerte in te lezen":"Leveranciersofferte inlezen en overnemen"} onClick={()=>{setPriceWorkspaceOpen(true);openQuoteUpload();}}><Icon name="quote" /><span>Offerte</span></button>
         <button className={"command commandSecondary" + (labourRatesOpen ? " commandActive" : "")} type="button" title="Uurtarieven beheren" onClick={()=>void openLabourRates()}><Icon name="rates" /><span>Uurtarieven</span></button>
-        <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
+        <details className="columnChooser">
+          <summary className="command commandSecondary" title="Kolommen kiezen"><span>Kolommen</span><small>{columnSettings.filter(column=>column.visible).length}</small></summary>
+          <div className="columnChooserMenu" onClick={event=>event.stopPropagation()}>
+            <div className="columnChooserHead"><strong>Kolommen kiezen</strong><button type="button" onClick={resetColumns}>Standaard</button></div>
+            <div className="columnChooserList">
+              {columnSettings.map((column,index)=><div className="columnChooserRow" key={column.key}>
+                <label><input type="checkbox" checked={column.visible} onChange={event=>patchColumn(column.key,{visible:event.target.checked})}/><span>{column.label}</span></label>
+                <div className="columnChooserMove"><button type="button" disabled={index===0} onClick={()=>moveColumn(column.key,-1)}>↑</button><button type="button" disabled={index===columnSettings.length-1} onClick={()=>moveColumn(column.key,1)}>↓</button></div>
+              </div>)}
+            </div>
+          </div>
+        </details>
         <span className="commandSpacer" />
         <button className="command commandUtility" type="button" onClick={()=>void openSettings()} title="Instellingen" aria-label="Instellingen"><Icon name="settings" /></button>
         <button className="command commandUtility" type="button" onClick={()=>setHelpOpen(true)} title="Help" aria-label="Help"><Icon name="help" /></button>
@@ -2891,6 +2942,7 @@ function App() {
               <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst de onvolledige calculatieregels op"}><Icon name="office" /><span>Publiceren</span></button>
             </>}
       </div>
+      <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
 
     <main>
       <div className="calcCompactHeader">
@@ -3371,17 +3423,6 @@ function App() {
           </div>
           {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}
         </div></DockableWindow>}
-        {columnSettingsOpen && <div className="columnSettingsPanel">
-          <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
-          <div className="columnSettingsList">
-            {columnSettings.map((column,index) => <div className="columnSettingRow" key={column.key}>
-              <label><input type="checkbox" checked={column.visible} onChange={event => patchColumn(column.key,{visible:event.target.checked})} />{column.label}</label>
-              <label className="columnWidth">Breedte <input type="number" min="55" max="600" step="5" value={column.width} onChange={event => patchColumn(column.key,{width:Math.max(55,Math.min(600,Number(event.target.value)||55))})} /> px</label>
-              <button type="button" disabled={index===0} onClick={() => moveColumn(column.key,-1)}>↑</button>
-              <button type="button" disabled={index===columnSettings.length-1} onClick={() => moveColumn(column.key,1)}>↓</button>
-            </div>)}
-          </div>
-        </div>}
         {priceWorkspaceOpen && <DockableWindow id="prices" label="Prijzen" defaultFloating><div className="priceWorkspace">
           <div className="priceWorkspaceHead">
             <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
@@ -3392,7 +3433,6 @@ function App() {
             <button type="button" className="sourceAction" onClick={() => void searchArticles()}><strong>Artikel zoeken</strong><span>Zoek direct in de beheerde Office-artikelstam.</span></button>
             <button type="button" className="sourceAction" onClick={() => setStatus("Import wordt gekoppeld aan Office document-import")}><strong>Prijslijst importeren</strong><span>XML, Excel, PDF, Word of andere bron via Office laten herkennen.</span></button>
             <button type="button" className="sourceAction" onClick={openQuoteUpload}><strong>Offerte inlezen</strong><span>{selectedLineId == null ? "Kies een offertebestand; koppel daarna aan een regel." : `Inlezen voor geselecteerde regel #${selectedLineId}`}</span></button>
-            <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
           </div>
           <div className="articleSearchStatus">{articleSearchStatus}</div>
           <div className="quoteStatus" role="status" aria-live="polite"><strong>Status offerte:</strong> {quoteStatus}</div>
@@ -3549,10 +3589,12 @@ function App() {
           </div>
           {workbenchLines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
+              const metric=structureMetrics.get(line.id)??{depth:line.lineType==="chapter"?1:2,subtotal:0};
               return <div className={line.lineType} key={line.id}>
                 <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
                 <span>▾</span>
-                <input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />
+                <div className="structureDescription"><input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} /><small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}</small></div>
+                <div className="structureSubtotal"><small>Subtotaal</small><strong>{money.format(metric.subtotal)}</strong></div>
                 <LineActions line={line} />
               </div>;
             }
