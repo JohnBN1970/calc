@@ -1225,13 +1225,18 @@ function App() {
   ];
 
   const classificationCode=(value:string)=>value.split("·",1)[0].trim();
+  const canonicalClassificationCode=(value:string)=>classificationCode(value).replace(/\s+/g,"");
+  const classificationPartLabel=(value:string)=>{
+    const parts=value.split("·");
+    return parts.length>1?parts.slice(1).join("·").trim():"";
+  };
   const classificationFolderAt=(scheme:ClassificationScheme,path:string[],index:number):ClassificationFolder|null=>{
     if(scheme==="custom")return null;
     let folders=scheme==="nl_sfb"?nlSfbFolders:stabuFolders;
     let match:ClassificationFolder|null=null;
     for(let depth=0;depth<=index;depth++){
-      const wanted=classificationCode(path[depth]??"");
-      match=folders.find(folder=>normalizedStructureCode(folder.code)===normalizedStructureCode(wanted))??null;
+      const wanted=canonicalClassificationCode(path[depth]??"");
+      match=folders.find(folder=>canonicalClassificationCode(folder.code)===wanted)??null;
       if(!match)return null;
       folders=match.children??[];
     }
@@ -2456,7 +2461,7 @@ function App() {
 
     for(let index=0;index<path.length;index++){
       const rawPathPart=path[index].trim();
-      const code=classificationCode(rawPathPart);
+      const code=canonicalClassificationCode(rawPathPart);
       const folder=classificationFolderAt(classificationScheme,path,index);
       const lineType=index===0?"chapter":"paragraph";
       let parentId:number|null=null;
@@ -2464,7 +2469,7 @@ function App() {
       const existing:Line|undefined=working.find((line:Line)=>
         line.lineType===lineType&&
         line.parentId===parentId&&
-        normalizedStructureCode(line.code)===normalizedStructureCode(code)
+        canonicalClassificationCode(line.code)===code
       );
       if(existing){
         parent=existing;
@@ -2475,7 +2480,7 @@ function App() {
         parentId,
         lineType,
         code,
-        description:folder?.label??(rawPathPart.replace(/^\s*[^·]+·\s*/,"").trim()||`${classificationLabel[classificationScheme]} ${code}`)
+        description:folder?.label??(classificationPartLabel(rawPathPart)||`${classificationLabel[classificationScheme]} ${code}`)
       });
       working.push(createdLine);
       created.push(createdLine);
