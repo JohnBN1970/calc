@@ -407,6 +407,18 @@ type VatRegime={
   sortOrder:number;
 };
 
+type LabourRateRecord={
+  id:number;
+  roleRef:string;
+  label:string;
+  hourlyCostRate:number;
+  sourceRef:string|null;
+  active:boolean;
+  isDefault:boolean;
+  validFrom:string|null;
+  validTo:string|null;
+};
+
 type TailCostComponent={
   id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
   componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
@@ -880,6 +892,19 @@ function App() {
     active:true,
     sortOrder:0
   });
+  const [labourRatesOpen,setLabourRatesOpen]=useState(false);
+  const [labourRates,setLabourRates]=useState<LabourRateRecord[]>([]);
+  const [labourRateStatus,setLabourRateStatus]=useState("");
+  const [labourRateDraft,setLabourRateDraft]=useState({
+    roleRef:"",
+    label:"",
+    hourlyCostRate:0,
+    sourceRef:"",
+    active:true,
+    isDefault:false,
+    validFrom:"",
+    validTo:""
+  });
   const [tailCostOpen,setTailCostOpen]=useState(false);
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
   const [evaluatedTailCosts,setEvaluatedTailCosts]=useState<EvaluatedTailCost[]>([]);
@@ -1169,8 +1194,65 @@ function App() {
 
   const openSettings=async()=>{
     setSettingsOpen(true);
-    await loadVatRegimes();
+    await Promise.all([loadVatRegimes(),loadLabourRates()]);
   };
+
+  const loadLabourRates=async()=>{
+    setLabourRateStatus("Uurtarieven laden…");
+    try{
+      const response=await fetch("/api/settings/labour-rates",{headers:{Accept:"application/json"}});
+      const payload=await response.json().catch(()=>({})) as {rates?:LabourRateRecord[];error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarieven konden niet worden geladen."));
+      setLabourRates(Array.isArray(payload.rates)?payload.rates:[]);
+      setLabourRateStatus("");
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarieven konden niet worden geladen.");
+    }
+  };
+
+  const openLabourRates=async()=>{
+    setLabourRatesOpen(true);
+    await loadLabourRates();
+  };
+
+  const createLabourRateSetting=async()=>{
+    setLabourRateStatus("Uurtarief opslaan…");
+    try{
+      const response=await fetch("/api/settings/labour-rates",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({
+          ...labourRateDraft,
+          sourceRef:labourRateDraft.sourceRef||null,
+          validFrom:labourRateDraft.validFrom||null,
+          validTo:labourRateDraft.validTo||null
+        })
+      });
+      const payload=await response.json().catch(()=>({})) as LabourRateRecord&{error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarief kon niet worden opgeslagen."));
+      setLabourRateDraft({roleRef:"",label:"",hourlyCostRate:0,sourceRef:"",active:true,isDefault:false,validFrom:"",validTo:""});
+      await loadLabourRates();
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarief kon niet worden opgeslagen.");
+    }
+  };
+
+  const patchLabourRate=async(id:number,patch:Partial<LabourRateRecord>)=>{
+    setLabourRateStatus("Uurtarief bijwerken…");
+    try{
+      const response=await fetch(`/api/settings/labour-rates/${id}`,{
+        method:"PUT",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(patch)
+      });
+      const payload=await response.json().catch(()=>({})) as LabourRateRecord&{error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarief kon niet worden bijgewerkt."));
+      await loadLabourRates();
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarief kon niet worden bijgewerkt.");
+    }
+  };
+
 
   const createVatSetting=async()=>{
     setVatSettingsStatus("Btw-regime opslaan…");
@@ -2668,6 +2750,7 @@ function App() {
         <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
         <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
         <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+        <button className={"command commandSecondary" + (labourRatesOpen ? " commandActive" : "")} type="button" title="Uurtarieven beheren" onClick={()=>void openLabourRates()}><span>Uurtarieven</span></button>
         <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
         <span className="commandSpacer" />
         {versionStatus==="established"
@@ -2819,11 +2902,47 @@ function App() {
             </div>
             {vatSettingsStatus && <p className="settingsStatus">{vatSettingsStatus}</p>}
           </div>
+          <div className="settingsSection">
+            <div className="settingsSectionHead"><div><h3>Standaard uurtarieven</h3><p>Per rol gebruikt Calc één standaardtarief als uitgangspunt. De volledige tariefkaart beheer je in het venster Uurtarieven.</p></div><button type="button" className="secondary" onClick={()=>void openLabourRates()}>Uurtarieven openen</button></div>
+            <div className="labourDefaultList">
+              {labourRates.filter(rate=>rate.isDefault).map(rate=><div key={rate.id} className="labourDefaultRow"><span><strong>{rate.label}</strong><small>{rate.roleRef}</small></span><b>{money.format(rate.hourlyCostRate)}/uur</b></div>)}
+              {labourRates.filter(rate=>rate.isDefault).length===0&&<p className="muted">Nog geen standaard uurtarieven ingesteld.</p>}
+            </div>
+          </div>
         </div>
       </div>}
 
       <section className="workbench">
 
+        {labourRatesOpen&&<DockableWindow id="hour-rates" label="Uurtarieven"><div className="managementWorkspace labourRateWorkspace">
+          <div className="recipeWorkspaceHead">
+            <div><span className="eyebrow">CALC TARIEVEN</span><h2>Uurtarieven</h2><p>Beheer concrete arbeidskosttarieven. Eén tarief per rol kan als standaard worden gemarkeerd.</p></div>
+            <button className="panelClose" type="button" onClick={()=>setLabourRatesOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="managementGrid">
+            <section className="managementCard">
+              <h3>Nieuw uurtarief</h3>
+              <label><span>Rol/code</span><input value={labourRateDraft.roleRef} onChange={event=>setLabourRateDraft(current=>({...current,roleRef:event.target.value}))} placeholder="bijv. timmerman" /></label>
+              <label><span>Naam</span><input value={labourRateDraft.label} onChange={event=>setLabourRateDraft(current=>({...current,label:event.target.value}))} placeholder="Timmerman" /></label>
+              <label><span>Tarief per uur</span><DecimalInput value={labourRateDraft.hourlyCostRate} min={0} onChange={next=>setLabourRateDraft(current=>({...current,hourlyCostRate:next??0}))} className="" /></label>
+              <label><span>Bron/referentie</span><input value={labourRateDraft.sourceRef} onChange={event=>setLabourRateDraft(current=>({...current,sourceRef:event.target.value}))} placeholder="cao / kostprijsblad / leverancier" /></label>
+              <label><span>Geldig vanaf</span><input type="date" value={labourRateDraft.validFrom} onChange={event=>setLabourRateDraft(current=>({...current,validFrom:event.target.value}))} /></label>
+              <label><span>Geldig tot</span><input type="date" value={labourRateDraft.validTo} onChange={event=>setLabourRateDraft(current=>({...current,validTo:event.target.value}))} /></label>
+              <label className="toggleLabel"><input type="checkbox" checked={labourRateDraft.isDefault} onChange={event=>setLabourRateDraft(current=>({...current,isDefault:event.target.checked}))} /> Standaard voor deze rol</label>
+              <button type="button" onClick={()=>void createLabourRateSetting()}>Uurtarief toevoegen</button>
+            </section>
+            <section className="managementCard managementWide">
+              <h3>Tariefkaart</h3>
+              <div className="labourRateList">{labourRates.length===0?<p className="muted">Nog geen uurtarieven.</p>:labourRates.map(rate=><div className={"labourRateRow"+(!rate.active?" is-inactive":"")} key={rate.id}>
+                <div><strong>{rate.label}</strong><span>{rate.roleRef}{rate.sourceRef?` · ${rate.sourceRef}`:""}</span><small>{rate.validFrom??"geen startdatum"} → {rate.validTo??"doorlopend"}</small></div>
+                <b>{money.format(rate.hourlyCostRate)}/uur</b>
+                <label className="toggleLabel"><input type="checkbox" checked={rate.isDefault} onChange={event=>void patchLabourRate(rate.id,{isDefault:event.target.checked})} /> Standaard</label>
+                <label className="toggleLabel"><input type="checkbox" checked={rate.active} onChange={event=>void patchLabourRate(rate.id,{active:event.target.checked})} /> Actief</label>
+              </div>)}</div>
+            </section>
+          </div>
+          {labourRateStatus&&<div className="managementStatus" role="status">{labourRateStatus}</div>}
+        </div></DockableWindow>}
 
         {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen"><div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
