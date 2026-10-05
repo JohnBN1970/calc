@@ -26,6 +26,7 @@ import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } f
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { calculatePublicationFreshness } from "./publicationFreshness.js";
+import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
@@ -507,9 +508,10 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
   try {
-    const [snapshot, recipes] = await Promise.all([
+    const [snapshot, recipes, officeState] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      listCalcRecipes()
+      listCalcRecipes(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
     ]);
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
@@ -545,9 +547,10 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 
   try {
-    const [snapshot, recipes] = await Promise.all([
+    const [snapshot, recipes, officeState] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      listCalcRecipes()
+      listCalcRecipes(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
     ]);
 
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
@@ -608,7 +611,11 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
         documentIds:conceptPosition.sourceDocumentIds,
         pages:conceptPosition.sourcePages
       }:undefined,
-      scopes:conceptPosition?.scopes
+      scopes:conceptPosition?.scopes,
+      contextBinding:{
+        officeVersion:String(officeState.version.version),
+        selectionVersion:snapshot.context.document_set?.selection_version??null
+      }
     });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
@@ -745,7 +752,8 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const [versions]=await db.execute<RowDataPacket[]>(
-      `SELECT id,status,direct_cost,markup_amount,sales_price
+      `SELECT id,status,direct_cost,markup_amount,sales_price,
+              source_office_version,source_selection_version
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -759,7 +767,8 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
     }
     const [lineRows]=await db.execute<RowDataPacket[]>(
       `SELECT line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
-              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id
+              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id,
+              price_source_type,source_details
          FROM calculation_lines
         WHERE version_id=?`,
       [version.id]
@@ -803,10 +812,39 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       storedSalesPrice:Number(version.sales_price??0),
       vatTaxableBase
     });
+    const sourceReasons:string[]=[];
+    const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
+      priceSourceType:String(row.price_source_type??"manual"),
+      sourceDetails:row.source_details==null?null:String(row.source_details)
+    })));
+    if(derivedContext.status==="mixed")sourceReasons.push("Receptregels gebruiken verschillende Office-broncontexten.");
+    if(derivedContext.status==="unbound")sourceReasons.push("Receptregels missen een aantoonbare Office-broncontext; bouw het concept opnieuw op.");
+    if(derivedContext.status==="bound"){
+      const [currentOffice,currentContext]=await Promise.all([
+        fetchOfficeWorkspaceState(session.officeCalculationId),
+        fetchCalculationContextSnapshot(session.officeCalculationId)
+      ]);
+      const storedBinding={
+        officeVersion:version.source_office_version==null?"":String(version.source_office_version),
+        selectionVersion:version.source_selection_version==null?null:String(version.source_selection_version)
+      };
+      if(storedBinding.officeVersion!==derivedContext.binding!.officeVersion||
+         storedBinding.selectionVersion!==derivedContext.binding!.selectionVersion){
+        sourceReasons.push("De opgeslagen broncontextbinding wijkt af van de receptregels; sla de calculatie opnieuw op.");
+      }else if(!sourceContextIsCurrent({
+        binding:derivedContext.binding,
+        officeVersion:String(currentOffice.version.version),
+        selectionVersion:currentContext.context.document_set?.selection_version??null
+      })){
+        sourceReasons.push("Office-brondata of documentselectie is gewijzigd; bouw het Calc-concept opnieuw op vóór publicatie.");
+      }
+    }
     res.setHeader("Cache-Control","no-store, private");
     res.json({
       contract:"brebo-calc-publication-readiness-v1",
       ...readiness,
+      canPublish:readiness.canPublish&&sourceReasons.length===0,
+      reasons:[...readiness.reasons,...sourceReasons],
       totals:{directCost,markupAmount:hierarchy.tailCost,salesPrice:hierarchy.salesPrice,vatTaxableBase}
     });
   }catch(error){
@@ -1217,6 +1255,12 @@ app.put("/api/workbench/current", async (req, res) => {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
   }
+  const sourceContext=deriveSourceContextBinding(lines);
+  if(sourceContext.status==="mixed"){
+    res.status(409).json({error:"Calculatie bevat receptregels uit verschillende Office-broncontexten. Bouw het Calc-concept opnieuw op vanuit één actuele context."});
+    return;
+  }
+
   const unresolvedLines = lines.filter(line => line.resolutionStatus === "unresolved");
   if (unresolvedLines.length) {
     res.status(409).json({
@@ -1385,8 +1429,18 @@ app.put("/api/workbench/current", async (req, res) => {
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
-      [directCost, markupAmount, salesPrice, version.id]
+      `UPDATE calculation_versions
+          SET direct_cost=?,markup_amount=?,sales_price=?,
+              source_office_version=?,source_selection_version=?,
+              source_bound_at=?
+        WHERE id=?`,
+      [
+        directCost,markupAmount,salesPrice,
+        sourceContext.status==="bound"?sourceContext.binding!.officeVersion:null,
+        sourceContext.status==="bound"?sourceContext.binding!.selectionVersion:null,
+        sourceContext.status==="bound"?new Date():null,
+        version.id
+      ]
     );
     await connection.execute(
       "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
@@ -1442,7 +1496,8 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
   try{
     await connection.beginTransaction();
     const [versions]=await connection.execute<RowDataPacket[]>(
-      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price
+      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price,
+              source_office_version,source_selection_version
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -1477,6 +1532,34 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     );
     const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
+
+    const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
+      priceSourceType:String(row.price_source_type??"manual"),
+      sourceDetails:row.source_details==null?null:String(row.source_details)
+    })));
+    if(derivedContext.status==="mixed"){
+      throw new Error("Receptregels gebruiken verschillende Office-broncontexten. Bouw het concept opnieuw op.");
+    }
+    if(derivedContext.status==="unbound"){
+      throw new Error("Receptregels missen een aantoonbare Office-broncontext. Bouw het concept opnieuw op.");
+    }
+    if(derivedContext.status==="bound"){
+      if(String(version.source_office_version??"")!==derivedContext.binding!.officeVersion||
+         (version.source_selection_version==null?null:String(version.source_selection_version))!==derivedContext.binding!.selectionVersion){
+        throw new Error("De opgeslagen broncontextbinding wijkt af van de receptregels. Sla de calculatie opnieuw op.");
+      }
+      const [currentOffice,currentContext]=await Promise.all([
+        fetchOfficeWorkspaceState(session.officeCalculationId),
+        fetchCalculationContextSnapshot(session.officeCalculationId)
+      ]);
+      if(!sourceContextIsCurrent({
+        binding:derivedContext.binding,
+        officeVersion:String(currentOffice.version.version),
+        selectionVersion:currentContext.context.document_set?.selection_version??null
+      })){
+        throw new Error("De Office-broncontext is gewijzigd sinds dit Calc-concept is opgebouwd. Bouw het concept opnieuw op vóór publicatie.");
+      }
+    }
 
     const lineSales:VatSource[]=costRows.map(row=>{
       const quantity=Number(row.quantity??0);
@@ -1726,7 +1809,7 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
   try{
     await connection.beginTransaction();
     const [versions]=await connection.execute<RowDataPacket[]>(
-      `SELECT id,version_no,status
+      `SELECT id,version_no,status,source_office_version,source_selection_version,source_bound_at
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -1764,13 +1847,17 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
     const nextVersionNo=Number(current.version_no)+1;
     const [insertVersion]=await connection.execute<ResultSetHeader>(
       `INSERT INTO calculation_versions
-        (calculation_id,version_no,status,direct_cost,markup_amount,sales_price)
-       VALUES(?,?,'draft',?,?,?)`,
+        (calculation_id,version_no,status,direct_cost,markup_amount,sales_price,
+         source_office_version,source_selection_version,source_bound_at)
+       VALUES(?,?,'draft',?,?,?,?,?,?)`,
       [
         session.calculationId,nextVersionNo,
         Number(snapshot.commercial?.directCost??0),
         Number(snapshot.commercial?.markupAmount??0),
-        Number(snapshot.commercial?.salesPrice??0)
+        Number(snapshot.commercial?.salesPrice??0),
+        current.source_office_version==null?null:String(current.source_office_version),
+        current.source_selection_version==null?null:String(current.source_selection_version),
+        current.source_bound_at??null
       ]
     );
     const nextVersionId=insertVersion.insertId;
