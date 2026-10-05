@@ -891,7 +891,7 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
         WHERE version_id=?`,
       [version.id]
     );
-    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    const costRows=lineRows.filter(row=>!["chapter","paragraph","note","option"].includes(String(row.line_type)));
     const lineSales:VatSource[]=costRows.map(row=>({
       vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
       salesAmount:Number(row.labour_total_hours??0)*Number(row.labour_unit_cost??0)+
@@ -1648,7 +1648,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         FOR UPDATE`,
       [version.id]
     );
-    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    const costRows=lineRows.filter(row=>!["chapter","paragraph","note","option"].includes(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
 
     const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
