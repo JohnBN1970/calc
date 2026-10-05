@@ -26,6 +26,7 @@ import { getUserPreference, setUserPreference } from "./userPreferenceRepository
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
+import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
@@ -771,6 +772,42 @@ app.get("/api/workbench/current/versions", async (req,res)=>{
     });
   }catch(error){
     res.status(500).json({error:error instanceof Error?error.message:"Versiehistorie kon niet worden geladen."});
+  }
+});
+
+app.get("/api/workbench/current/publication-freshness", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const [rows,officeState]=await Promise.all([
+      db.execute<RowDataPacket[]>(
+        `SELECT id,version_no,status
+           FROM calculation_versions
+          WHERE calculation_id=?
+          ORDER BY version_no DESC`,
+        [session.calculationId]
+      ),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
+    ]);
+    const versions=rows[0];
+    const latest=versions[0];
+    if(!latest){
+      res.status(404).json({error:"Calculatieversie niet gevonden."});
+      return;
+    }
+    const established=versions.find(row=>String(row.status)==="established")??null;
+    const freshness=calculatePublicationFreshness({
+      latest:{id:Number(latest.id),versionNo:Number(latest.version_no),status:String(latest.status)},
+      latestEstablished:established?{id:Number(established.id),versionNo:Number(established.version_no)}:null,
+      officeResult:officeState.calc_result?{
+        calcVersion:String(officeState.calc_result.calc_version),
+        officeVersion:String(officeState.calc_result.office_version),
+        currentForOfficeVersion:officeState.calc_result.current_for_office_version
+      }:null
+    });
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({contract:"brebo-calc-publication-freshness-v1",...freshness});
+  }catch(error){
+    res.status(502).json({error:error instanceof Error?error.message:"Publicatiestatus kon niet worden bepaald."});
   }
 });
 

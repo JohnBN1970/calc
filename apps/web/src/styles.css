@@ -381,3 +381,7 @@
 .versionHistoryList small {
   grid-column: 2;
 }
+
+.publicationFreshnessWarning{align-items:center}
+.publicationFreshnessWarning button{margin-left:auto;padding:8px 12px}
+.publicationFreshnessInfo{background:#fafbfc;border-color:#dfe4e8}
