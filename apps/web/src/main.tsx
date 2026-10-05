@@ -268,6 +268,16 @@ type WorkbenchAggregate = {
       warnings: string[];
     }>;
     unresolved: string[];
+    sourceDecisions:Array<{
+      positionRef:string;
+      factType:string;
+      measurementKind:string|null;
+      status:"consistent"|"superseded"|"conflict"|"different_measurement_kind";
+      leadingDocumentId:number|null;
+      leadingValue:string|null;
+      involvedDocumentIds:number[];
+      reason:string;
+    }>;
   };
   documentTriage: Array<{
     documentId:number;
@@ -3653,6 +3663,15 @@ function App() {
                 <div className={aggregate.structureProposal.ready?"is-ready":"is-review"}><b>2</b><span>Voorstel<strong>{aggregate.concept.positions.length} posities · {aggregate.recipeProposals.length} recepten</strong></span></div>
                 <div className={aggregate.automationReadiness.canAutoSaveConcept?"is-ready":"is-review"}><b>3</b><span>Review<strong>{aggregate.automationReadiness.canAutoSaveConcept?"eenduidig op te bouwen":(aggregate.automationReadiness.reasons[0]??"controle nodig")}</strong></span></div>
               </div>
+              {aggregate.concept.sourceDecisions.length>0&&<div className="sourceDecisionPanel">
+                <div className="sourceDecisionHead"><strong>Broncontrole</strong><span>{aggregate.concept.sourceDecisions.filter(item=>item.status==="conflict").length} blokkade(s) · {aggregate.concept.sourceDecisions.filter(item=>item.status==="superseded").length} vervangen revisie(s)</span></div>
+                <div className="sourceDecisionList">
+                  {[...aggregate.concept.sourceDecisions].sort((a,b)=>(a.status==="conflict"?0:a.status==="superseded"?1:2)-(b.status==="conflict"?0:b.status==="superseded"?1:2)||a.positionRef.localeCompare(b.positionRef,"nl")).map((decision,index)=><div className={"sourceDecisionItem is-"+decision.status} key={decision.positionRef+"-"+decision.factType+"-"+String(decision.measurementKind)+"-"+index}>
+                    <span className="sourceDecisionBadge">{decision.status==="conflict"?"Actueel conflict":decision.status==="superseded"?"Oude revisie vervangen":decision.status==="different_measurement_kind"?"Andere maatsoort":"Consistent"}</span>
+                    <div><strong>{decision.positionRef} · {decision.factType}{decision.measurementKind?" · "+decision.measurementKind:""}</strong><small>{decision.reason}{decision.leadingDocumentId!==null?` · leidend document #${decision.leadingDocumentId}${decision.leadingValue!==null?" · waarde "+decision.leadingValue:""}`:""}</small></div>
+                  </div>)}
+                </div>
+              </div>}
             </section>
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
