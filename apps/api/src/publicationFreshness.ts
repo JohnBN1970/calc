@@ -2,6 +2,7 @@ export type PublicationFreshnessStatus=
   |"never_published"
   |"current"
   |"draft_pending"
+  |"publish_recovery"
   |"office_changed"
   |"version_mismatch";
 
@@ -35,6 +36,10 @@ export function calculatePublicationFreshness(input:{
     officeVersion:input.officeResult?.officeVersion??null,
     currentForOfficeVersion:input.officeResult?.currentForOfficeVersion??null
   };
+
+  if(input.officeResult&&input.latest.status==="draft"&&String(input.officeResult.calcVersion)===String(input.latest.id)){
+    return{...base,status:"publish_recovery",message:"Office heeft deze conceptversie al ontvangen, maar Calc heeft de lokale vaststelling nog niet afgerond. Publiceer opnieuw om veilig te herstellen."};
+  }
 
   if(!input.officeResult||!input.latestEstablished){
     return{...base,status:"never_published",message:"Deze calculatie is nog niet gepubliceerd naar Office."};

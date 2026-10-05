@@ -46,3 +46,23 @@ test("Office verwijst nooit stil naar verkeerde Calc-versie",()=>{
   });
   assert.equal(result.status,"version_mismatch");
 });
+
+
+test("herkent Office-publicatie van huidige draft als herstelbare toestand",()=>{
+  const result=calculatePublicationFreshness({
+    latest:{id:12,versionNo:2,status:"draft"},
+    latestEstablished:{id:11,versionNo:1},
+    officeResult:{calcVersion:"12",officeVersion:"office-v1",currentForOfficeVersion:true}
+  });
+  assert.equal(result.status,"publish_recovery");
+  assert.match(result.message,/opnieuw/i);
+});
+
+test("herkent herstel ook zonder eerdere vastgestelde versie",()=>{
+  const result=calculatePublicationFreshness({
+    latest:{id:1,versionNo:1,status:"draft"},
+    latestEstablished:null,
+    officeResult:{calcVersion:"1",officeVersion:"office-v1",currentForOfficeVersion:true}
+  });
+  assert.equal(result.status,"publish_recovery");
+});
