@@ -3643,6 +3643,17 @@ function App() {
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
           </div>
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
+            <section className="conceptBuilder">
+              <div className="conceptBuilderIntro">
+                <div><span className="eyebrow">DIGITALE CALCULATOR</span><h3>Concept opbouwen uit projectdocumenten</h3><p>Calc selecteert bruikbare Office-bronnen, bouwt posities en receptvoorstellen op en laat twijfel eerst controleren.</p></div>
+                <button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || !aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
+              </div>
+              <div className="conceptBuilderSteps">
+                <div className={aggregate.documentTriage.some(item=>item.status==="primary")?"is-ready":"is-review"}><b>1</b><span>Bronnen<strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length} primair · {aggregate.documentTriage.filter(item=>item.status==="review").length} review</strong></span></div>
+                <div className={aggregate.structureProposal.ready?"is-ready":"is-review"}><b>2</b><span>Voorstel<strong>{aggregate.concept.positions.length} posities · {aggregate.recipeProposals.length} recepten</strong></span></div>
+                <div className={aggregate.automationReadiness.canAutoSaveConcept?"is-ready":"is-review"}><b>3</b><span>Review<strong>{aggregate.automationReadiness.canAutoSaveConcept?"eenduidig op te bouwen":(aggregate.automationReadiness.reasons[0]??"controle nodig")}</strong></span></div>
+              </div>
+            </section>
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
                 {aggregate.structureProposal.ready&&<option value="__auto__">Automatisch volgens structuurvoorstel</option>}
