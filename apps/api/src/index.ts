@@ -24,6 +24,7 @@ import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snaps
 import { calculateLineCostBreakdown } from "./calculationLineAmount.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
+import { createLabourRate, listLabourRates, updateLabourRate } from "./labourRateRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
@@ -2273,6 +2274,58 @@ app.put("/api/settings/vat-regimes/:id", async (req,res)=>{
     res.json(await updateVatRegime(id,patch));
   }catch(error){
     res.status(400).json({error:error instanceof Error?error.message:"Btw-regime kon niet worden bijgewerkt."});
+  }
+});
+
+app.get("/api/settings/labour-rates", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({rates:await listLabourRates(true)});
+  }catch(error){
+    res.status(500).json({error:error instanceof Error?error.message:"Uurtarieven konden niet worden geladen."});
+  }
+});
+
+app.post("/api/settings/labour-rates", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    const rate=await createLabourRate({
+      roleRef:String(req.body?.roleRef??""),
+      label:String(req.body?.label??""),
+      hourlyCostRate:Number(req.body?.hourlyCostRate),
+      sourceRef:req.body?.sourceRef==null||req.body?.sourceRef===""?null:String(req.body.sourceRef),
+      active:req.body?.active!==false,
+      isDefault:Boolean(req.body?.isDefault),
+      validFrom:req.body?.validFrom?String(req.body.validFrom):null,
+      validTo:req.body?.validTo?String(req.body.validTo):null
+    });
+    res.status(201).json(rate);
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Uurtarief kon niet worden aangemaakt."});
+  }
+});
+
+app.put("/api/settings/labour-rates/:id", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0){res.status(400).json({error:"Ongeldig uurtarief."});return;}
+  try{
+    const patch:any={};
+    if(req.body?.roleRef!==undefined)patch.roleRef=String(req.body.roleRef);
+    if(req.body?.label!==undefined)patch.label=String(req.body.label);
+    if(req.body?.hourlyCostRate!==undefined)patch.hourlyCostRate=Number(req.body.hourlyCostRate);
+    if(req.body?.sourceRef!==undefined)patch.sourceRef=req.body.sourceRef==null||req.body.sourceRef===""?null:String(req.body.sourceRef);
+    if(req.body?.active!==undefined)patch.active=Boolean(req.body.active);
+    if(req.body?.isDefault!==undefined)patch.isDefault=Boolean(req.body.isDefault);
+    if(req.body?.validFrom!==undefined)patch.validFrom=req.body.validFrom?String(req.body.validFrom):null;
+    if(req.body?.validTo!==undefined)patch.validTo=req.body.validTo?String(req.body.validTo):null;
+    res.json(await updateLabourRate(id,patch));
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Uurtarief kon niet worden bijgewerkt."});
   }
 });
 
