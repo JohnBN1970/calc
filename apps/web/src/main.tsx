@@ -850,6 +850,8 @@ function App() {
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
   const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
+  const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
+  const [recipeDropTargetId,setRecipeDropTargetId]=useState<number|null>(null);
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
   const [subcalculations, setSubcalculations] = useState<CalcSubcalculation[]>([]);
@@ -1050,6 +1052,23 @@ function App() {
         sales: activeSubcalculationResult.salesPrice
       }
     : totals;
+  const recipeTreeGroups=useMemo(()=>{
+    const groups=new Map<string,CalcRecipe[]>();
+    for(const recipe of recipes.filter(item=>item.status!=="archived")){
+      const applicabilityCategory=typeof recipe.applicability?.category==="string"
+        ? String(recipe.applicability.category).trim()
+        : "";
+      const keyParts=recipe.recipeKey.split(/[\/:>]+/).map(item=>item.trim()).filter(Boolean);
+      const category=applicabilityCategory||(keyParts.length>1?keyParts.slice(0,-1).join(" / "):"Algemeen");
+      const items=groups.get(category)??[];
+      items.push(recipe);
+      groups.set(category,items);
+    }
+    return [...groups.entries()]
+      .map(([category,items])=>({category,items:items.sort((a,b)=>a.name.localeCompare(b.name,"nl"))}))
+      .sort((a,b)=>a.category.localeCompare(b.category,"nl"));
+  },[recipes]);
+
   const directCostMix = useMemo(() => {
     const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
     const sourceLines=lines.filter(line =>
@@ -1964,8 +1983,9 @@ function App() {
     }
     setRecipeActionStatus(parts.join(" · ")+".");
   };
-  const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number]) => {
-    if (!recipeParagraphKey || !aggregate) {
+  const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number], paragraphKeyOverride?:string) => {
+    const targetParagraphKey=paragraphKeyOverride??recipeParagraphKey;
+    if (!targetParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
       return;
     }
@@ -1999,7 +2019,7 @@ function App() {
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
       let paragraphLine:Line|undefined;
-      if(recipeParagraphKey==="__auto__"){
+      if(targetParagraphKey==="__auto__"){
         const group=aggregate.structureProposal.groups.find(item=>
           item.recipeRef===proposal.recipeRef&&item.positionRefs.includes(proposal.positionRef)
         );
@@ -2011,9 +2031,9 @@ function App() {
         ));
         if(!paragraphLine)throw new Error("Pas eerst het Calc-structuurvoorstel toe.");
       }else{
-        paragraphLine=recipeParagraphKey.startsWith("local:")
-          ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(recipeParagraphKey.slice(6)))
-          : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===recipeParagraphKey);
+        paragraphLine=targetParagraphKey.startsWith("local:")
+          ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(targetParagraphKey.slice(6)))
+          : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===targetParagraphKey);
       }
       if (!paragraphLine) throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
 
@@ -2067,6 +2087,58 @@ function App() {
     } catch (error) {
       setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden gegenereerd.");
     }
+  };
+
+  const recipeDragMime="application/x-brebo-calc-recipe";
+  const paragraphForDrop=(line:Line):Line|null=>{
+    if(line.lineType==="paragraph")return line;
+    if(line.parentId==null)return null;
+    const parent=lines.find(item=>item.id===line.parentId)??null;
+    if(parent?.lineType==="paragraph")return parent;
+    return null;
+  };
+  const paragraphKey=(line:Line)=>line.structureKey??("local:"+line.id);
+
+  const dropRecipeOnLine=async(event:React.DragEvent<HTMLDivElement>,targetLine:Line)=>{
+    event.preventDefault();
+    setRecipeDropTargetId(null);
+    if(versionStatus==="established"){
+      setRecipeActionStatus("Start eerst een nieuwe conceptversie om een recept toe te passen.");
+      return;
+    }
+    const recipeId=Number(event.dataTransfer.getData(recipeDragMime));
+    const recipe=recipes.find(item=>item.id===recipeId);
+    if(!recipe)return;
+    const paragraph=paragraphForDrop(targetLine);
+    if(!paragraph){
+      setRecipeActionStatus("Sleep het recept op een paragraaf of op een regel binnen die paragraaf.");
+      return;
+    }
+    const targetKey=paragraphKey(paragraph);
+    setSelectedRecipeVersionId(recipe.id);
+    setRecipeParagraphKey(targetKey);
+
+    const proposals=(aggregate?.recipeProposals??[]).filter(proposal=>Number(proposal.recipeRef)===recipe.id);
+    const tracedPosition=lineTrace(targetLine).position;
+    const preferredPosition=activeScopeType==="position"&&activeScopeRef?activeScopeRef:tracedPosition;
+    const candidates=preferredPosition
+      ? proposals.filter(proposal=>proposal.positionRef===preferredPosition)
+      : proposals;
+
+    if(candidates.length===1){
+      const proposal=candidates[0];
+      const takeoffs=aggregate?.takeoffs.filter(row=>row.position_ref.trim()===proposal.positionRef)??[];
+      if(takeoffs.length<=1||selectedTakeoffByPosition[proposal.positionRef]){
+        setRecipeActionStatus(`${recipe.name} wordt in ${paragraph.description} geplaatst…`);
+        await acceptRecipeProposal(proposal,targetKey);
+        return;
+      }
+    }
+
+    setRecipeWorkspaceOpen(true);
+    setRecipeActionStatus(candidates.length===0
+      ? `${recipe.name} is op ${paragraph.description} neergezet. Kies in Recept toepassen de bronpositie waarmee dit recept moet worden doorgerekend.`
+      : `${recipe.name} is op ${paragraph.description} neergezet. Er zijn meerdere mogelijke bronposities; kies de juiste en bevestig.`);
   };
 
   const patchLine = (id: number, patch: Partial<Line>) => {
@@ -2752,8 +2824,6 @@ function App() {
           <Icon name="line" /><span>Regel</span>
         </button>
         <div className="commandDivider" />
-        <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om recepten toe te passen":"Calc-recept toepassen op Office-brondata"} onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept toepassen</span></button>
-        <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten beheren</span></button>
         <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
         <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
         <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
@@ -2919,7 +2989,55 @@ function App() {
         </div>
       </div>}
 
-      <section className="workbench">
+      <div className={"calcWorkspaceShell"+(recipeTreeCollapsed?" recipeTreeCollapsed":"")}>
+        <aside className="recipeTreeSidebar" aria-label="Recepten en vensters">
+          <div className="recipeTreeHeader">
+            {!recipeTreeCollapsed&&<strong>Recepten</strong>}
+            <button type="button" className="recipeTreeCollapse" onClick={()=>setRecipeTreeCollapsed(value=>!value)} title={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"} aria-label={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"}>{recipeTreeCollapsed?"›":"‹"}</button>
+          </div>
+          {!recipeTreeCollapsed&&<>
+            <div className="recipeTreeBody">
+              {recipeTreeGroups.length===0?<p className="muted">Nog geen recepten.</p>:recipeTreeGroups.map(group=>
+                <details className="recipeTreeGroup" open key={group.category}>
+                  <summary>{group.category}<small>{group.items.length}</small></summary>
+                  <div className="recipeTreeItems">{group.items.map(recipe=>
+                    <button
+                      type="button"
+                      className="recipeTreeItem"
+                      key={recipe.id}
+                      draggable={versionStatus!=="established"}
+                      title="Sleep dit recept naar een paragraaf in de calculatie"
+                      onDragStart={event=>{
+                        event.dataTransfer.effectAllowed="copy";
+                        event.dataTransfer.setData(recipeDragMime,String(recipe.id));
+                        event.dataTransfer.setData("text/plain",recipe.name);
+                        setSelectedRecipeVersionId(recipe.id);
+                      }}
+                      onDoubleClick={()=>{
+                        setSelectedRecipeVersionId(recipe.id);
+                        setRecipeWorkspaceOpen(true);
+                        setRecipeActionStatus(`${recipe.name} geselecteerd. Kies een doelparagraaf en bronpositie.`);
+                      }}
+                    >
+                      <span className="recipeTreeGrip" aria-hidden="true">⋮⋮</span>
+                      <span><strong>{recipe.name}</strong><small>{recipe.recipeKey} · v{recipe.versionNo}</small></span>
+                    </button>
+                  )}</div>
+                </details>
+              )}
+            </div>
+            <div className="recipeTreeActions">
+              <strong>Vensters</strong>
+              <button type="button" onClick={()=>setRecipeWorkspaceOpen(true)}>Recept toepassen</button>
+              <button type="button" onClick={()=>setRecipeLibraryOpen(true)}>Recepten beheren</button>
+              <button type="button" onClick={()=>setSubcalculationOpen(true)}>Deelcalculaties</button>
+              <button type="button" onClick={()=>setTailCostOpen(true)}>Staartkosten</button>
+              <button type="button" onClick={()=>setPriceWorkspaceOpen(true)}>Prijzen</button>
+              <button type="button" onClick={()=>void openLabourRates()}>Uurtarieven</button>
+            </div>
+          </>}
+        </aside>
+        <section className="workbench">
 
         {labourRatesOpen&&<DockableWindow id="hour-rates" label="Uurtarieven"><div className="managementWorkspace labourRateWorkspace">
           <div className="recipeWorkspaceHead">
@@ -3397,7 +3515,20 @@ function App() {
               vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
-            return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
+            const canReceiveRecipe=paragraphForDrop(line)!=null;
+            return <div
+              className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}${recipeDropTargetId===line.id?" is-recipe-drop-target":""}`}
+              style={{gridTemplateColumns}}
+              key={line.id}
+              onDragOver={event=>{
+                if(!canReceiveRecipe||!Array.from(event.dataTransfer.types).includes(recipeDragMime))return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect="copy";
+                setRecipeDropTargetId(line.id);
+              }}
+              onDragLeave={()=>{if(recipeDropTargetId===line.id)setRecipeDropTargetId(null);}}
+              onDrop={event=>{if(canReceiveRecipe)void dropRecipeOnLine(event,line);}}
+              onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
@@ -3408,6 +3539,7 @@ function App() {
               : <div className="subcalcFilteredNotice">Je werkt nu in een deelcalculatie zonder actieve scope. Kies eerst een gebouw/gevel/woning/woningtype/bouwdeel/positie om een nieuwe regel veilig te koppelen.</div>}
         </div>
       </section>
+      </div>
     </main>
   </div>;
 }
