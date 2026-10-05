@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CommercialSummary } from "./commercialSummary.js";
+import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
 
 export type WorkbenchSnapshotLine={
   structureKey:string;
@@ -99,7 +100,7 @@ export function createWorkbenchEstablishedSnapshot(
   if(!Number.isInteger(input.versionId)||input.versionId<=0)throw new Error("Calculation version id is required.");
   if(!Number.isInteger(input.versionNo)||input.versionNo<=0)throw new Error("Calculation version number is required.");
   if(!input.establishedAt.trim())throw new Error("Established timestamp is required.");
-  if(!input.lines.some(line=>!["chapter","paragraph","note"].includes(line.lineType))){
+  if(!input.lines.some(line=>lineContributesToCalculationTotals(line.lineType))){
     throw new Error("Cannot establish an empty calculation.");
   }
 
