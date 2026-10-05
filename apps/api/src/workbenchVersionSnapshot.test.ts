@@ -34,7 +34,8 @@ const base=()=>({
     summary:{
       purchase:100,sales:120,margin:20,marginPct:20/120*100,vat:25.2,totalInclVat:145.2,vatRate:21,
       vatBreakdown:[{code:"21",label:"21% btw",rate:21,taxableBase:120,vatAmount:25.2,reverseCharged:false}]
-    }
+    },
+    directCostMix:{labour:0,material:100,equipment:0,subcontracting:0,other:0}
   }
 });
 
@@ -73,4 +74,16 @@ test("snapshot met alleen optieregels geldt als lege calculatie",()=>{
   const input=base();
   input.lines=input.lines.map(line=>({...line,lineType:"option"}));
   assert.throws(()=>createWorkbenchEstablishedSnapshot(input),/empty calculation/);
+});
+
+
+test("workbench snapshot bewaart de directe kostenmix",()=>{
+  const snapshot=createWorkbenchEstablishedSnapshot(base());
+  assert.deepEqual(snapshot.commercial.directCostMix,{labour:0,material:100,equipment:0,subcontracting:0,other:0});
+});
+
+test("workbench snapshot weigert een kostenmix die niet optelt tot directe kosten",()=>{
+  const input=base();
+  input.commercial.directCostMix.material=90;
+  assert.throws(()=>createWorkbenchEstablishedSnapshot(input),/Direct cost mix/);
 });
