@@ -6,6 +6,7 @@ export type SourceDecision={
   measurementKind:string|null;
   status:SourceDecisionStatus;
   leadingDocumentId:number|null;
+  leadingValue:string|null;
   involvedDocumentIds:number[];
   reason:string;
 };
@@ -24,14 +25,14 @@ export function sourceDecisionReason(input:{
   const leader=activeIds.length===1?activeIds[0]:null;
 
   if(distinctValues.length<=1){
-    return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"consistent",leadingDocumentId:leader,involvedDocumentIds:ids,reason:"Bronnen geven dezelfde waarde."};
+    return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"consistent",leadingDocumentId:leader,leadingValue:distinctValues[0]??null,involvedDocumentIds:ids,reason:"Bronnen geven dezelfde waarde."};
   }
   if(leader!==null&&ids.some(id=>supersededBy.get(id)===leader)){
-    return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"superseded",leadingDocumentId:leader,involvedDocumentIds:ids,reason:"Afwijkende waarde komt uit een aantoonbaar vervangen revisie; actuele bron is leidend."};
+    return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"superseded",leadingDocumentId:leader,leadingValue:input.values.find(value=>value.documentId===leader)?.value??null,involvedDocumentIds:ids,reason:"Afwijkende waarde komt uit een aantoonbaar vervangen revisie; actuele bron is leidend."};
   }
-  return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"conflict",leadingDocumentId:null,involvedDocumentIds:ids,reason:"Actuele bronnen geven verschillende waarden; menselijke review vereist."};
+  return{positionRef:input.positionRef,factType:input.factType,measurementKind:input.measurementKind??null,status:"conflict",leadingDocumentId:null,leadingValue:null,involvedDocumentIds:ids,reason:"Actuele bronnen geven verschillende waarden; menselijke review vereist."};
 }
 
 export function differentMeasurementKindDecision(input:{positionRef:string;factType:string;kinds:string[];documentIds:number[]}):SourceDecision{
-  return{positionRef:input.positionRef,factType:input.factType,measurementKind:null,status:"different_measurement_kind",leadingDocumentId:null,involvedDocumentIds:[...new Set(input.documentIds)],reason:"Waarden horen bij verschillende maatsoorten ("+[...new Set(input.kinds)].join(", ")+") en mogen niet als onderling conflict of als één maat worden samengevoegd."};
+  return{positionRef:input.positionRef,factType:input.factType,measurementKind:null,status:"different_measurement_kind",leadingDocumentId:null,leadingValue:null,involvedDocumentIds:[...new Set(input.documentIds)],reason:"Waarden horen bij verschillende maatsoorten ("+[...new Set(input.kinds)].join(", ")+") en mogen niet als onderling conflict of als één maat worden samengevoegd."};
 }
