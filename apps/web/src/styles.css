@@ -472,3 +472,7 @@ main{padding-top:6px}
 .recipeTreeScheme{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-bottom:1px solid #e1e5e8;background:#f7f9fa}.recipeTreeScheme span{font-size:9px;color:#75818a;text-transform:uppercase;letter-spacing:.05em}.recipeTreeScheme strong{font-size:10px;color:#35414a}
 .classificationSchemeChoices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.classificationSchemeChoices>label{display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid #dce2e6;border-radius:7px;background:#fff;cursor:pointer}.classificationSchemeChoices>label:has(input:checked){border-color:#7f909d;background:#f2f5f7}.classificationSchemeChoices span{display:flex;flex-direction:column;gap:2px}.classificationSchemeChoices strong{font-size:11px}.classificationSchemeChoices small,.fieldHint{font-size:9px;color:#74808a;line-height:1.4}.recipeClassificationEditor>p{margin-top:-4px}.recipeClassificationEditor>button{margin-top:10px}
 @media(max-width:760px){.classificationSchemeChoices{grid-template-columns:1fr}}
+
+.recipeTreeExpandActions{display:flex;justify-content:flex-end;gap:4px;margin:4px 0 6px}
+.recipeTreeExpandActions button{display:inline-flex;align-items:center;justify-content:center;width:26px;height:24px;padding:0;border:1px solid #d5dce5;border-radius:5px;background:#fff;color:#334155;font-size:13px;line-height:1;cursor:pointer}
+.recipeTreeExpandActions button:hover{background:#f1f5f9;border-color:#b8c2cf}

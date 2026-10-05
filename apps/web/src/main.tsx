@@ -938,6 +938,7 @@ function App() {
   const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
   const [recipeTreeQuery,setRecipeTreeQuery]=useState("");
   const [recipeTreeExpansion,setRecipeTreeExpansion]=useState<"default"|"all"|"none">("default");
+  const [recipeTreeOpenState,setRecipeTreeOpenState]=useState<Record<string,boolean>>({});
   const [recipeDropTargetId,setRecipeDropTargetId]=useState<number|null>(null);
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
@@ -1324,9 +1325,16 @@ function App() {
   const recipeTreeDepth=(node:RecipeTreeNode):number=>node.path?node.path.split(" / ").length:0;
   const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>{
     const depth=recipeTreeDepth(node);
-    const openByDefault=recipeTreeQuery.trim().length>0||recipeTreeExpansion==="all"||(recipeTreeExpansion==="default"&&depth===1);
+    const forcedBySearch=recipeTreeQuery.trim().length>0;
+    const openByDefault=recipeTreeExpansion==="all"?true:recipeTreeExpansion==="none"?false:(recipeTreeOpenState[node.path]??depth===1);
+    const isOpen=forcedBySearch||openByDefault;
     return(
-    <details className="recipeTreeGroup" open={openByDefault||undefined} key={node.path}>
+    <details className="recipeTreeGroup" open={isOpen} key={node.path} onToggle={event=>{
+      if(forcedBySearch)return;
+      const open=event.currentTarget.open;
+      setRecipeTreeOpenState(current=>current[node.path]===open?current:{...current,[node.path]:open});
+      if(recipeTreeExpansion!=="default")setRecipeTreeExpansion("default");
+    }}>
       <summary><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
       <div className="recipeTreeBranch">
         {renderRecipeTreeNodes(node.children)}
@@ -3491,9 +3499,9 @@ function App() {
               <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
               {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
             </div>
-            <div className="recipeTreeExpandActions">
-              <button type="button" onClick={()=>setRecipeTreeExpansion("none")}>Alles inklappen</button>
-              <button type="button" onClick={()=>setRecipeTreeExpansion("all")}>Alles uitklappen</button>
+            <div className="recipeTreeExpandActions" aria-label="Boomweergave">
+              <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("none");}}><span aria-hidden="true">▴</span></button>
+              <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("all");}}><span aria-hidden="true">▾</span></button>
             </div>
             <div className="recipeTreeBody">
               {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
