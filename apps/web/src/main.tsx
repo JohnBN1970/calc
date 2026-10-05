@@ -3499,9 +3499,9 @@ function App() {
               <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
               {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
             </div>
-            <div className="recipeTreeExpandActions">
-              <button type="button" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("none");}}>Alles inklappen</button>
-              <button type="button" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("all");}}>Alles uitklappen</button>
+            <div className="recipeTreeExpandActions" aria-label="Boomweergave">
+              <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("none");}}><span aria-hidden="true">▴</span></button>
+              <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("all");}}><span aria-hidden="true">▾</span></button>
             </div>
             <div className="recipeTreeBody">
               {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
