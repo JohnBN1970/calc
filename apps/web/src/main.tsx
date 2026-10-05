@@ -1140,10 +1140,10 @@ function App() {
     let cancelled=false;
     void (async()=>{
       try{
-        const response=await fetch("/api/settings/vat-keuzes",{headers:{Accept:"application/json"}});
-        const payload=await response.json().catch(()=>({})) as {keuzes?:VatRegime[]};
+        const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+        const payload=await response.json().catch(()=>({})) as {regimes?:VatRegime[]};
         if(!response.ok)throw new Error("BTW-keuzes konden niet worden geladen.");
-        if(!cancelled)setVatRegimes(Array.isArray(payload.keuzes)?payload.keuzes:[]);
+        if(!cancelled)setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
       }catch{
         if(!cancelled)setVatRegimes([]);
       }
@@ -1188,10 +1188,10 @@ function App() {
   const loadVatRegimes=async()=>{
     setVatSettingsStatus("BTW-instellingen laden…");
     try{
-      const response=await fetch("/api/settings/vat-keuzes",{headers:{Accept:"application/json"}});
+      const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"BTW-instellingen konden niet worden geladen."));
-      setVatRegimes(Array.isArray(payload.keuzes)?payload.keuzes:[]);
+      setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
       setVatSettingsStatus("");
     }catch(error){
       setVatSettingsStatus(error instanceof Error?error.message:"BTW-instellingen konden niet worden geladen.");
@@ -1263,7 +1263,7 @@ function App() {
   const createVatSetting=async()=>{
     setVatSettingsStatus("Btw-regime opslaan…");
     try{
-      const response=await fetch("/api/settings/vat-keuzes",{
+      const response=await fetch("/api/settings/vat-regimes",{
         method:"POST",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(vatRegimeDraft)
@@ -1280,7 +1280,7 @@ function App() {
   const patchVatSetting=async(id:number,patch:Partial<VatRegime>)=>{
     setVatSettingsStatus("Btw-regime bijwerken…");
     try{
-      const response=await fetch(`/api/settings/vat-keuzes/${id}`,{
+      const response=await fetch(`/api/settings/vat-regimes/${id}`,{
         method:"PUT",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(patch)
