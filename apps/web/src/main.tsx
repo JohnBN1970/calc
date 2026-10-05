@@ -2496,10 +2496,10 @@ function App() {
       const code=canonicalClassificationCode(raw);
       const folder=classificationFolderAt(classificationScheme,path,index);
       const lineType:"chapter"|"paragraph"=index===0?"chapter":"paragraph";
-      const parentId=index===0?null:parent?.id??null;
-      const existing=working.find(line=>line.lineType===lineType&&line.parentId===parentId&&canonicalClassificationCode(line.code)===code);
+      const parentId:number|null=index===0?null:(parent as Line|null)?.id??null;
+      const existing:Line|undefined=working.find((line:Line)=>line.lineType===lineType&&line.parentId===parentId&&canonicalClassificationCode(line.code)===code);
       if(existing){parent=existing;continue;}
-      const createdLine=emptyStructureLine({id:id--,parentId,lineType,code,description:folder?.label??classificationPartLabel(raw)||`${classificationLabel[classificationScheme]} ${code}`});
+      const createdLine=emptyStructureLine({id:id--,parentId,lineType,code,description:folder?.label??(classificationPartLabel(raw)||`${classificationLabel[classificationScheme]} ${code}`)});
       working.push(createdLine);created.push(createdLine);parent=createdLine;
     }
     if(!created.length){setStatus("Deze classificatiestructuur staat al in de calculatie.");return;}
