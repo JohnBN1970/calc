@@ -23,9 +23,12 @@ export type CalcDocumentTriageItem={
 const geometryFacts=new Set(["quantity","width_mm","height_mm"]);
 const commercialFacts=new Set(["description","supplier_unit_price"]);
 
-type SourceProfile="geometry"|"specification"|"commercial"|"generic";
-function sourceProfile(document:{title:string;documentType:string|null;documentFamily:string|null}):SourceProfile{
+type SourceProfile="geometry"|"specification"|"commercial"|"photo"|"email"|"generic";
+function sourceProfile(document:{title:string;documentType:string|null;documentFamily:string|null;mimeType?:string|null}):SourceProfile{
   const haystack=[document.title,document.documentType??"",document.documentFamily??""].join(" ").toLocaleLowerCase("nl-NL");
+  const mime=("mimeType" in document?String((document as any).mimeType??""):"").toLocaleLowerCase("nl-NL");
+  if(mime.startsWith("image/")||/foto|photo|afbeelding|image/.test(haystack))return"photo";
+  if(/message\/rfc822|email|e-mail|mailbericht|correspondentie/.test(mime+" "+haystack))return"email";
   if(/tekening|kozijn|gevel|plattegrond|detail|maat|meetstaat|uittrek|staat/.test(haystack))return"geometry";
   if(/bestek|stabu|nlsfb|werkomschrijving|technische omschrijving|specificatie/.test(haystack))return"specification";
   if(/offerte|prijs|begroting|leverancier|aanbieding/.test(haystack))return"commercial";
@@ -66,12 +69,21 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
     if(profile==="geometry")signals.push("bronprofiel: geometrie/maatvoering");
     else if(profile==="specification")signals.push("bronprofiel: bestek/specificatie");
     else if(profile==="commercial")signals.push("bronprofiel: commercieel/prijs");
+    else if(profile==="photo")signals.push("bronprofiel: foto/visueel bewijs");
+    else if(profile==="email")signals.push("bronprofiel: e-mail/scope");
 
     if(completeGeometry.length){
       score+=(profile==="geometry"?68:60)+Math.min(20,(completeGeometry.length-1)*5);
       signals.push(completeGeometry.length+" positie(s) met complete hoeveelheid + B×H");
     }
     const geometryCount=relevant.filter(fact=>geometryFacts.has(fact.fact_type)).length;
+    const exactGeometryFromPhoto=profile==="photo"&&relevant.some(fact=>
+      geometryFacts.has(fact.fact_type)&&
+      !["reviewed","accepted","confirmed"].includes(fact.review_status)
+    );
+    if(exactGeometryFromPhoto){
+      signals.push("exacte maatvoering uit foto vereist bevestiging of aantoonbare schaal");
+    }
     if(geometryCount&&!completeGeometry.length){
       score+=profile==="geometry"?28:20;
       signals.push(geometryCount+" geometrisch(e) bronfeit(en), maar nog niet compleet per positie");
@@ -100,9 +112,12 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
 
     const automaticStatus:"primary"|"supporting"|"review"=
       document.exclusion_reason?"review":
-      completeGeometry.length?"primary":
+      completeGeometry.length&&profile!=="photo"?"primary":
+      completeGeometry.length&&profile==="photo"&&reviewed.length===relevant.length?"primary":
       profile==="commercial"&&prices>0?"supporting":
       profile==="specification"&&descriptions>0?"supporting":
+      profile==="email"&&descriptions>0?"supporting":
+      profile==="photo"&&relevant.length>0?"supporting":
       relevant.length?"supporting":
       "review";
     const override=overrideByDocument.get(Number(document.document_id));
