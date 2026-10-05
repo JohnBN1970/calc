@@ -480,7 +480,7 @@ function mapClassification(classification: QuoteClassification | null, scheme: C
 }
 
 
-type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices";
+type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices" | "settings" | "help" | "subcalc" | "tail" | "rates";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -490,7 +490,12 @@ function Icon({ name }: { name: IconName }) {
     paragraph: <><path d="M5 5h14"/><path d="M8 10h11"/><path d="M8 15h11"/><path d="M8 20h7"/><path d="M4 9v7"/></>,
     line: <><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="M18 16v6"/><path d="M15 19h6"/></>,
     recipe: <><path d="M6 3h12v18H6z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></>,
-    prices: <><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.8-1.8-1.2-3-1.2-1.7 0-3 1-3 2.3 0 3.2 6 1.8 6 5 0 1.4-1.3 2.4-3 2.4-1.3 0-2.5-.4-3.4-1.3"/><path d="M12 5v14"/></>
+    prices: <><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.8-1.8-1.2-3-1.2-1.7 0-3 1-3 2.3 0 3.2 6 1.8 6 5 0 1.4-1.3 2.4-3 2.4-1.3 0-2.5-.4-3.4-1.3"/><path d="M12 5v14"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.55-1.03H5.4v-3h.09a1.7 1.7 0 0 0 1.55-1.03 1.7 1.7 0 0 0-.34-1.88L6.64 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.73 4.7V4.6h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.82 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.09v3h-.09A1.7 1.7 0 0 0 19.4 15Z"/></>,
+    help: <><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 4.2 1.6c-.9.9-1.9 1.3-1.9 2.8"/><path d="M12 17h.01"/></>,
+    subcalc: <><rect x="4" y="5" width="7" height="6" rx="1"/><rect x="13" y="5" width="7" height="6" rx="1"/><rect x="8.5" y="13" width="7" height="6" rx="1"/></>,
+    tail: <><path d="M5 5h14"/><path d="M7 10h10"/><path d="M9 15h6"/><path d="M11 20h2"/></>,
+    rates: <><path d="M6 4h12v16H6z"/><path d="M9 8h6"/><path d="M9 12h3"/><path d="M14.5 14.5c-1.6 0-2.5.8-2.5 1.8 0 2 4 1 4 2.8 0 1-.9 1.7-2.2 1.7"/><path d="M14 13v8"/></>
   };
   return <svg className="commandIcon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
@@ -937,6 +942,8 @@ function App() {
   const [columnPreferencesLoaded,setColumnPreferencesLoaded]=useState(false);
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
+  const [helpOpen,setHelpOpen]=useState(false);
+  const [helpQuery,setHelpQuery]=useState("");
   const [vatRegimes,setVatRegimes]=useState<VatRegime[]>([]);
   const [vatSettingsStatus,setVatSettingsStatus]=useState("");
   const [vatRegimeDraft,setVatRegimeDraft]=useState({
@@ -2859,8 +2866,6 @@ function App() {
 
       <div className="commandbar commandbarTop" role="toolbar" aria-label="Calculatie acties">
         <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
-        <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
-        <div className="commandDivider" />
         <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
         <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
         <button className="command" type="button"
@@ -2870,12 +2875,15 @@ function App() {
           <Icon name="line" /><span>Regel</span>
         </button>
         <div className="commandDivider" />
-        <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
-        <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
+        <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><Icon name="subcalc" /><span>Deelcalc</span></button>
+        <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><Icon name="tail" /><span>Staartkosten</span></button>
         <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
-        <button className={"command commandSecondary" + (labourRatesOpen ? " commandActive" : "")} type="button" title="Uurtarieven beheren" onClick={()=>void openLabourRates()}><span>Uurtarieven</span></button>
+        <button className={"command commandSecondary" + (labourRatesOpen ? " commandActive" : "")} type="button" title="Uurtarieven beheren" onClick={()=>void openLabourRates()}><Icon name="rates" /><span>Uurtarieven</span></button>
         <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
         <span className="commandSpacer" />
+        <button className="command commandUtility" type="button" onClick={()=>void openSettings()} title="Instellingen" aria-label="Instellingen"><Icon name="settings" /></button>
+        <button className="command commandUtility" type="button" onClick={()=>setHelpOpen(true)} title="Help" aria-label="Help"><Icon name="help" /></button>
+        <div className="commandDivider" />
         {versionStatus==="established"
           ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
           : <>
@@ -2986,6 +2994,42 @@ function App() {
         <div className="readinessItems">
           {unresolvedLines.map(line=><button type="button" key={`source-${line.id}`} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}
           {incompleteLabourLines.map(line=><button type="button" key={`labour-${line.id}`} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>Uurprijs ingevuld, maar norm/totaaluren ontbreken.</small></button>)}
+        </div>
+      </div>}
+
+      {helpOpen&&<div className="settingsOverlay helpOverlay" role="dialog" aria-modal="true" aria-label="Calc-help">
+        <div className="settingsPanel helpPanel">
+          <div className="settingsHead">
+            <div><span className="eyebrow">BREBO CALC</span><h2>Help</h2><p>Zoek op onderwerp of open een onderdeel van de handleiding.</p></div>
+            <button type="button" className="panelClose" onClick={()=>setHelpOpen(false)} aria-label="Sluiten">×</button>
+          </div>
+          <div className="helpSearch"><Icon name="help"/><input autoFocus value={helpQuery} onChange={event=>setHelpQuery(event.target.value)} placeholder="Zoeken in Calc-help…" /></div>
+          <div className="helpContents">
+            {[
+              {title:"Starten met een calculatie",keywords:"start project office calculatie",body:"Open Calc vanuit Office. Voeg hoofdstukken, paragrafen en regels toe of gebruik de receptenboom. Werk altijd in een conceptversie; een vastgestelde versie is niet meer wijzigbaar."},
+              {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur",body:"Hoofdstukken zijn de hoofdgroepen van de calculatie. Paragrafen hangen onder een hoofdstuk en kunnen hun eigen prijs-/subtotalisatie tonen. Regels horen onder een paragraaf of rechtstreeks onder een hoofdstuk."},
+              {title:"Calculatieregels",keywords:"regel aantal norm uren uurprijs materiaal materieel onderaanneming btw",body:"Vul hoeveelheid, norm of totaaluren en de kostendragers in. Arbeid rekent met totaaluren × uurprijs; materiaal, materieel, onderaanneming en overig rekenen per hoeveelheid."},
+              {title:"BTW",keywords:"btw hoog laag verlegd vrijgesteld",body:"Kies per verkoopregel de BTW-keuze Hoog, Laag, Verlegd of Vrijgesteld. De KPI-zone totaliseert de grondslag en het BTW-bedrag en toont totaal excl. en incl. BTW."},
+              {title:"Recepten",keywords:"recept boom slepen toepassen",body:"Gebruik de receptenboom links. Sleep een recept naar een paragraaf of regel binnen die paragraaf. Bij een eenduidige bron wordt het recept direct toegepast; anders opent Recept toepassen voor controle."},
+              {title:"Recepten beheren",keywords:"recept beheren bibliotheek samenstellen",body:"Open Recepten beheren via de Vensters-sectie links. Recepten worden in Calc samengesteld uit regels en verwijzen naar actuele brondata/tarieven."},
+              {title:"Deelcalculaties",keywords:"deelcalculatie scope positie",body:"Een calculatieregel of positie kan aan meerdere deelcalculaties gekoppeld zijn. Deelcalculaties gebruiken dezelfde centrale kostlogica als de hoofdcalculatie en voorkomen dubbele staartkosten."},
+              {title:"Staartkosten",keywords:"staartkosten percentage vast bedrag opslag",body:"Staartkosten worden bovenop de directe kosten berekend. De standaardbasis is owner direct cost; deelcalculatiestaartkosten worden niet nogmaals in de hoofdcalculatie belast."},
+              {title:"Uurtarieven",keywords:"uurtarief arbeid rol standaard tarief",body:"Beheer concrete arbeidskosttarieven in het venster Uurtarieven. In Instellingen leg je per rol het standaardtarief vast. Handmatige regels zonder rol krijgen nooit stilletjes een tarief toegewezen."},
+              {title:"Prijzen en artikelen",keywords:"prijzen artikelen prijsbron office",body:"Open Prijzen om artikelen uit Office te zoeken of een prijsbron te verwerken. Een gekozen bron blijft aan de calculatieregel gekoppeld voor herleidbaarheid."},
+              {title:"Offerte inlezen en overnemen",keywords:"offerte pdf leverancier upload overnemen",body:"Open Prijzen en kies Offerte inlezen. Calc stuurt het bestand naar Office voor extractie, toont de originele offerte naast de herkende regels en laat geselecteerde offerteregels overnemen naar de calculatie."},
+              {title:"Kolommen",keywords:"kolommen tonen verbergen breedte volgorde",body:"Kies welke kolommen zichtbaar zijn in de calculatie. De voorkeur is persoonlijk. Kolombreedte en volgorde kunnen worden aangepast zonder de calculatie-inhoud te wijzigen."},
+              {title:"KPI's",keywords:"kpi kostenverhouding taart btw marge",body:"De KPI-zone toont directe kosten, staartkosten, verkoop, kostenmix en BTW-totalisatie. De zone is inklapbaar en dockbaar."},
+              {title:"Vensters en docken",keywords:"venster dock pin slepen links rechts boven onder",body:"Werkvensters kunnen vast in Calc staan, zweven of aan een schermrand worden gedockt. Gebruik de pin om terug te keren naar Calc; sleep een los venster naar links, rechts, boven of onder om te docken."},
+              {title:"Opslaan en publiceren",keywords:"opslaan publiceren office vastgesteld",body:"Opslaan bewaart het concept. Publiceren controleert de calculatie, maakt een immutable snapshot en stuurt de commerciële samenvatting naar Office. Onvolledige arbeidsregels of andere blokkades verhinderen publiceren."},
+              {title:"Versies en historie",keywords:"versie historie snapshot verschil",body:"Iedere vastgestelde versie bewaart totalen, BTW, kostenmix en regelvolgorde. Start een nieuwe versie om verder te rekenen zonder de vorige waarheid te wijzigen."}
+            ].filter(item=>{
+              const q=helpQuery.trim().toLocaleLowerCase("nl-NL");
+              return !q||(`${item.title} ${item.keywords} ${item.body}`).toLocaleLowerCase("nl-NL").includes(q);
+            }).map((item,index)=><details className="helpTopic" key={item.title} open={Boolean(helpQuery.trim())}>
+              <summary><strong>{item.title}</strong><span>{index+1}</span></summary>
+              <p>{item.body}</p>
+            </details>)}
+          </div>
         </div>
       </div>}
 
