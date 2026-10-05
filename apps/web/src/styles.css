@@ -463,3 +463,5 @@ main{padding-top:6px}
 .dockPreview-right{right:0;width:min(38vw,720px)}
 .dockPreview-top{left:0;right:0;height:min(42vh,520px)}
 .dockPreview-bottom{left:0;right:0;bottom:0;height:min(42vh,520px)}
+
+.dockWindowSlot[data-window-slot="recipe-tree"]{min-width:0}.dockWindowSlot[data-window-slot="recipe-tree"]>.dockWindow.is-pinned{height:calc(100vh - 86px);position:sticky;top:74px}.dockWindowSlot[data-window-slot="recipe-tree"] .recipeTreeSidebar{position:static;top:auto;max-height:none;height:100%;border:0;border-radius:0}.dockWindow.is-floating .isDockableRecipeTree,.dockWindow.is-screen-docked .isDockableRecipeTree{position:static;top:auto;max-height:none;height:100%;border:0;border-radius:0}.dockWindow.is-floating:has(.isDockableRecipeTree){width:min(360px,calc(100vw - 32px))}.dockWindow.is-floating:has(.isDockableRecipeTree) .dockWindowContent{height:min(720px,calc(100vh - 130px))}.dockWindow.is-screen-docked .isDockableRecipeTree{min-height:100%}
