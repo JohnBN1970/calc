@@ -2825,7 +2825,7 @@ function App() {
       <section className="workbench">
 
 
-        {recipeWorkspaceOpen && <div className="recipeWorkspace">
+        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen"><div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · recepten beheerd door Calc` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
@@ -2928,7 +2928,7 @@ function App() {
               <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
-        </div>}
+        </div></DockableWindow>}
 
         {recipeLibraryOpen && <DockableWindow id="recipe-library" label="Recepten beheren"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
@@ -3049,7 +3049,7 @@ function App() {
             </div>)}
           </div>
         </div>}
-        {priceWorkspaceOpen && <div className="priceWorkspace">
+        {priceWorkspaceOpen && <DockableWindow id="prices" label="Prijzen"><div className="priceWorkspace">
           <div className="priceWorkspaceHead">
             <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
             <button className="panelClose" type="button" onClick={() => setPriceWorkspaceOpen(false)} aria-label="Sluiten">×</button>
@@ -3169,7 +3169,7 @@ function App() {
                 : <small>Nog geen deelcalculatie</small>}
             </button>)}
           </div>
-        </div>}
+        </div></DockableWindow>}
 
         {selectedLineIds.length > 0 && <div className="bulkBar">
           <strong>{selectedLineIds.length} geselecteerd</strong>
