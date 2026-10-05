@@ -937,6 +937,7 @@ function App() {
   const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
   const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
   const [recipeTreeQuery,setRecipeTreeQuery]=useState("");
+  const [recipeTreeExpansion,setRecipeTreeExpansion]=useState<"default"|"all"|"none">("default");
   const [recipeDropTargetId,setRecipeDropTargetId]=useState<number|null>(null);
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
@@ -1222,6 +1223,20 @@ function App() {
     {code:"80",label:"Liftinstallaties"},{code:"81",label:"Roltrappen en rolpaden"},{code:"82",label:"Hijs- en hefinstallaties"},{code:"83",label:"Goederentransport- en distributiesystemen"},{code:"84",label:"Gevelonderhoudinstallaties"}
   ];
 
+  const classificationCode=(value:string)=>value.split("·",1)[0].trim();
+  const classificationFolderAt=(scheme:ClassificationScheme,path:string[],index:number):ClassificationFolder|null=>{
+    if(scheme==="custom")return null;
+    let folders=scheme==="nl_sfb"?nlSfbFolders:stabuFolders;
+    let match:ClassificationFolder|null=null;
+    for(let depth=0;depth<=index;depth++){
+      const wanted=classificationCode(path[depth]??"");
+      match=folders.find(folder=>normalizedStructureCode(folder.code)===normalizedStructureCode(wanted))??null;
+      if(!match)return null;
+      folders=match.children??[];
+    }
+    return match;
+  };
+
   const recipeClassificationPath=(recipe:CalcRecipe,scheme:ClassificationScheme):string[]=>{
     if(scheme==="custom"){
       const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
@@ -1309,7 +1324,7 @@ function App() {
   const recipeTreeDepth=(node:RecipeTreeNode):number=>node.path?node.path.split(" / ").length:0;
   const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>{
     const depth=recipeTreeDepth(node);
-    const openByDefault=recipeTreeQuery.trim().length>0||depth===1;
+    const openByDefault=recipeTreeQuery.trim().length>0||recipeTreeExpansion==="all"||(recipeTreeExpansion==="default"&&depth===1);
     return(
     <details className="recipeTreeGroup" open={openByDefault||undefined} key={node.path}>
       <summary><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
@@ -2432,7 +2447,9 @@ function App() {
     let parent:Line|null=null;
 
     for(let index=0;index<path.length;index++){
-      const code=path[index].trim();
+      const rawPathPart=path[index].trim();
+      const code=classificationCode(rawPathPart);
+      const folder=classificationFolderAt(classificationScheme,path,index);
       const lineType=index===0?"chapter":"paragraph";
       let parentId:number|null=null;
       if(index>0&&parent!==null)parentId=(parent as Line).id;
@@ -2450,7 +2467,7 @@ function App() {
         parentId,
         lineType,
         code,
-        description:`${classificationLabel[classificationScheme]} ${code}`
+        description:folder?.label??(rawPathPart.replace(/^\s*[^·]+·\s*/,"").trim()||`${classificationLabel[classificationScheme]} ${code}`)
       });
       working.push(createdLine);
       created.push(createdLine);
@@ -3473,6 +3490,10 @@ function App() {
               <span aria-hidden="true">⌕</span>
               <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
               {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
+            </div>
+            <div className="recipeTreeExpandActions">
+              <button type="button" onClick={()=>setRecipeTreeExpansion("none")}>Alles inklappen</button>
+              <button type="button" onClick={()=>setRecipeTreeExpansion("all")}>Alles uitklappen</button>
             </div>
             <div className="recipeTreeBody">
               {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
