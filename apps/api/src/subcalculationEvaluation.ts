@@ -2,6 +2,8 @@ import type { RowDataPacket } from "mysql2";
 import type { Pool, PoolConnection } from "mysql2/promise";
 import { db } from "./db.js";
 import { listCalcSubcalculations } from "./calcSubcalculationRepository.js";
+import { calculateLineCostBreakdown } from "./calculationLineAmount.js";
+import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
 
 export type SubcalculationResult={
   id:number;ref:string;description:string;
@@ -11,25 +13,25 @@ export type SubcalculationResult={
 };
 
 function lineAmounts(row:RowDataPacket){
-  const quantity=Number(row.quantity??0);
-  const labourHours=Number(row.labour_total_hours??0);
-  return {
-    labour:labourHours*Number(row.labour_unit_cost??0),
-    material:quantity*Number(row.material_unit_cost??0),
-    equipment:quantity*Number(row.equipment_unit_cost??0),
-    subcontracting:quantity*Number(row.subcontracting_unit_cost??0),
-    other:quantity*Number(row.other_unit_cost??0)
-  };
+  return calculateLineCostBreakdown({
+    quantity:Number(row.quantity??0),
+    labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+    labourUnitCost:Number(row.labour_unit_cost??0),
+    materialUnitCost:Number(row.material_unit_cost??0),
+    equipmentUnitCost:Number(row.equipment_unit_cost??0),
+    subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+    otherUnitCost:Number(row.other_unit_cost??0)
+  });
 }
 
 export async function evaluateSubcalculations(versionId:number, executor:Pick<Pool|PoolConnection,"execute"> = db):Promise<SubcalculationResult[]>{
-  const [lines]=await executor.execute<RowDataPacket[]>(`
+  const [lineRows]=await executor.execute<RowDataPacket[]>(`
     SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
            equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
       FROM calculation_lines
      WHERE version_id=?
-       AND line_type NOT IN ('chapter','paragraph','note','option')
   `,[versionId]);
+  const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
   const lineById=new Map(lines.map(row=>[Number(row.id),row]));
 
   const [tags]=await executor.execute<RowDataPacket[]>(`
@@ -109,13 +111,13 @@ export async function evaluateCalculationPartitions(
   const assigned=new Set<number>();
   for(const sub of subcalculations) for(const id of sub.lineIds) assigned.add(id);
 
-  const [lines]=await executor.execute<RowDataPacket[]>(`
+  const [lineRows]=await executor.execute<RowDataPacket[]>(`
     SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
            equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
       FROM calculation_lines
      WHERE version_id=?
-       AND line_type NOT IN ('chapter','paragraph','note','option')
   `,[versionId]);
+  const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
 
   let totalDirectCost=0;
   let mainDirectCost=0;
