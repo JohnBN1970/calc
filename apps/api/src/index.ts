@@ -895,6 +895,13 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       [version.id]
     );
     const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
+    const incompleteLabourRows=findIncompleteLabourLines(costRows.map(row=>({
+      lineType:String(row.line_type),
+      labourUnitCost:Number(row.labour_unit_cost??0),
+      labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+      code:row.code==null?null:String(row.code),
+      description:row.description==null?null:String(row.description)
+    })));
     const lineSales:VatSource[]=costRows.map(row=>({
       vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
       salesAmount:calculateLineAmount({
@@ -940,6 +947,9 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       vatTaxableBase
     });
     const sourceReasons:string[]=[];
+    if(incompleteLabourRows.length){
+      sourceReasons.push(`${incompleteLabourRows.length} arbeidsregel(s) hebben een uurprijs maar geen norm/totaaluren.`);
+    }
     const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
       priceSourceType:String(row.price_source_type??"manual"),
       sourceDetails:row.source_details==null?null:String(row.source_details)
@@ -1687,6 +1697,16 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     );
     const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
+    const incompleteLabourRows=findIncompleteLabourLines(costRows.map(row=>({
+      lineType:String(row.line_type),
+      labourUnitCost:Number(row.labour_unit_cost??0),
+      labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+      code:row.code==null?null:String(row.code),
+      description:row.description==null?null:String(row.description)
+    })));
+    if(incompleteLabourRows.length){
+      throw new Error("Publiceren geblokkeerd: arbeidsregel heeft een uurprijs maar geen norm/totaaluren.");
+    }
 
     const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
       priceSourceType:String(row.price_source_type??"manual"),
