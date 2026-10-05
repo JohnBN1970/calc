@@ -67,3 +67,10 @@ test("snapshot bronvelden worden canoniek geserialiseerd",()=>{
   assert.throws(()=>snapshotDate("04-10-2026"),/Invalid snapshot date/);
   assert.throws(()=>snapshotJson("[object Object]"));
 });
+
+
+test("snapshot met alleen optieregels geldt als lege calculatie",()=>{
+  const input=base();
+  input.lines=input.lines.map(line=>({...line,lineType:"option"}));
+  assert.throws(()=>createWorkbenchEstablishedSnapshot(input),/empty calculation/);
+});
