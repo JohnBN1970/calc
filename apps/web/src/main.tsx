@@ -2368,7 +2368,8 @@ function App() {
     for(let index=0;index<path.length;index++){
       const code=path[index].trim();
       const lineType=index===0?"chapter":"paragraph";
-      const parentId:number|null=index===0?null:(parent?.id??null);
+      let parentId:number|null=null;
+      if(index>0&&parent!==null)parentId=(parent as Line).id;
       const existing:Line|undefined=working.find((line:Line)=>
         line.lineType===lineType&&
         line.parentId===parentId&&
