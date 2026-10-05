@@ -407,6 +407,18 @@ type VatRegime={
   sortOrder:number;
 };
 
+type LabourRateRecord={
+  id:number;
+  roleRef:string;
+  label:string;
+  hourlyCostRate:number;
+  sourceRef:string|null;
+  active:boolean;
+  isDefault:boolean;
+  validFrom:string|null;
+  validTo:string|null;
+};
+
 type TailCostComponent={
   id:number;versionId:number;ownerType:"calculation"|"subcalculation";ownerRef:string|null;
   componentKey:string;description:string;basis:"fixed"|"percentage"|"per_unit";
@@ -879,6 +891,19 @@ function App() {
     rate:null as number|null,
     active:true,
     sortOrder:0
+  });
+  const [labourRatesOpen,setLabourRatesOpen]=useState(false);
+  const [labourRates,setLabourRates]=useState<LabourRateRecord[]>([]);
+  const [labourRateStatus,setLabourRateStatus]=useState("");
+  const [labourRateDraft,setLabourRateDraft]=useState({
+    roleRef:"",
+    label:"",
+    hourlyCostRate:0,
+    sourceRef:"",
+    active:true,
+    isDefault:false,
+    validFrom:"",
+    validTo:""
   });
   const [tailCostOpen,setTailCostOpen]=useState(false);
   const [tailCosts,setTailCosts]=useState<TailCostComponent[]>([]);
