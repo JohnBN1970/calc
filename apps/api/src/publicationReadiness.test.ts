@@ -21,8 +21,8 @@ test("publicatie meldt alle relevante blokkades",()=>{
     vatTaxableBase:100
   });
   assert.equal(result.canPublish,false);
-  assert.equal(result.reasons.length,6);
+  assert.equal(result.reasons.length,4);
   assert.equal(result.reasons.some(reason=>reason.includes("conceptversie")),true);
   assert.equal(result.reasons.some(reason=>reason.includes("verkoopregels")),true);
-  assert.equal(result.reasons.some(reason=>reason.includes("BTW-regime")),true);
+  assert.equal(result.reasons.some(reason=>reason.includes("BTW-regime")),true);\n  assert.equal(result.reasons.filter(reason=>reason.includes("gewijzigd sinds de laatste opslag")).length,1);
 });
