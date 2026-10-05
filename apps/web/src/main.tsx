@@ -1327,6 +1327,8 @@ function App() {
 
   const recipeTreeItemCount=(node:RecipeTreeNode):number=>
     node.items.length+node.children.reduce((sum,child)=>sum+recipeTreeItemCount(child),0);
+  const recipeTreePaths=(nodes:RecipeTreeNode[]):string[]=>
+    nodes.flatMap(node=>[node.path,...recipeTreePaths(node.children)]);
   const recipeTreeDepth=(node:RecipeTreeNode):number=>node.path?node.path.split(" / ").length:0;
   const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>{
     const depth=recipeTreeDepth(node);
@@ -3505,8 +3507,14 @@ function App() {
               {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
             </div>
             <div className="recipeTreeExpandActions" aria-label="Boomweergave">
-              <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("none");}}><span aria-hidden="true">▴</span></button>
-              <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={()=>{setRecipeTreeOpenState({});setRecipeTreeExpansion("all");}}><span aria-hidden="true">▾</span></button>
+              <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={()=>{
+                setRecipeTreeOpenState(Object.fromEntries(recipeTreePaths(recipeTree.children).map(path=>[path,false])));
+                setRecipeTreeExpansion("default");
+              }}><span aria-hidden="true">▴</span></button>
+              <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={()=>{
+                setRecipeTreeOpenState(Object.fromEntries(recipeTreePaths(recipeTree.children).map(path=>[path,true])));
+                setRecipeTreeExpansion("default");
+              }}><span aria-hidden="true">▾</span></button>
             </div>
             <div className="recipeTreeBody">
               {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
