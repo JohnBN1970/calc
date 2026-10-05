@@ -793,7 +793,16 @@ function App() {
     () => lines.filter(line => line.resolutionStatus === "unresolved"),
     [lines]
   );
-  const calculationReady = unresolvedLines.length === 0;
+  const incompleteLabourLines = useMemo(
+    () => lines.filter(line =>
+      isCostLine(line) &&
+      line.lineType !== "option" &&
+      line.labour > 0 &&
+      line.labourTotalHours == null
+    ),
+    [lines]
+  );
+  const calculationReady = unresolvedLines.length === 0 && incompleteLabourLines.length === 0;
 
   const activeSubcalculationResult = useMemo(
     () => activeSubcalculationId == null ? null : subcalculationResults.find(row => row.id === activeSubcalculationId) ?? null,
@@ -2521,8 +2530,17 @@ function App() {
         </div>;
       })()}
       {!calculationReady && <div className="readinessBanner" role="alert">
-        <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
-        <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
+        <div><strong>Calculatie onvolledig</strong><span>{
+          unresolvedLines.length && incompleteLabourLines.length
+            ? `${unresolvedLines.length} prijs- of normbron(nen) en ${incompleteLabourLines.length} arbeidsregel(s) zijn onvolledig.`
+            : unresolvedLines.length
+              ? `${unresolvedLines.length} prijs- of normbron(nen) ontbreken.`
+              : `${incompleteLabourLines.length} arbeidsregel(s) hebben een uurprijs maar geen norm/totaaluren.`
+        } Publiceren en opslaan zijn geblokkeerd totdat de regels compleet zijn.</span></div>
+        <div className="readinessItems">
+          {unresolvedLines.map(line=><button type="button" key={`source-${line.id}`} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}
+          {incompleteLabourLines.map(line=><button type="button" key={`labour-${line.id}`} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>Uurprijs ingevuld, maar norm/totaaluren ontbreken.</small></button>)}
+        </div>
       </div>}
 
       {settingsOpen && <div className="settingsOverlay" role="dialog" aria-modal="true" aria-label="Calc-instellingen">
@@ -2587,8 +2605,8 @@ function App() {
           {versionStatus==="established"
             ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
             : <>
-                <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="save" /><span>Opslaan</span></button>
-                <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst ontbrekende prijs- of normbronnen op"}><Icon name="office" /><span>Publiceren</span></button>
+                <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst de onvolledige calculatieregels op"}><Icon name="save" /><span>Opslaan</span></button>
+                <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst de onvolledige calculatieregels op"}><Icon name="office" /><span>Publiceren</span></button>
               </>}
         </div>
 
