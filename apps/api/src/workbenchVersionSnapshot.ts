@@ -54,6 +54,7 @@ export type WorkbenchEstablishedSnapshot={
     markupAmount:number;
     salesPrice:number;
     summary:CommercialSummary;
+    directCostMix:{labour:number;material:number;equipment:number;subcontracting:number;other:number};
   };
 };
 
@@ -122,6 +123,8 @@ export function createWorkbenchEstablishedSnapshot(
   }
   if(!close(directCost+markupAmount,salesPrice))throw new Error("Direct cost plus tail costs does not equal sales price.");
   if(!close(summary.purchase,directCost)||!close(summary.sales,salesPrice))throw new Error("Commercial summary does not match Calc totals.");
+  const mixTotal=Object.values(input.commercial.directCostMix).reduce((sum,value)=>sum+value,0);
+  if(!Object.values(input.commercial.directCostMix).every(value=>Number.isFinite(value)&&value>=0)||!close(mixTotal,directCost))throw new Error("Direct cost mix does not match Calc direct cost.");
   const vatBase=summary.vatBreakdown.reduce((sum,item)=>sum+item.taxableBase,0);
   if(!close(vatBase,salesPrice))throw new Error("VAT breakdown does not cover the complete sales price.");
 
