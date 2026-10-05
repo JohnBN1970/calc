@@ -547,9 +547,10 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
   }
 
   try {
-    const [snapshot, recipes] = await Promise.all([
+    const [snapshot, recipes, officeState] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      listCalcRecipes()
+      listCalcRecipes(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
     ]);
 
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
