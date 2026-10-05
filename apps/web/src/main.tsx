@@ -2466,7 +2466,7 @@ function App() {
         parentId,
         lineType,
         code,
-        description:folder?.label??rawPathPart.replace(/^\s*[^·]+·\s*/,"").trim()||`${classificationLabel[classificationScheme]} ${code}`
+        description:folder?.label??(rawPathPart.replace(/^\s*[^·]+·\s*/,"").trim()||`${classificationLabel[classificationScheme]} ${code}`)
       });
       working.push(createdLine);
       created.push(createdLine);
