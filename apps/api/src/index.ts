@@ -30,6 +30,7 @@ import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceCont
 import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
+import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -1310,6 +1311,7 @@ app.get("/api/workbench/current", async (req, res) => {
 
   const [lines] = await db.execute<RowDataPacket[]>(
     `SELECT id, parent_id, structure_key, sort_order, line_type, code, description, unit, quantity,
+            labour_norm, labour_total_hours, labour_hours_input_mode,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, vat_regime_id, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
@@ -1388,6 +1390,26 @@ app.put("/api/workbench/current", async (req, res) => {
         code: line.code ?? "",
         description: line.description,
         reason: line.resolutionReason ?? "Bron niet beschikbaar."
+      }))
+    });
+    return;
+  }
+
+  const incompleteLabourLines=findIncompleteLabourLines(lines.map(line=>({
+    lineType:line.lineType,
+    labourUnitCost:line.labourUnitCost,
+    labourTotalHours:line.labourTotalHours,
+    code:line.code,
+    description:line.description
+  })));
+  if(incompleteLabourLines.length){
+    res.status(409).json({
+      error:"Arbeidsregel heeft een uurprijs maar geen norm/totaaluren. Vul de arbeidsduur in of zet de uurprijs op 0.",
+      readiness:"incomplete",
+      unresolved:incompleteLabourLines.map(line=>({
+        code:line.code??"",
+        description:line.description??"",
+        reason:"Uurprijs ingevuld, maar totaaluren ontbreken."
       }))
     });
     return;
