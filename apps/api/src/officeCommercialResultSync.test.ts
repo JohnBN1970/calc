@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
+import { verifyOfficeCommercialSummary, verifyOfficePublicationBinding } from "./officeCommercialResultSync.js";
 
 const expected={
   purchase:100,sales:130,margin:30,margin_pct:23.076923,vat:27.3,vat_rate:21,
@@ -19,4 +19,23 @@ test("Office roundtrip weigert afwijkende commerciele waarden",()=>{
 
 test("Office roundtrip weigert ontbrekende samenvatting",()=>{
   assert.throws(()=>verifyOfficeCommercialSummary(null,expected),/geen commerciele Calc-samenvatting/);
+});
+
+
+test("Office publicatiebinding bevestigt exact snapshot en versies",()=>{
+  assert.doesNotThrow(()=>verifyOfficePublicationBinding(
+    {snapshot_id:5,office_version:"office-7",calc_version:"12",current_for_office_version:true},
+    {snapshotId:5,officeVersion:"office-7",calcVersion:"12"}
+  ));
+});
+
+test("Office publicatiebinding weigert race met gewijzigde Office-versie",()=>{
+  assert.throws(()=>verifyOfficePublicationBinding(
+    {snapshot_id:5,office_version:"office-7",calc_version:"12",current_for_office_version:false},
+    {snapshotId:5,officeVersion:"office-7",calcVersion:"12"}
+  ),/gewijzigd tijdens/);
+  assert.throws(()=>verifyOfficePublicationBinding(
+    {snapshot_id:6,office_version:"office-7",calc_version:"12",current_for_office_version:true},
+    {snapshotId:5,officeVersion:"office-7",calcVersion:"12"}
+  ),/andere Calc-publicatiesnapshot/);
 });

@@ -19,7 +19,7 @@ import { evaluateTailCostHierarchy } from "./tailCostEvaluation.js";
 import { buildCommercialSummary } from "./commercialSummary.js";
 import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOfficeWorkspaceState, fetchSupplierQuotePositionVisual, fetchSupplierQuotePreview, refreshCalculationDocumentCandidates, searchOfficeArticles, uploadSupplierQuoteToOffice, resolveOfficeCalcSources } from "./officeClient.js";
 import { publishCalcResult } from "./officeResultClient.js";
-import { verifyOfficeCommercialSummary } from "./officeCommercialResultSync.js";
+import { verifyOfficeCommercialSummary, verifyOfficePublicationBinding } from "./officeCommercialResultSync.js";
 import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snapshotDate, snapshotJson } from "./workbenchVersionSnapshot.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
@@ -1962,6 +1962,11 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     });
     const verifiedState=await fetchOfficeWorkspaceState(session.officeCalculationId);
     verifyOfficeCommercialSummary(verifiedState.calc_result?.commercial_summary,commercialSummary);
+    verifyOfficePublicationBinding(verifiedState.calc_result,{
+      snapshotId:published.snapshot_id,
+      officeVersion:String(officeState.version.version),
+      calcVersion:String(version.id)
+    });
 
     await connection.execute(
       `INSERT INTO calculation_version_snapshots(version_id,snapshot_contract,snapshot_json,content_hash)
