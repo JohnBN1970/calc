@@ -1180,6 +1180,48 @@ function App() {
       }
     : totals;
   const classificationLabel:Record<ClassificationScheme,string>={nl_sfb:"NL-SfB",stabu:"STABU",custom:"Vrij"};
+  type ClassificationFolder={code:string;label:string;children?:ClassificationFolder[]};
+  const nlSfbFolders:ClassificationFolder[]=[
+    {code:"1-",label:"Funderingen",children:[
+      {code:"10",label:"Onderbouw"},{code:"11",label:"Bodemvoorzieningen"},{code:"13",label:"Vloeren op grondslag"},{code:"16",label:"Funderingsconstructie"},{code:"17",label:"Paalfundering"},{code:"19",label:"Onderbouw algemeen"}
+    ]},
+    {code:"2-",label:"Bovenbouw",children:[
+      {code:"20",label:"Bovenbouw"},{code:"21",label:"Buitenwanden"},{code:"22",label:"Binnenwanden"},{code:"23",label:"Vloeren, galerijen"},{code:"24",label:"Trappen, hellingen"},{code:"27",label:"Daken"},{code:"28",label:"Hoofddraagconstructies"},{code:"29",label:"Bovenbouw algemeen"}
+    ]},
+    {code:"3-",label:"Afbouw",children:[
+      {code:"30",label:"Afbouw"},{code:"31",label:"Wandopeningen, buiten"},{code:"32",label:"Wandopeningen, binnen"},{code:"33",label:"Vloeropeningen"},{code:"34",label:"Balustrades e.d."},{code:"35",label:"Plafonds"},{code:"37",label:"Dakopeningen"},{code:"38",label:"Inbouwpakketten"},{code:"39",label:"Afbouw algemeen"}
+    ]},
+    {code:"4-",label:"Afwerkingen",children:[
+      {code:"40",label:"Afwerkingen"},{code:"41",label:"Buitenwandafwerkingen"},{code:"42",label:"Binnenwandafwerkingen"},{code:"43",label:"Vloerafwerkingen"},{code:"44",label:"Trap- en hellingafwerkingen"},{code:"45",label:"Plafondafwerkingen"},{code:"47",label:"Dakafwerkingen"},{code:"48",label:"Afwerkingspakketten"},{code:"49",label:"Afwerking algemeen"}
+    ]},
+    {code:"5-",label:"Installaties werktuigbouwkundig",children:[
+      {code:"50",label:"Mechanische installaties"},{code:"51",label:"Warmteopwerkingsinstallaties"},{code:"52",label:"Rioleringsinstallaties"},{code:"53",label:"Waterinstallaties"},{code:"54",label:"Gasinstallaties"},{code:"55",label:"Koelinstallaties"},{code:"56",label:"Warmtedistributie-installaties"},{code:"57",label:"Luchtbehandelingsinstallaties"},{code:"58",label:"Klimaatregelingsinstallaties"},{code:"59",label:"Mechanische installaties algemeen"}
+    ]},
+    {code:"6-",label:"Installaties elektrotechnisch",children:[
+      {code:"60",label:"Elektrische installaties"},{code:"61",label:"Centrale elektrotechnische installaties"},{code:"62",label:"Krachtstroominstallaties"},{code:"63",label:"Verlichtingsinstallaties"},{code:"64",label:"Communicatie-installaties"},{code:"65",label:"Beveiligingsinstallaties"},{code:"66",label:"Transportinstallaties"},{code:"67",label:"Gebouwmanagement systeem"},{code:"69",label:"Elektrische installaties algemeen"}
+    ]},
+    {code:"7-",label:"Vaste inrichtingen",children:[
+      {code:"70",label:"Vaste inrichtingen"},{code:"71",label:"Vaste verkeersvoorzieningen"},{code:"72",label:"Vaste gebruikersvoorzieningen"},{code:"73",label:"Vaste keukenvoorzieningen"},{code:"74",label:"Vaste sanitaire voorzieningen"},{code:"75",label:"Vaste onderhoudsvoorzieningen"},{code:"76",label:"Vaste opslagvoorzieningen"},{code:"79",label:"Vaste inrichtingen algemeen"}
+    ]},
+    {code:"8-",label:"Losse inrichting",children:[
+      {code:"80",label:"Losse inrichting"},{code:"81",label:"Losse inventaris verkeersruimten"},{code:"82",label:"Losse inventaris gebruiksruimten"},{code:"83",label:"Losse keukeninventaris"},{code:"84",label:"Losse sanitaire inventaris"},{code:"85",label:"Losse schoonmaakinventaris"},{code:"86",label:"Losse opberginventaris"},{code:"89",label:"Losse inventaris algemeen"}
+    ]},
+    {code:"9-",label:"Terrein",children:[
+      {code:"90",label:"Terrein"},{code:"91",label:"Grondvoorzieningen"},{code:"92",label:"Opstallen"},{code:"93",label:"Omheiningen"},{code:"94",label:"Terreinafwerkingen"},{code:"95",label:"Terreininstallaties werktuigkundig"},{code:"96",label:"Terreininstallaties elektrotechnisch"},{code:"97",label:"Terreininrichting standaard"},{code:"98",label:"Terreininrichting bijzonder"},{code:"99",label:"Terrein algemeen"}
+    ]}
+  ];
+  const stabuFolders:ClassificationFolder[]=[
+    {code:"00",label:"Algemeen"},{code:"01",label:"Voor het werk geldende voorwaarden"},{code:"05",label:"Bouwplaatsvoorzieningen"},{code:"06",label:"Door de aannemer aan te leveren documenten"},
+    {code:"10",label:"Stut- en sloopwerk"},{code:"12",label:"Grondwerk"},{code:"14",label:"Buitenriolering en drainage"},{code:"15",label:"Terreinverhardingen"},{code:"16",label:"Beplanting"},{code:"17",label:"Terreininrichting"},
+    {code:"20",label:"Funderingspalen en damwanden"},{code:"21",label:"Betonwerk"},{code:"22",label:"Metselwerk"},{code:"23",label:"Vooraf vervaardigde steenachtige elementen"},{code:"24",label:"Ruwbouwtimmerwerk"},{code:"25",label:"Metaalconstructiewerk"},{code:"26",label:"Bouwkundige kanaalelementen"},
+    {code:"30",label:"Kozijnen, ramen en deuren"},{code:"31",label:"Systeembekledingen"},{code:"32",label:"Trappen en balustraden"},{code:"33",label:"Dakbedekkingen"},{code:"34",label:"Beglazing"},{code:"35",label:"Natuur- en kunststeen"},{code:"36",label:"Voegvulling"},{code:"37",label:"Na-isolatie"},{code:"38",label:"Gevelschermen"},
+    {code:"40",label:"Stukadoorwerk"},{code:"41",label:"Tegelwerk"},{code:"42",label:"Dekvloeren en vloersystemen"},{code:"43",label:"Metaal- en kunststofwerk"},{code:"44",label:"Plafond- en wandsystemen"},{code:"45",label:"Afbouwtimmerwerk"},{code:"46",label:"Schilderwerk"},{code:"47",label:"Binneninrichting"},{code:"48",label:"Behangwerk, vloerbedekking en stoffering"},
+    {code:"50",label:"Dakgoten en hemelwaterafvoeren"},{code:"51",label:"Binnenriolering"},{code:"52",label:"Waterinstallaties"},{code:"53",label:"Sanitair"},{code:"54",label:"Brandbestrijdingsinstallaties"},{code:"55",label:"Gasinstallaties"},{code:"56",label:"Perslucht- en vacuüminstallaties"},{code:"57",label:"Technische inrichting"},
+    {code:"60",label:"Verwarmingsinstallaties"},{code:"61",label:"Ventilatie- en luchtbehandelingsinstallaties"},{code:"62",label:"Koelinstallaties"},{code:"68",label:"Regelinstallaties"},
+    {code:"70",label:"Elektrotechnische installaties"},{code:"75",label:"Communicatie- en beveiligingsinstallaties"},{code:"78",label:"Gebouwenbeheersystemen"},
+    {code:"80",label:"Liftinstallaties"},{code:"81",label:"Roltrappen en rolpaden"},{code:"82",label:"Hijs- en hefinstallaties"},{code:"83",label:"Goederentransport- en distributiesystemen"},{code:"84",label:"Gevelonderhoudinstallaties"}
+  ];
+
   const recipeClassificationPath=(recipe:CalcRecipe,scheme:ClassificationScheme):string[]=>{
     if(scheme==="custom"){
       const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
@@ -1212,8 +1254,24 @@ function App() {
 
   type RecipeTreeNode={name:string;path:string;children:RecipeTreeNode[];items:CalcRecipe[]};
   const recipeTree=useMemo(()=>{
+    const seedFolders=(root:RecipeTreeNode,folders:ClassificationFolder[],prefix="")=>{
+      for(const folder of folders){
+        const name=`${folder.code} · ${folder.label}`;
+        const path=prefix?`${prefix} / ${name}`:name;
+        let node=root.children.find(item=>item.path===path);
+        if(!node){
+          node={name,path,children:[],items:[]};
+          root.children.push(node);
+        }
+        if(folder.children?.length)seedFolders(node,folder.children,path);
+      }
+    };
     const root:RecipeTreeNode={name:"",path:"",children:[],items:[]};
     const query=recipeTreeQuery.trim().toLocaleLowerCase("nl");
+    if(!query){
+      if(classificationScheme==="nl_sfb")seedFolders(root,nlSfbFolders);
+      if(classificationScheme==="stabu")seedFolders(root,stabuFolders);
+    }
     const source=recipes.filter(recipe=>{
       if(recipe.status==="archived")return false;
       if(!query)return true;
@@ -1226,10 +1284,11 @@ function App() {
       const parts=pathParts.length?pathParts:[classificationScheme==="custom"?"Algemeen":"Niet geclassificeerd"];
       let node=root;
       for(const part of parts){
-        let child=node.children.find(item=>item.name===part);
+        const normalizedPart=part.trim();
+        let child=node.children.find(item=>item.name===normalizedPart||item.name.startsWith(normalizedPart+" · "));
         if(!child){
-          const path=node.path?`${node.path} / ${part}`:part;
-          child={name:part,path,children:[],items:[]};
+          const path=node.path?`${node.path} / ${normalizedPart}`:normalizedPart;
+          child={name:normalizedPart,path,children:[],items:[]};
           node.children.push(child);
         }
         node=child;
