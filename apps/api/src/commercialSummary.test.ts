@@ -42,3 +42,18 @@ test("som btw-grondslagen moet verkoopprijs volgen",()=>{
     ]
   }),/grondslagen/);
 });
+
+
+test("commerciele samenvatting bevat factuurtotaal inclusief btw",()=>{
+  const summary=buildCommercialSummary({
+    purchase:80,
+    sales:100,
+    vatRate:null,
+    vatBreakdown:[
+      {code:"NL9",label:"9%",rate:9,taxableBase:40,vatAmount:3.6,reverseCharged:false},
+      {code:"NL21",label:"21%",rate:21,taxableBase:60,vatAmount:12.6,reverseCharged:false}
+    ]
+  });
+  assert.equal(summary.vat,16.2);
+  assert.equal(summary.totalInclVat,116.2);
+});
