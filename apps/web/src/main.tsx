@@ -452,7 +452,6 @@ function compactQuoteLineDescription(text:string,filename:string):string{
   return value.length>180?value.slice(0,177).trimEnd()+"…":value;
 }
 
-const classificationScheme: ClassificationScheme = "custom";
 const sourceDetailLabels = ["Systeem","Uw-waarde","Omschrijving deur","Kleur","Profielen","Beglazing","Beschläge","Deurbeslag","Deurbeslagpakket","Ontwatering","Gewicht positie","Ventilatierooster","Bovenste sluiter","Bander","Drukknop","Rozet","PZ-cilinder","Slot"];
 function parseSourceDetails(details: string | null): Array<[string,string]> {
   if (!details?.trim()) return [];
@@ -923,6 +922,7 @@ function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
+  const [classificationScheme,setClassificationScheme]=useState<ClassificationScheme>("nl_sfb");
   const [versionStatus,setVersionStatus]=useState<"draft"|"established">("draft");
   const [versionNo,setVersionNo]=useState(1);
   const [versionHistory,setVersionHistory]=useState<CalcVersionHistoryItem[]>([]);
@@ -946,7 +946,8 @@ function App() {
   const [activeScopeType,setActiveScopeType]=useState<ScopeFilterType>("position");
   const [activeScopeRef,setActiveScopeRef]=useState("");
   const [selectedRecipeVersionId, setSelectedRecipeVersionId] = useState<number | null>(null);
-  const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"" });
+  const [recipeDraft, setRecipeDraft] = useState({ recipeKey:"", name:"", description:"", nlSfbPath:"", stabuPath:"" });
+  const [recipeClassificationDraft,setRecipeClassificationDraft]=useState({nlSfbPath:"",stabuPath:""});
   const [recipeLineDraft, setRecipeLineDraft] = useState({
     lineRef:"", description:"", costKind:"material", unit:"st", takeoffBasis:"fixed",
     quantitySourceType:"", quantitySourceRef:"", costSourceType:"article", costSourceRef:"",
@@ -1178,6 +1179,37 @@ function App() {
         sales: activeSubcalculationResult.salesPrice
       }
     : totals;
+  const classificationLabel:Record<ClassificationScheme,string>={nl_sfb:"NL-SfB",stabu:"STABU",custom:"Vrij"};
+  const recipeClassificationPath=(recipe:CalcRecipe,scheme:ClassificationScheme):string[]=>{
+    if(scheme==="custom"){
+      const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
+      const keyParts=recipe.recipeKey.split(/[\\/:>]+/).map(item=>item.trim()).filter(Boolean);
+      return(category?category.split(/[\\/:>]+/):keyParts.slice(0,-1)).map(item=>item.trim()).filter(Boolean);
+    }
+    const applicability=recipe.applicability??{};
+    const classification=applicability.classification&&typeof applicability.classification==="object"&&!Array.isArray(applicability.classification)
+      ? applicability.classification as Record<string,unknown>
+      : {};
+    const schemeValue=classification[scheme];
+    const raw=typeof schemeValue==="string"
+      ? schemeValue
+      : schemeValue&&typeof schemeValue==="object"&&!Array.isArray(schemeValue)
+        ? String((schemeValue as Record<string,unknown>).path??(schemeValue as Record<string,unknown>).code??"")
+        : "";
+    return raw.split(/[\\/>]+/).map(item=>item.trim()).filter(Boolean);
+  };
+  const recipeClassificationPaths=(recipe:CalcRecipe)=>{
+    const applicability=recipe.applicability??{};
+    const classification=applicability.classification&&typeof applicability.classification==="object"&&!Array.isArray(applicability.classification)
+      ? applicability.classification as Record<string,unknown>
+      : {};
+    const read=(scheme:"nl_sfb"|"stabu")=>{
+      const value=classification[scheme];
+      return typeof value==="string"?value:value&&typeof value==="object"&&!Array.isArray(value)?String((value as Record<string,unknown>).path??""):"";
+    };
+    return{nlSfbPath:read("nl_sfb"),stabuPath:read("stabu")};
+  };
+
   type RecipeTreeNode={name:string;path:string;children:RecipeTreeNode[];items:CalcRecipe[]};
   const recipeTree=useMemo(()=>{
     const root:RecipeTreeNode={name:"",path:"",children:[],items:[]};
@@ -1185,14 +1217,13 @@ function App() {
     const source=recipes.filter(recipe=>{
       if(recipe.status==="archived")return false;
       if(!query)return true;
-      return [recipe.name,recipe.recipeKey,recipe.description??"",typeof recipe.applicability?.category==="string"?String(recipe.applicability.category):""]
+      const classifications=recipeClassificationPaths(recipe);
+      return [recipe.name,recipe.recipeKey,recipe.description??"",classifications.nlSfbPath,classifications.stabuPath]
         .some(value=>value.toLocaleLowerCase("nl").includes(query));
     });
     for(const recipe of source){
-      const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
-      const keyParts=recipe.recipeKey.split(/[\\/:>]+/).map(item=>item.trim()).filter(Boolean);
-      const pathParts=(category?category.split(/[\\/:>]+/):keyParts.slice(0,-1)).map(item=>item.trim()).filter(Boolean);
-      const parts=pathParts.length?pathParts:["Algemeen"];
+      const pathParts=recipeClassificationPath(recipe,classificationScheme);
+      const parts=pathParts.length?pathParts:[classificationScheme==="custom"?"Algemeen":"Niet geclassificeerd"];
       let node=root;
       for(const part of parts){
         let child=node.children.find(item=>item.name===part);
@@ -1212,7 +1243,7 @@ function App() {
     };
     sortNode(root);
     return root;
-  },[recipes,recipeTreeQuery]);
+  },[recipes,recipeTreeQuery,classificationScheme]);
 
   const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>
     <details className="recipeTreeGroup" open={recipeTreeQuery.trim().length>0||undefined} key={node.path}>
@@ -1572,10 +1603,40 @@ function App() {
       });
       const payload=await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(String(payload.error??"Recept kon niet worden aangemaakt."));
-      setRecipeDraft({recipeKey:"",name:"",description:""});
+      setRecipeDraft({recipeKey:"",name:"",description:"",nlSfbPath:"",stabuPath:""});
       await loadRecipeLibrary();
       setManagementStatus("Recept aangemaakt in Calc.");
     } catch(error) { setManagementStatus(error instanceof Error?error.message:"Recept kon niet worden aangemaakt."); }
+  };
+
+  const saveRecipeClassification=async()=>{
+    if(!selectedRecipeVersionId){setManagementStatus("Kies eerst een recept.");return;}
+    setManagementStatus("Receptclassificatie opslaan…");
+    try{
+      const response=await fetch(`/api/recipes/${selectedRecipeVersionId}/classification`,{
+        method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(recipeClassificationDraft)
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Receptclassificatie kon niet worden opgeslagen."));
+      await loadRecipeLibrary();
+      setManagementStatus("Receptclassificatie opgeslagen.");
+    }catch(error){setManagementStatus(error instanceof Error?error.message:"Receptclassificatie kon niet worden opgeslagen.");}
+  };
+
+  const changeClassificationScheme=async(scheme:ClassificationScheme)=>{
+    setClassificationScheme(scheme);
+    try{
+      const response=await fetch("/api/workbench/current/classification-scheme",{
+        method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({classificationScheme:scheme})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload.error??"Classificatiestelsel kon niet worden opgeslagen."));
+      setStatus(`Classificatie: ${classificationLabel[scheme]}`);
+    }catch(error){
+      setStatus(error instanceof Error?error.message:"Classificatiestelsel kon niet worden opgeslagen.");
+    }
   };
 
   const addRecipeLine = async () => {
@@ -1833,6 +1894,8 @@ function App() {
     })) : []);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
+    const loadedClassification=String(data.calculation?.classification_scheme??"nl_sfb");
+    setClassificationScheme(loadedClassification==="stabu"?"stabu":loadedClassification==="custom"?"custom":"nl_sfb");
     const loadedVersionStatus=String(data.version?.status??"draft")==="established"?"established":"draft";
     setVersionStatus(loadedVersionStatus);
     setVersionNo(Number(data.version?.version_no??1));
@@ -3206,6 +3269,14 @@ function App() {
             {vatSettingsStatus && <p className="settingsStatus">{vatSettingsStatus}</p>}
           </div>
           <div className="settingsSection">
+            <div className="settingsSectionHead"><div><h3>Classificatie calculatie</h3><p>De receptenboom volgt automatisch het gekozen coderingsstelsel. Recepten blijven hetzelfde; alleen de mapstructuur verandert.</p></div></div>
+            <div className="classificationSchemeChoices">
+              <label><input type="radio" name="classification-scheme" checked={classificationScheme==="nl_sfb"} onChange={()=>void changeClassificationScheme("nl_sfb")} /> <span><strong>NL-SfB</strong><small>Toon recepten onder NL-SfB-mapcodes.</small></span></label>
+              <label><input type="radio" name="classification-scheme" checked={classificationScheme==="stabu"} onChange={()=>void changeClassificationScheme("stabu")} /> <span><strong>STABU</strong><small>Toon recepten onder STABU-mapcodes.</small></span></label>
+              <label><input type="radio" name="classification-scheme" checked={classificationScheme==="custom"} onChange={()=>void changeClassificationScheme("custom")} /> <span><strong>Vrij</strong><small>Gebruik de vrije receptcategorie/receptcode.</small></span></label>
+            </div>
+          </div>
+          <div className="settingsSection">
             <div className="settingsSectionHead"><div><h3>Standaard uurtarieven</h3><p>Per rol gebruikt Calc één standaardtarief als uitgangspunt. De volledige tariefkaart beheer je in het venster Uurtarieven.</p></div><button type="button" className="secondary" onClick={()=>void openLabourRates()}>Uurtarieven openen</button></div>
             <div className="labourDefaultList">
               {labourRates.filter(rate=>rate.isDefault).map(rate=><div key={rate.id} className="labourDefaultRow"><span><strong>{rate.label}</strong><small>{rate.roleRef}</small></span><b>{money.format(rate.hourlyCostRate)}/uur</b></div>)}
@@ -3229,6 +3300,7 @@ function App() {
         <DockableWindow id="recipe-tree" label="Recepten" collapsible>
           <aside className="recipeTreeSidebar isDockableRecipeTree" aria-label="Recepten en vensters">
           {!recipeTreeCollapsed&&<>
+            <div className="recipeTreeScheme"><span>Indeling</span><strong>{classificationLabel[classificationScheme]}</strong></div>
             <div className="recipeTreeSearch">
               <span aria-hidden="true">⌕</span>
               <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
@@ -3397,16 +3469,28 @@ function App() {
               <label><span>Code</span><input value={recipeDraft.recipeKey} onChange={event=>setRecipeDraft(current=>({...current,recipeKey:event.target.value}))} placeholder="bijv. kozijn-vervangen" /></label>
               <label><span>Naam</span><input value={recipeDraft.name} onChange={event=>setRecipeDraft(current=>({...current,name:event.target.value}))} placeholder="Kozijn vervangen" /></label>
               <label><span>Omschrijving</span><textarea value={recipeDraft.description} onChange={event=>setRecipeDraft(current=>({...current,description:event.target.value}))} /></label>
+              <label><span>NL-SfB mapcode</span><input value={recipeDraft.nlSfbPath} onChange={event=>setRecipeDraft(current=>({...current,nlSfbPath:event.target.value}))} placeholder="bijv. 31 / 31.2" /></label>
+              <label><span>STABU mapcode</span><input value={recipeDraft.stabuPath} onChange={event=>setRecipeDraft(current=>({...current,stabuPath:event.target.value}))} placeholder="bijv. 30 / 30.20" /></label>
+              <small className="fieldHint">Gebruik / tussen niveaus. De boom toont automatisch het pad van het gekozen calculatiestelsel.</small>
               <button type="button" onClick={() => void createRecipe()}>Recept aanmaken</button>
             </section>
             <section className="managementCard">
               <h3>Recepten</h3>
               <div className="managementList">{recipes.length===0?<p className="muted">Nog geen Calc-recepten.</p>:recipes.map(recipe=>
-                <button type="button" className={"managementListItem"+(selectedRecipeVersionId===recipe.id?" is-selected":"")} key={recipe.id} onClick={()=>setSelectedRecipeVersionId(recipe.id)}>
+                <button type="button" className={"managementListItem"+(selectedRecipeVersionId===recipe.id?" is-selected":"")} key={recipe.id} onClick={()=>{setSelectedRecipeVersionId(recipe.id);setRecipeClassificationDraft(recipeClassificationPaths(recipe));}}>
                   <strong>{recipe.name}</strong><span>{recipe.recipeKey} · v{recipe.versionNo} · {recipe.status}</span><small>{recipe.lines.length} regel(s)</small>
                 </button>
               )}</div>
             </section>
+            {selectedRecipeVersionId&&<section className="managementCard managementWide recipeClassificationEditor">
+              <h3>Classificatie recept</h3>
+              <p className="muted">Hetzelfde recept kan onder beide coderingsstelsels worden teruggevonden.</p>
+              <div className="managementFields">
+                <label><span>NL-SfB mapcode</span><input value={recipeClassificationDraft.nlSfbPath} onChange={event=>setRecipeClassificationDraft(current=>({...current,nlSfbPath:event.target.value}))} placeholder="31 / 31.2" /></label>
+                <label><span>STABU mapcode</span><input value={recipeClassificationDraft.stabuPath} onChange={event=>setRecipeClassificationDraft(current=>({...current,stabuPath:event.target.value}))} placeholder="30 / 30.20" /></label>
+              </div>
+              <button type="button" onClick={()=>void saveRecipeClassification()}>Classificatie opslaan</button>
+            </section>}
             <section className="managementCard managementWide">
               <h3>Regel toevoegen aan {recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.name ?? "recept"}</h3>
               <div className="managementFields">

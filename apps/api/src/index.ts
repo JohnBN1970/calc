@@ -10,7 +10,7 @@ import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
-import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes } from "./calcRecipeRepository.js";
+import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes, updateCalcRecipeApplicability } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, createScopedCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, manualScopeTags, storeLineScopeTags, type LineScopeTag } from "./lineScopeRepository.js";
@@ -1243,12 +1243,36 @@ app.post("/api/recipes", async (req, res) => {
     const recipeId = await createCalcRecipe({
       recipeKey: String(req.body?.recipeKey ?? ""),
       name: String(req.body?.name ?? ""),
-      description: req.body?.description == null ? null : String(req.body.description)
+      description: req.body?.description == null ? null : String(req.body.description),
+      applicability:{
+        classification:{
+          nl_sfb:{path:String(req.body?.nlSfbPath??"").trim()},
+          stabu:{path:String(req.body?.stabuPath??"").trim()}
+        }
+      }
     });
     res.status(201).json({ recipeId });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Recept kon niet worden aangemaakt.";
     res.status(400).json({ error: detail });
+  }
+});
+
+app.put("/api/recipes/:versionId/classification", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const versionId=Number(req.params.versionId);
+  if(!Number.isInteger(versionId)||versionId<=0){res.status(400).json({error:"Ongeldige receptversie."});return;}
+  try{
+    await updateCalcRecipeApplicability(versionId,{
+      classification:{
+        nl_sfb:{path:String(req.body?.nlSfbPath??"").trim()},
+        stabu:{path:String(req.body?.stabuPath??"").trim()}
+      }
+    });
+    res.json({ok:true});
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Receptclassificatie kon niet worden opgeslagen."});
   }
 });
 
@@ -1340,7 +1364,7 @@ app.get("/api/workbench/current", async (req, res) => {
   if (!session) return;
 
   const [calculations] = await db.execute<RowDataPacket[]>(
-    "SELECT id, office_project_id, office_calculation_id, code, title, status FROM calculations WHERE id = ? AND office_project_id = ? AND office_calculation_id = ? LIMIT 1",
+    "SELECT id, office_project_id, office_calculation_id, code, title, status, classification_scheme FROM calculations WHERE id = ? AND office_project_id = ? AND office_calculation_id = ? LIMIT 1",
     [session.calculationId, session.officeProjectId, session.officeCalculationId]
   );
   if (!calculations[0]) {
@@ -1408,6 +1432,21 @@ app.get("/api/workbench/current", async (req, res) => {
     lines:lines.map(row=>({...row,manual_scopes:manualScopesByLine.get(Number(row.id))??[]})),
     allocations
   });
+});
+
+app.put("/api/workbench/current/classification-scheme", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const scheme=String(req.body?.classificationScheme??"");
+  if(!["nl_sfb","stabu","custom"].includes(scheme)){
+    res.status(400).json({error:"Ongeldig classificatiestelsel."});
+    return;
+  }
+  await db.execute(
+    "UPDATE calculations SET classification_scheme=? WHERE id=? AND office_project_id=? AND office_calculation_id=?",
+    [scheme,session.calculationId,session.officeProjectId,session.officeCalculationId]
+  );
+  res.json({classificationScheme:scheme});
 });
 
 app.put("/api/workbench/current", async (req, res) => {

@@ -88,7 +88,7 @@ export async function listCalcRecipes():Promise<CalcRecipeVersion[]> {
   return result;
 }
 
-export async function createCalcRecipe(input:{recipeKey:string;name:string;description?:string|null}):Promise<number> {
+export async function createCalcRecipe(input:{recipeKey:string;name:string;description?:string|null;applicability?:Record<string,unknown>|null}):Promise<number> {
   const key=input.recipeKey.trim(),name=input.name.trim();
   if(!key||!name) throw new Error("Receptcode en naam zijn verplicht.");
   const connection=await db.getConnection();
@@ -99,8 +99,8 @@ export async function createCalcRecipe(input:{recipeKey:string;name:string;descr
       [key,name,input.description?.trim()||null]
     );
     await connection.execute(
-      "INSERT INTO recipe_versions (recipe_id,version_no,status) VALUES (?,1,'draft')",
-      [insert.insertId]
+      "INSERT INTO recipe_versions (recipe_id,version_no,status,applicability_json) VALUES (?,1,'draft',?)",
+      [insert.insertId,input.applicability?JSON.stringify(input.applicability):null]
     );
     await connection.commit();
     return insert.insertId;
@@ -132,4 +132,14 @@ export async function addCalcRecipeLine(input:{
     input.fixedQuantity??null,input.roundingStep??null,input.minimumQuantity??null,input.metadata?JSON.stringify(input.metadata):null
   ]);
   return insert.insertId;
+}
+
+
+export async function updateCalcRecipeApplicability(recipeVersionId:number,applicability:Record<string,unknown>|null):Promise<void>{
+  if(!Number.isInteger(recipeVersionId)||recipeVersionId<=0)throw new Error("Ongeldige receptversie.");
+  const [result]=await db.execute<ResultSetHeader>(
+    "UPDATE recipe_versions SET applicability_json=? WHERE id=?",
+    [applicability?JSON.stringify(applicability):null,recipeVersionId]
+  );
+  if(result.affectedRows===0)throw new Error("Receptversie niet gevonden.");
 }
