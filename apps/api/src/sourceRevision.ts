@@ -11,6 +11,7 @@ export type SourceRevisionAssessment={
   priority:number;
   reasons:string[];
   supersededByDocumentId:number|null;
+  chainProven:boolean;
 };
 
 function statusWeight(value:string|null|undefined):number{
@@ -51,6 +52,7 @@ export function assessDocumentRevisions(snapshot:OfficeCalculationContextSnapsho
   }
   const result:SourceRevisionAssessment[]=[];
   for(const [number,documents] of groups){
+    const chainProven=documents.length>1&&documents.every(document=>Boolean(String(document.revision??"").trim()||String(document.revision_date??document.issued_at??"").trim()));
     const ranked=[...documents].sort((a,b)=>{
       const status=statusWeight(b.document_status)-statusWeight(a.document_status);
       if(status)return status;
@@ -69,7 +71,8 @@ export function assessDocumentRevisions(snapshot:OfficeCalculationContextSnapsho
         documentId:Number(document.document_id),documentNumber:number,revision:document.revision??null,
         revisionDate:document.revision_date??document.issued_at??null,documentStatus:document.document_status??null,
         priority:sw+(document===leader?20:0),reasons,
-        supersededByDocumentId:document===leader?null:Number(leader.document_id)
+        supersededByDocumentId:chainProven&&document!==leader?Number(leader.document_id):null,
+        chainProven
       });
     }
   }
