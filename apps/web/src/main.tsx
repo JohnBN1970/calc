@@ -2593,6 +2593,34 @@ function App() {
       <div className="user" title="Calc frontend build 2026.09.28-r1">BREBO <small className="buildMark">r1</small></div>
     </header>
 
+      <div className="commandbar commandbarTop" role="toolbar" aria-label="Calculatie acties">
+        <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
+        <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
+        <div className="commandDivider" />
+        <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
+        <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
+        <button className="command" type="button"
+          disabled={versionStatus==="established"||(activeSubcalculationId!=null&&!activeScopeRef)}
+          onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
+          title={activeScopeRef?"Nieuwe regel in "+scopeLabels[activeScopeType]+" "+activeScopeRef:activeSubcalculationId!=null?"Kies eerst een scope om een regel in deze deelcalculatie toe te voegen":"Nieuwe calculatieregel"}>
+          <Icon name="line" /><span>Regel</span>
+        </button>
+        <div className="commandDivider" />
+        <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om recepten toe te passen":"Calc-recept toepassen op Office-brondata"} onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept toepassen</span></button>
+        <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten beheren</span></button>
+        <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
+        <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
+        <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
+        <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
+        <span className="commandSpacer" />
+        {versionStatus==="established"
+          ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
+          : <>
+              <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst de onvolledige calculatieregels op"}><Icon name="save" /><span>Opslaan</span></button>
+              <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst de onvolledige calculatieregels op"}><Icon name="office" /><span>Publiceren</span></button>
+            </>}
+      </div>
+
     <main>
       <div className="context">
         <div>
@@ -2738,33 +2766,7 @@ function App() {
       </div>}
 
       <section className="workbench">
-        <div className="commandbar" role="toolbar" aria-label="Calculatie acties">
-          <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
-          <button className="command" type="button" onClick={()=>void openSettings()} title="Calc-instellingen"><span aria-hidden="true">⚙</span><span>Instellingen</span></button>
-          <div className="commandDivider" />
-          <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
-          <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
-          <button className="command" type="button"
-            disabled={versionStatus==="established"||(activeSubcalculationId!=null&&!activeScopeRef)}
-            onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
-            title={activeScopeRef?"Nieuwe regel in "+scopeLabels[activeScopeType]+" "+activeScopeRef:activeSubcalculationId!=null?"Kies eerst een scope om een regel in deze deelcalculatie toe te voegen":"Nieuwe calculatieregel"}>
-            <Icon name="line" /><span>Regel</span>
-          </button>
-          <div className="commandDivider" />
-          <button className={"command commandSecondary" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om recepten toe te passen":"Calc-recept toepassen op Office-brondata"} onClick={() => setRecipeWorkspaceOpen(open => !open)}><Icon name="recipe" /><span>Recept</span></button>
-          <button className={"command commandSecondary" + (recipeLibraryOpen ? " commandActive" : "")} type="button" title="Recepten beheren in Calc" onClick={() => setRecipeLibraryOpen(open => !open)}><Icon name="recipe" /><span>Recepten</span></button>
-          <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><span>Deelcalc</span></button>
-          <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><span>Staartkosten</span></button>
-          <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
-          <button className={"command commandSecondary" + (columnSettingsOpen ? " commandActive" : "")} type="button" title="Kolommen instellen" onClick={() => setColumnSettingsOpen(open => !open)}><span>Kolommen</span></button>
-          <span className="commandSpacer" />
-          {versionStatus==="established"
-            ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
-            : <>
-                <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst de onvolledige calculatieregels op"}><Icon name="save" /><span>Opslaan</span></button>
-                <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst de onvolledige calculatieregels op"}><Icon name="office" /><span>Publiceren</span></button>
-              </>}
-        </div>
+
 
         {recipeWorkspaceOpen && <div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
