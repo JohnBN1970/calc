@@ -241,7 +241,7 @@ type VersionDiff={
 };
 type PublicationFreshness={
   contract:"brebo-calc-publication-freshness-v1";
-  status:"never_published"|"current"|"draft_pending"|"office_changed"|"version_mismatch";
+  status:"never_published"|"current"|"draft_pending"|"publish_recovery"|"office_changed"|"version_mismatch";
   message:string;
   latestVersionId:number;
   latestVersionNo:number;
@@ -2507,6 +2507,7 @@ function App() {
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
       {publicationFreshness?.status==="draft_pending"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nieuw Calc-concept in bewerking</strong><span>{publicationFreshness.message}</span></div></div>}
+      {publicationFreshness?.status==="publish_recovery"&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Publicatie kan veilig worden hersteld</strong><span>{publicationFreshness.message}</span></div><button type="button" onClick={()=>void publish()}>Publicatie afronden</button></div>}
       {publicationFreshness?.status==="never_published"&&versionStatus==="draft"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div></div>}
       {versionStatus==="draft"&&versionDiff?.baselineVersionNo!=null&&<details className="versionDiffPanel">
         <summary>
