@@ -1,6 +1,6 @@
 # Calculation pipeline
 
-`runCalculationPipeline` is the single deterministic orchestration path from geometry to an established calculation.
+`runCalculationPipeline` is a deterministic domain/reference pipeline for geometry-to-cost calculations. It is not the active persisted Calc workbench flow and has no public workbench preview endpoint.
 
 Order:
 
@@ -30,3 +30,8 @@ The position remains intact through costing and structure assignment. This preve
 Geometry plus recipe rules own the calculated quantity. Material plans do not accept a second manually supplied gross quantity. The orchestrator injects the generated quantity into material costing and fails closed on missing or duplicate material plans.
 
 This preserves one source of truth for calculated quantities.
+
+
+## Active workbench ownership
+
+The active Calc workbench owns persisted calculation structure, recipes, subcalculations, tail costs, line-level VAT, version snapshots and explicit publication to Office. Do not introduce a second HTTP orchestration path that rebuilds those responsibilities outside the workbench lifecycle.
