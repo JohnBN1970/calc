@@ -771,7 +771,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 }
 
 
-type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
+type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis"|"vat-totals";
 type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean};
 
 function PinIcon({pinned}:{pinned:boolean}){
@@ -2839,16 +2839,14 @@ function App() {
       </div>
 
     <main>
-      <div className="context">
-        <div>
-          <span className="eyebrow">{project?.code ? `PROJECT · ${project.code}` : "PROJECT"}</span>
-          <h1>{calculationTitle}</h1>
-          <p>{project?.title ?? "Projectcontext laden…"} · {status}</p>
-          {project?.client_name && <p className="projectMeta">Opdrachtgever: {project.client_name}{project.project_kind ? ` · ${project.project_kind}` : ""}</p>}
+      <div className="calcCompactHeader">
+        <div className="calcCompactIdentity">
+          <strong>{calculationTitle}</strong>
+          <span>{project?.code??"Project"}{project?.client_name?` · ${project.client_name}`:""}</span>
         </div>
-        <div className="contextActions">
-          <span className="saveState">v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}{publicationFreshness?.status==="current"?" · Office actueel":""}</span>
-          {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · verkoop {money.format(item.salesPrice)}</span>{item.commercialSummary&&<small>inkoop {money.format(item.commercialSummary.purchase)} · marge {money.format(item.commercialSummary.margin)} ({item.commercialSummary.marginPct.toFixed(1)}%) · btw {money.format(item.commercialSummary.vat)}</small>}{item.directCostMix&&item.directCost>0&&<small>mix: arbeid {(item.directCostMix.labour/item.directCost*100).toFixed(1)}% · materiaal {(item.directCostMix.material/item.directCost*100).toFixed(1)}% · materieel {(item.directCostMix.equipment/item.directCost*100).toFixed(1)}% · onderaanneming {(item.directCostMix.subcontracting/item.directCost*100).toFixed(1)}%{item.directCostMix.other>0?` · overig ${(item.directCostMix.other/item.directCost*100).toFixed(1)}%`:""}</small>}{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
+        <div className="calcCompactState">
+          <span>v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}</span>
+          {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · verkoop {money.format(item.salesPrice)}</span>{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
         </div>
       </div>
 
@@ -2878,7 +2876,7 @@ function App() {
         </div>
       </section></DockableWindow>
 
-      {!activeSubcalculationResult&&<section className="vatTotalsPanel">
+      {!activeSubcalculationResult&&<DockableWindow id="vat-totals" label="BTW-totalisatie" collapsible><section className="vatTotalsPanel">
         <div className="settingsSectionHead"><div><h3>BTW-totalisatie</h3><p>Factuurbasis vanuit de BTW-keuzes op calculatieregels en staartkosten.</p></div></div>
         {liveVatTotals.breakdown.length>0?<div className="tailCostList">
           {liveVatTotals.breakdown.map(item=><div key={item.code}><span><strong>{item.label}</strong><small>{item.treatment==="reverse_charge"?"verlegd":item.treatment==="exempt"?"vrijgesteld":item.rate==null?"geen tarief":`${item.rate}%`} · grondslag {money.format(item.taxableBase)}</small></span><b>{money.format(item.vatAmount)}</b></div>)}
@@ -2886,7 +2884,7 @@ function App() {
           <div className="tailCostTotal"><strong>Totaal BTW</strong><b>{money.format(liveVatTotals.vat)}</b></div>
           <div className="tailCostTotal"><strong>Totaal incl. BTW</strong><b>{money.format(liveVatTotals.totalInclVat)}</b></div>
         </div>:<p className="muted">Nog geen BTW-keuzes aan verkoopregels of staartkosten gekoppeld.</p>}
-      </section>}
+      </section></DockableWindow>}
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
