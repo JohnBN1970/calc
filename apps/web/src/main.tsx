@@ -210,6 +210,19 @@ type PublicationReadiness={
   reasons:string[];
   totals:{directCost:number;markupAmount:number;salesPrice:number;vatTaxableBase:number};
 };
+type VersionDiff={
+  contract:"brebo-calc-version-diff-v1";
+  currentVersionNo:number;
+  baselineVersionNo:number|null;
+  changes:Array<{
+    structureKey:string;
+    kind:"added"|"removed"|"changed";
+    description:string;
+    changedFields:string[];
+  }>;
+  counts:{added:number;removed:number;changed:number};
+  commercialDelta:{directCost:number;markupAmount:number;salesPrice:number}|null;
+};
 type PublicationFreshness={
   contract:"brebo-calc-publication-freshness-v1";
   status:"never_published"|"current"|"draft_pending"|"office_changed"|"version_mismatch";
@@ -701,6 +714,7 @@ function App() {
   const [versionHistory,setVersionHistory]=useState<CalcVersionHistoryItem[]>([]);
   const [publicationReadiness,setPublicationReadiness]=useState<PublicationReadiness|null>(null);
   const [publicationFreshness,setPublicationFreshness]=useState<PublicationFreshness|null>(null);
+  const [versionDiff,setVersionDiff]=useState<VersionDiff|null>(null);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -1313,10 +1327,11 @@ function App() {
     } catch {
       setAggregate(null);
     }
-    const [historyResponse,readinessResponse,freshnessResponse]=await Promise.all([
+    const [historyResponse,readinessResponse,freshnessResponse,diffResponse]=await Promise.all([
       fetch("/api/workbench/current/versions",{headers:{Accept:"application/json"}}),
       fetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}}),
-      fetch("/api/workbench/current/publication-freshness",{headers:{Accept:"application/json"}})
+      fetch("/api/workbench/current/publication-freshness",{headers:{Accept:"application/json"}}),
+      fetch("/api/workbench/current/version-diff",{headers:{Accept:"application/json"}})
     ]);
     if(historyResponse.ok){
       const historyPayload=await historyResponse.json() as {versions?:CalcVersionHistoryItem[]};
@@ -1330,6 +1345,10 @@ function App() {
       const freshnessPayload=await freshnessResponse.json() as PublicationFreshness;
       setPublicationFreshness(freshnessPayload);
     }else setPublicationFreshness(null);
+    if(diffResponse.ok){
+      const diffPayload=await diffResponse.json() as VersionDiff;
+      setVersionDiff(diffPayload);
+    }else setVersionDiff(null);
 
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
     setSelectedLineIds([]);
@@ -2464,6 +2483,27 @@ function App() {
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
       {publicationFreshness?.status==="draft_pending"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nieuw Calc-concept in bewerking</strong><span>{publicationFreshness.message}</span></div></div>}
       {publicationFreshness?.status==="never_published"&&versionStatus==="draft"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div></div>}
+      {versionStatus==="draft"&&versionDiff?.baselineVersionNo!=null&&<details className="versionDiffPanel">
+        <summary>
+          <strong>Wijzigingen sinds v{versionDiff.baselineVersionNo}</strong>
+          <span>{versionDiff.counts.added} toegevoegd · {versionDiff.counts.changed} gewijzigd · {versionDiff.counts.removed} verwijderd</span>
+          {versionDiff.commercialDelta&&<small>Verkoop {versionDiff.commercialDelta.salesPrice>=0?"+":""}{money.format(versionDiff.commercialDelta.salesPrice)}</small>}
+        </summary>
+        <div className="versionDiffTotals">
+          {versionDiff.commercialDelta&&<>
+            <span>Directe kost <b>{versionDiff.commercialDelta.directCost>=0?"+":""}{money.format(versionDiff.commercialDelta.directCost)}</b></span>
+            <span>Staartkosten <b>{versionDiff.commercialDelta.markupAmount>=0?"+":""}{money.format(versionDiff.commercialDelta.markupAmount)}</b></span>
+            <span>Verkoop <b>{versionDiff.commercialDelta.salesPrice>=0?"+":""}{money.format(versionDiff.commercialDelta.salesPrice)}</b></span>
+          </>}
+        </div>
+        <div className="versionDiffChanges">
+          {versionDiff.changes.length===0?<span>Geen regelwijzigingen ten opzichte van de vorige vastgestelde versie.</span>:versionDiff.changes.map(change=><div key={change.structureKey}>
+            <b>{change.kind==="added"?"Toegevoegd":change.kind==="removed"?"Verwijderd":"Gewijzigd"}</b>
+            <span>{change.description}</span>
+            {change.changedFields.length>0&&<small>{change.changedFields.join(", ")}</small>}
+          </div>)}
+        </div>
+      </details>}
 
       {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Nog niet publiceerbaar</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
       {!calculationReady && <div className="readinessBanner" role="alert">
