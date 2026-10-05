@@ -855,7 +855,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
       }}
     >
       <strong>{label}</strong>
-      <div className="dockWindowActions">
+      <div className="dockWindowActions" onPointerDown={event=>event.stopPropagation()} onPointerMove={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()}>
         {collapsible&&<button type="button" className="pinButton" title={state.collapsed?"Uitklappen":"Inklappen"} onClick={event=>{
           event.stopPropagation();
           setState(current=>({...current,collapsed:!current.collapsed}));
