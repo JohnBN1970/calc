@@ -14,6 +14,8 @@ export type WorkbenchSnapshotLine={
   labourNorm:number|null;
   labourTotalHours:number|null;
   labourHoursInputMode:string|null;
+  labourRoleRef?:string|null;
+  labourRateId?:number|null;
   labourUnitCost:number;
   materialUnitCost:number;
   equipmentUnitCost:number;
