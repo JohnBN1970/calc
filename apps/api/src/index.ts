@@ -507,9 +507,10 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
   try {
-    const [snapshot, recipes] = await Promise.all([
+    const [snapshot, recipes, officeState] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
-      listCalcRecipes()
+      listCalcRecipes(),
+      fetchOfficeWorkspaceState(session.officeCalculationId)
     ]);
     if (snapshot.context.project_id !== null && snapshot.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
@@ -608,7 +609,11 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
         documentIds:conceptPosition.sourceDocumentIds,
         pages:conceptPosition.sourcePages
       }:undefined,
-      scopes:conceptPosition?.scopes
+      scopes:conceptPosition?.scopes,
+      contextBinding:{
+        officeVersion:String(officeState.version.version),
+        selectionVersion:snapshot.context.document_set?.selection_version??null
+      }
     });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
 
