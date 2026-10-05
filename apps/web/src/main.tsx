@@ -3251,8 +3251,8 @@ function App() {
 
       <div className="commandbar commandbarTop" role="toolbar" aria-label="Calculatie acties">
         <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
-        <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
-        <button className="command" type="button" disabled={versionStatus==="established"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
+        <button className="command" type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":classificationScheme!=="custom"?"Hoofdgroepen komen uit het gekozen classificatiestelsel":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
+        <button className="command" type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":classificationScheme!=="custom"?"Paragrafen komen uit het gekozen classificatiestelsel":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
         <button className="command" type="button"
           disabled={versionStatus==="established"||(activeSubcalculationId!=null&&!activeScopeRef)}
           onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
@@ -3948,16 +3948,16 @@ function App() {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               const metric=structureMetrics.get(line.id)??{depth:line.lineType==="chapter"?1:2,subtotal:0};
               return <div className={line.lineType} key={line.id}>
-                <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} /></div>
+                <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} />{classificationScheme==="custom"?<input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} aria-label="Vrije structuurcode" />:<span className="structureCodeLocked">{line.code}</span>}</div>
                 <span>▾</span>
-                <div className="structureDescription"><input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} /><small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}</small></div>
+                <div className="structureDescription">{classificationScheme==="custom"?<input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />:<strong className="structureDescriptionLocked">{line.description}</strong>}<small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}{classificationScheme!=="custom"?" · "+classificationLabel[classificationScheme]:""}</small></div>
                 <div className="structureSubtotal"><small>Subtotaal</small><strong>{money.format(metric.subtotal)}</strong></div>
                 <LineActions line={line} />
               </div>;
             }
             const trace=lineTrace(line);
             const cells: Record<ColumnKey, React.ReactNode> = {
-              code: <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id,event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id,{code:e.target.value})} /></div>,
+              code: <div className="bulkCodeCell cell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id,event.target.checked)} /><input value={line.code} onChange={e => patchLine(line.id,{code:e.target.value})} placeholder="Vrije code" aria-label="Vrije code" /></div>,
               description: <div className="descWrap">
                 <input className="cell desc" value={line.description} onChange={e => patchLine(line.id,{description:e.target.value})} />
                 {line.priceSourceType === "supplier_quote" && line.sourceDocumentId && (() => {
