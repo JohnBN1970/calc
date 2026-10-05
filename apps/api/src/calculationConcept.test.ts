@@ -51,3 +51,11 @@ test("Office positiecontext wordt alleen als Calc-scope overgenomen",()=>{
     {type:"building_part",ref:"Voorgevel"}
   ]);
 });
+
+
+test("ontbrekende Office positiecontext laat Calc-scopes leeg",()=>{
+  const snapshot=makeSnapshot(true);
+  delete snapshot.context.position_scopes;
+  const concept=buildConceptFromOfficeContext(snapshot);
+  assert.deepEqual(concept.positions[0].scopes,[]);
+});
