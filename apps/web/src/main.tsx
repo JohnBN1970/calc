@@ -1150,6 +1150,13 @@ function App() {
     });
   },[workbenchLines,collapsedStructureIds]);
 
+  const collapsibleStructureIds=useMemo(
+    ()=>workbenchLines.filter(line=>line.lineType==="chapter"||line.lineType==="paragraph").map(line=>line.id),
+    [workbenchLines]
+  );
+  const collapseAllStructure=()=>setCollapsedStructureIds(new Set(collapsibleStructureIds));
+  const expandAllStructure=()=>setCollapsedStructureIds(new Set());
+
   const structureMetrics=useMemo(()=>{
     const lineById=new Map(workbenchLines.map(line=>[line.id,line]));
     const children=new Map<number|null,Line[]>();
@@ -3959,6 +3966,10 @@ function App() {
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
+        <div className="structureBulkActions" aria-label="Calculatiestructuur">
+          <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={collapseAllStructure}>▴</button>
+          <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={expandAllStructure}>▾</button>
+        </div>
         <div className={"grid"+(versionStatus==="established"?" is-readonly":"")} aria-readonly={versionStatus==="established"}>
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
             {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
