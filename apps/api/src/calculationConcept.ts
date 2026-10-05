@@ -1,6 +1,9 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
 import { triageCalculationDocuments, type CalcDocumentTriageItem } from "./documentTriage.js";
 import { measurementKindForFact, measurementKindLabel, type MeasurementKind } from "./measurementSemantics.js";
+import { assessDocumentRevisions } from "./sourceRevision.js";
+import { evaluateSourceDecisions } from "./sourceDecisionEvaluation.js";
+import type { SourceDecision } from "./sourceDecision.js";
 
 export type CalculationConceptPosition = {
   positionRef: string;
@@ -26,6 +29,7 @@ export type CalculationConcept = {
   positions: CalculationConceptPosition[];
   unresolved: string[];
   readyForRecipeProposal: boolean;
+  sourceDecisions: SourceDecision[];
 };
 
 function factStatus(statuses: string[]): "reviewed" | "proposed" {
@@ -40,11 +44,14 @@ export function buildConceptFromOfficeContext(
 ): CalculationConcept {
   const context = snapshot.context;
   const acceptedDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary"||item.status==="supporting").map(item=>item.documentId));
-  const primaryDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary").map(item=>item.documentId));
+  const revisionAssessment=assessDocumentRevisions(snapshot);
+  const supersededDocumentIds=new Set(revisionAssessment.filter(item=>item.supersededByDocumentId!==null).map(item=>item.documentId));
+  const sourceDecisions=evaluateSourceDecisions(snapshot);
+  const primaryDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary"&&!supersededDocumentIds.has(item.documentId)).map(item=>item.documentId));
   const factsByPosition = new Map<string, typeof context.facts>();
 
   for (const fact of context.facts) {
-    if(!acceptedDocumentIds.has(Number(fact.document_id))) continue;
+    if(!acceptedDocumentIds.has(Number(fact.document_id))||supersededDocumentIds.has(Number(fact.document_id))) continue;
     const ref = fact.position_ref?.trim();
     if (!ref) continue;
     const rows = factsByPosition.get(ref) ?? [];
@@ -54,6 +61,9 @@ export function buildConceptFromOfficeContext(
 
   const positions: CalculationConceptPosition[] = [];
   const unresolved = [...context.review.unresolved];
+  for(const decision of sourceDecisions.filter(item=>item.status==="conflict")){
+    unresolved.push(`Positie ${decision.positionRef}: actueel bronconflict voor ${decision.factType}${decision.measurementKind?" ("+measurementKindLabel(decision.measurementKind as MeasurementKind)+")":""}; menselijke review vereist.`);
+  }
   const scopesByPosition=new Map<string,CalculationConceptPosition["scopes"]>();
   for(const row of context.position_scopes??[]){
     const ref=String(row.position_ref??"").trim();
@@ -110,12 +120,33 @@ export function buildConceptFromOfficeContext(
       continue;
     }
     const measurementKind=completeKinds[0] as MeasurementKind;
+    const positionDecisions=sourceDecisions.filter(item=>item.positionRef===positionRef);
+    if(positionDecisions.some(item=>item.status==="conflict")){
+      continue;
+    }
+    const expectedByFact=new Map(
+      positionDecisions
+        .filter(item=>item.status==="superseded"&&item.leadingValue!==null)
+        .map(item=>[item.factType+"\u0000"+String(item.measurementKind??""),Number(item.leadingValue)] as const)
+    );
+    const expectedQuantity=expectedByFact.get("quantity\u0000");
+    const expectedWidth=expectedByFact.get("width_mm\u0000"+measurementKind);
+    const expectedHeight=expectedByFact.get("height_mm\u0000"+measurementKind);
+    if(
+      (expectedQuantity!==undefined&&Number.isFinite(expectedQuantity)&&Math.abs(Number(row.quantity)-expectedQuantity)>0.000001)||
+      (expectedWidth!==undefined&&Number.isFinite(expectedWidth)&&Math.abs(Number(row.width_mm)-expectedWidth)>0.000001)||
+      (expectedHeight!==undefined&&Number.isFinite(expectedHeight)&&Math.abs(Number(row.height_mm)-expectedHeight)>0.000001)
+    ){
+      unresolved.push(`Positie ${positionRef}: Office-takeoff sluit nog niet aan op de leidende actuele revisie; broncontext eerst verversen/reviewen.`);
+      continue;
+    }
     const descriptions = facts.filter(f => f.fact_type === "description" && f.value_text?.trim());
     const prices = facts.filter(f => f.fact_type === "supplier_unit_price" && f.value_number !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
     const warnings: string[] = [];
 
     warnings.push("Geometrie geïnterpreteerd als "+measurementKindLabel(measurementKind)+".");
+    for(const decision of positionDecisions.filter(item=>item.status==="superseded"))warnings.push(decision.reason);
     if (completeTakeoffs.length > 1) {
       warnings.push(`${completeTakeoffs.length} geometrische take-offs gevonden; expliciete keuze vereist vóór receptplaatsing.`);
     }
@@ -158,6 +189,7 @@ export function buildConceptFromOfficeContext(
     sourceSelectionVersion: context.document_set?.selection_version ?? null,
     positions,
     unresolved: [...new Set(unresolved)],
-    readyForRecipeProposal: positions.length > 0
+    readyForRecipeProposal: positions.length > 0 && !sourceDecisions.some(item=>item.status==="conflict"),
+    sourceDecisions
   };
 }

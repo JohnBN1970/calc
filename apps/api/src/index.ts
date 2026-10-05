@@ -508,7 +508,7 @@ app.get("/api/workbench/current/concept", async (req, res) => {
     const concept = buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
     const sourceConflicts=detectSourceFactConflicts(snapshot);
     res.setHeader("Cache-Control", "no-store, private");
-    res.json({...concept,sourceConflicts,automationBlocked:sourceConflicts.length>0});
+    res.json({...concept,sourceConflicts,automationBlocked:concept.sourceDecisions.some(decision=>decision.status==="conflict")});
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende conceptfout";
     console.error("BREBO Calc concept build failed:", detail);

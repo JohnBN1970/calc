@@ -4,7 +4,7 @@ import { buildCalcStructureProposal } from "./structureProposal.js";
 import type { CalculationConcept } from "./calculationConcept.js";
 
 const concept:CalculationConcept={
-  contract:"brebo-calc-concept-v1",sourceDocumentSetId:null,sourceSelectionVersion:null,unresolved:[],readyForRecipeProposal:true,
+  contract:"brebo-calc-concept-v1",sourceDocumentSetId:null,sourceSelectionVersion:null,unresolved:[],readyForRecipeProposal:true,sourceDecisions:[],
   positions:[
     {positionRef:"K1",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],reviewStatus:"reviewed",scopes:[],warnings:[]},
     {positionRef:"K2",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],reviewStatus:"reviewed",scopes:[],warnings:[]},
