@@ -210,6 +210,18 @@ type PublicationReadiness={
   reasons:string[];
   totals:{directCost:number;markupAmount:number;salesPrice:number;vatTaxableBase:number};
 };
+type PublicationFreshness={
+  contract:"brebo-calc-publication-freshness-v1";
+  status:"never_published"|"current"|"draft_pending"|"office_changed"|"version_mismatch";
+  message:string;
+  latestVersionId:number;
+  latestVersionNo:number;
+  latestVersionStatus:string;
+  latestEstablishedVersionId:number|null;
+  officeCalcVersion:string|null;
+  officeVersion:string|null;
+  currentForOfficeVersion:boolean|null;
+};
 
 type WorkbenchAggregate = {
   contract: "brebo-calc-workbench-aggregate-v1";
@@ -688,6 +700,7 @@ function App() {
   const [versionNo,setVersionNo]=useState(1);
   const [versionHistory,setVersionHistory]=useState<CalcVersionHistoryItem[]>([]);
   const [publicationReadiness,setPublicationReadiness]=useState<PublicationReadiness|null>(null);
+  const [publicationFreshness,setPublicationFreshness]=useState<PublicationFreshness|null>(null);
   const [status, setStatus] = useState("Laden…");
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
@@ -1300,9 +1313,10 @@ function App() {
     } catch {
       setAggregate(null);
     }
-    const [historyResponse,readinessResponse]=await Promise.all([
+    const [historyResponse,readinessResponse,freshnessResponse]=await Promise.all([
       fetch("/api/workbench/current/versions",{headers:{Accept:"application/json"}}),
-      fetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}})
+      fetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}}),
+      fetch("/api/workbench/current/publication-freshness",{headers:{Accept:"application/json"}})
     ]);
     if(historyResponse.ok){
       const historyPayload=await historyResponse.json() as {versions?:CalcVersionHistoryItem[]};
@@ -1312,6 +1326,10 @@ function App() {
       const readinessPayload=await readinessResponse.json() as PublicationReadiness;
       setPublicationReadiness(readinessPayload);
     }else setPublicationReadiness(null);
+    if(freshnessResponse.ok){
+      const freshnessPayload=await freshnessResponse.json() as PublicationFreshness;
+      setPublicationFreshness(freshnessPayload);
+    }else setPublicationFreshness(null);
 
     setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
     setSelectedLineIds([]);
@@ -2431,7 +2449,7 @@ function App() {
           {project?.client_name && <p className="projectMeta">Opdrachtgever: {project.client_name}{project.project_kind ? ` · ${project.project_kind}` : ""}</p>}
         </div>
         <div className="contextActions">
-          <span className="saveState">v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}</span>
+          <span className="saveState">v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}{publicationFreshness?.status==="current"?" · Office actueel":""}</span>
           {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · {money.format(item.salesPrice)}</span>{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
         </div>
       </div>
@@ -2443,6 +2461,10 @@ function App() {
       </section>
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
+      {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
+      {publicationFreshness?.status==="draft_pending"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nieuw Calc-concept in bewerking</strong><span>{publicationFreshness.message}</span></div></div>}
+      {publicationFreshness?.status==="never_published"&&versionStatus==="draft"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div></div>}
+
       {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Nog niet publiceerbaar</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
       {!calculationReady && <div className="readinessBanner" role="alert">
         <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
