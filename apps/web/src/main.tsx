@@ -2505,7 +2505,21 @@ function App() {
         </div>
       </details>}
 
-      {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Nog niet publiceerbaar</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
+      {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&(()=>{
+        const unsavedReason=publicationReadiness.reasons.find(reason=>reason.startsWith("Er zijn wijzigingen in de calculatie die nog niet zijn opgeslagen."));
+        const blockingReasons=publicationReadiness.reasons.filter(reason=>reason!==unsavedReason);
+        const onlyUnsaved=Boolean(unsavedReason)&&blockingReasons.length===0;
+        return <div className={"readinessBanner"+(onlyUnsaved?" unsavedBanner":"")} role="status">
+          <div>
+            <strong>{onlyUnsaved?"Wijzigingen nog niet opgeslagen":"Nog niet publiceerbaar"}</strong>
+            <span>{onlyUnsaved
+              ?"Sla de calculatie op. Calc rekent daarna de totalen opnieuw door en controleert of publiceren mogelijk is."
+              :(blockingReasons[0]??unsavedReason??"Controleer de calculatie.")}</span>
+          </div>
+          {!onlyUnsaved&&blockingReasons.slice(1).map((reason,index)=><div className="readinessItems" key={index}><span><small>{reason}</small></span></div>)}
+          {!onlyUnsaved&&unsavedReason&&<div className="readinessItems"><span><small>Sla daarna de calculatie op om de publicatiecontrole opnieuw uit te voeren.</small></span></div>}
+        </div>;
+      })()}
       {!calculationReady && <div className="readinessBanner" role="alert">
         <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
