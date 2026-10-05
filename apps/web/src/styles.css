@@ -396,3 +396,5 @@
 .versionDiffChanges>div:last-child{border-bottom:0}
 .versionDiffChanges small{color:#6b7280}
 @media(max-width:760px){.versionDiffPanel summary{align-items:flex-start;flex-direction:column}.versionDiffPanel summary small{margin-left:0}.versionDiffChanges>div{grid-template-columns:1fr}}
+
+.unsavedBanner{background:#fafbfc;border-color:#dfe4e8}
