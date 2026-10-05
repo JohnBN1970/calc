@@ -5,6 +5,7 @@ export type WorkbenchSnapshotLine={
   structureKey:string;
   parentStructureKey:string|null;
   lineType:string;
+  sortOrder?:number;
   code:string|null;
   description:string;
   unit:string|null;
