@@ -1222,6 +1222,20 @@ function App() {
     {code:"80",label:"Liftinstallaties"},{code:"81",label:"Roltrappen en rolpaden"},{code:"82",label:"Hijs- en hefinstallaties"},{code:"83",label:"Goederentransport- en distributiesystemen"},{code:"84",label:"Gevelonderhoudinstallaties"}
   ];
 
+  const classificationCode=(value:string)=>value.split("·",1)[0].trim();
+  const classificationFolderAt=(scheme:ClassificationScheme,path:string[],index:number):ClassificationFolder|null=>{
+    if(scheme==="custom")return null;
+    let folders=scheme==="nl_sfb"?nlSfbFolders:stabuFolders;
+    let match:ClassificationFolder|null=null;
+    for(let depth=0;depth<=index;depth++){
+      const wanted=classificationCode(path[depth]??"");
+      match=folders.find(folder=>normalizedStructureCode(folder.code)===normalizedStructureCode(wanted))??null;
+      if(!match)return null;
+      folders=match.children??[];
+    }
+    return match;
+  };
+
   const recipeClassificationPath=(recipe:CalcRecipe,scheme:ClassificationScheme):string[]=>{
     if(scheme==="custom"){
       const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
@@ -2432,7 +2446,9 @@ function App() {
     let parent:Line|null=null;
 
     for(let index=0;index<path.length;index++){
-      const code=path[index].trim();
+      const rawPathPart=path[index].trim();
+      const code=classificationCode(rawPathPart);
+      const folder=classificationFolderAt(classificationScheme,path,index);
       const lineType=index===0?"chapter":"paragraph";
       let parentId:number|null=null;
       if(index>0&&parent!==null)parentId=(parent as Line).id;
@@ -2450,7 +2466,7 @@ function App() {
         parentId,
         lineType,
         code,
-        description:`${classificationLabel[classificationScheme]} ${code}`
+        description:folder?.label??rawPathPart.replace(/^\s*[^·]+·\s*/,"").trim()||`${classificationLabel[classificationScheme]} ${code}`
       });
       working.push(createdLine);
       created.push(createdLine);
