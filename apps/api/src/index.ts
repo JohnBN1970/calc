@@ -818,11 +818,14 @@ app.get("/api/workbench/current/versions", async (req,res)=>{
       contract:"brebo-calc-version-history-v1",
       versions:rows.map(row=>{
         let commercialSummary:null|Record<string,unknown>=null;
+        let directCostMix:null|Record<string,unknown>=null;
         if(row.snapshot_json!=null){
           try{
             const snapshot=typeof row.snapshot_json==="string"?JSON.parse(row.snapshot_json):row.snapshot_json;
             const summary=snapshot?.commercial?.summary;
+            const mix=snapshot?.commercial?.directCostMix;
             if(summary&&typeof summary==="object")commercialSummary=summary as Record<string,unknown>;
+            if(mix&&typeof mix==="object")directCostMix=mix as Record<string,unknown>;
           }catch{}
         }
         return{
@@ -836,6 +839,13 @@ app.get("/api/workbench/current/versions", async (req,res)=>{
           establishedAt:row.established_at instanceof Date?row.established_at.toISOString():row.established_at==null?null:String(row.established_at),
           createdAt:row.created_at instanceof Date?row.created_at.toISOString():String(row.created_at),
           snapshotContract:row.snapshot_contract==null?null:String(row.snapshot_contract),
+          directCostMix:directCostMix?{
+            labour:Number(directCostMix.labour??0),
+            material:Number(directCostMix.material??0),
+            equipment:Number(directCostMix.equipment??0),
+            subcontracting:Number(directCostMix.subcontracting??0),
+            other:Number(directCostMix.other??0)
+          }:null,
           commercialSummary:commercialSummary?{
             purchase:Number(commercialSummary.purchase??0),
             sales:Number(commercialSummary.sales??0),
