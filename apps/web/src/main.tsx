@@ -2402,9 +2402,16 @@ function App() {
   const recipeDragMime="application/x-brebo-calc-recipe";
   const paragraphForDrop=(line:Line):Line|null=>{
     if(line.lineType==="paragraph")return line;
-    if(line.parentId==null)return null;
-    const parent=lines.find(item=>item.id===line.parentId)??null;
-    if(parent?.lineType==="paragraph")return parent;
+    const byId=new Map(lines.map(item=>[item.id,item]));
+    let parentId=line.parentId;
+    const seen=new Set<number>();
+    while(parentId!=null&&!seen.has(parentId)){
+      seen.add(parentId);
+      const parent=byId.get(parentId)??null;
+      if(!parent)return null;
+      if(parent.lineType==="paragraph")return parent;
+      parentId=parent.parentId;
+    }
     return null;
   };
   const paragraphKey=(line:Line)=>line.structureKey??("local:"+line.id);
@@ -2572,19 +2579,19 @@ function App() {
   const deleteLine = (lineId: number) => {
     const source = lines.find(line => line.id === lineId);
     if (!source) return;
-    const childIds = new Set<number>([lineId]);
-    if (source.lineType === "chapter") {
-      lines.filter(line => line.parentId === lineId).forEach(line => {
-        childIds.add(line.id);
-        if (line.lineType === "paragraph") lines.filter(child => child.parentId === line.id).forEach(child => childIds.add(child.id));
-      });
-    } else if (source.lineType === "paragraph") {
-      lines.filter(line => line.parentId === lineId).forEach(line => childIds.add(line.id));
-    }
+    const childIds = new Set<number>();
+    const collect=(id:number)=>{
+      if(childIds.has(id))return;
+      childIds.add(id);
+      for(const child of lines.filter(line=>line.parentId===id))collect(child.id);
+    };
+    collect(lineId);
     const count = childIds.size;
-    if (count > 1 && !window.confirm(`Dit verwijdert ook ${count - 1} onderliggende regel(s). Doorgaan?`)) return;
+    if (count > 1 && !window.confirm(`Dit verwijdert ook ${count - 1} onderliggende regel(s) op alle niveaus. Doorgaan?`)) return;
     setLines(current => current.filter(line => !childIds.has(line.id)));
     setSelectedLineId(current => current != null && childIds.has(current) ? null : current);
+    setSelectedLineIds(current=>current.filter(id=>!childIds.has(id)));
+    setAllocations(current=>current.filter(item=>!childIds.has(item.sourceLineId)&&!childIds.has(item.targetLineId)));
     setStatus("Concept — niet opgeslagen");
   };
 
