@@ -21,6 +21,7 @@ import { fetchCalculationContextSnapshot, fetchOfficeProjectContext, fetchOffice
 import { publishCalcResult } from "./officeResultClient.js";
 import { verifyOfficeCommercialSummary, verifyOfficePublicationBinding } from "./officeCommercialResultSync.js";
 import { createWorkbenchEstablishedSnapshot, fingerprintWorkbenchSnapshot, snapshotDate, snapshotJson } from "./workbenchVersionSnapshot.js";
+import { calculateLineCostBreakdown } from "./calculationLineAmount.js";
 import { getUserPreference, setUserPreference } from "./userPreferenceRepository.js";
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
@@ -1905,6 +1906,26 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       [version.id]
     );
 
+    const directCostMix=snapshotLines
+      .filter(line=>lineContributesToCalculationTotals(line.lineType))
+      .reduce((mix,line)=>{
+        const costs=calculateLineCostBreakdown({
+          quantity:line.quantity,
+          labourTotalHours:line.labourTotalHours,
+          labourUnitCost:line.labourUnitCost,
+          materialUnitCost:line.materialUnitCost,
+          equipmentUnitCost:line.equipmentUnitCost,
+          subcontractingUnitCost:line.subcontractingUnitCost,
+          otherUnitCost:line.otherUnitCost
+        });
+        mix.labour+=costs.labour;
+        mix.material+=costs.material;
+        mix.equipment+=costs.equipment;
+        mix.subcontracting+=costs.subcontracting;
+        mix.other+=costs.other;
+        return mix;
+      },{labour:0,material:0,equipment:0,subcontracting:0,other:0});
+
     const establishedAt=new Date().toISOString();
     const snapshot=createWorkbenchEstablishedSnapshot({
       calculationId:session.calculationId,
@@ -1936,7 +1957,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         lineStructureKey:String(byId.get(Number(row.line_id))?.structure_key??""),
         scopeType:String(row.scope_type),scopeRef:String(row.scope_ref),source:String(row.source)
       })),
-      commercial:{directCost,markupAmount,salesPrice,summary}
+      commercial:{directCost,markupAmount,salesPrice,summary,directCostMix}
     });
     const contentHash=fingerprintWorkbenchSnapshot(snapshot);
 
