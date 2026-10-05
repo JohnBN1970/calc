@@ -52,6 +52,8 @@ type LineInput = {
   labourNorm?: number | null;
   labourTotalHours?: number | null;
   labourHoursInputMode?: "norm" | "total_hours" | null;
+  labourRoleRef?: string | null;
+  labourRateId?: number | null;
   labourUnitCost?: number;
   materialUnitCost?: number;
   equipmentUnitCost?: number;
@@ -1360,7 +1362,7 @@ app.get("/api/workbench/current", async (req, res) => {
 
   const [lines] = await db.execute<RowDataPacket[]>(
     `SELECT id, parent_id, structure_key, sort_order, line_type, code, description, unit, quantity,
-            labour_norm, labour_total_hours, labour_hours_input_mode,
+            labour_norm, labour_total_hours, labour_hours_input_mode, labour_role_ref, labour_rate_id,
             labour_unit_cost, material_unit_cost, equipment_unit_cost,
             subcontracting_unit_cost, other_unit_cost, vat_regime_id, price_source_type,
             office_source_id, source_reference, source_supplier, source_unit_price,
@@ -1539,15 +1541,18 @@ app.put("/api/workbench/current", async (req, res) => {
       const [insert] = await connection.execute<ResultSetHeader>(
         `INSERT INTO calculation_lines
           (version_id, parent_id, structure_key, sort_order, line_type, code, description, unit, quantity,
-           labour_norm, labour_total_hours, labour_hours_input_mode,
+           labour_norm, labour_total_hours, labour_hours_input_mode, labour_role_ref, labour_rate_id,
            labour_unit_cost, material_unit_cost, equipment_unit_cost, subcontracting_unit_cost, other_unit_cost, vat_regime_id,
            price_source_type, office_source_id, source_reference, source_supplier, source_unit_price,
            source_price_date, source_document_id, source_details, source_visual_page, source_position_bounds, source_visual_crop, source_visual_search_region, source_text_regions, source_offer_summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           version.id, parentId, line.structureKey ? String(line.structureKey).slice(0,36) : randomUUID(), line.sortOrder, line.lineType, line.code ?? null,
           String(line.description ?? "").slice(0, 500), line.unit ?? null,
-          line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode, labour, material, equipment, subcontracting, other,
+          line.quantity ?? null, labourNorm, labourTotalHours, labourHoursInputMode,
+          line.labourRoleRef ? String(line.labourRoleRef).slice(0,191) : null,
+          line.labourRateId == null ? null : Number(line.labourRateId),
+          labour, material, equipment, subcontracting, other,
           line.vatRegimeId == null ? null : Number(line.vatRegimeId),
           priceSourceType,
           line.officeSourceId ? String(line.officeSourceId).slice(0, 128) : null,
@@ -1715,7 +1720,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
 
     const [lineRows]=await connection.execute<RowDataPacket[]>(
       `SELECT id,parent_id,structure_key,sort_order,line_type,code,description,unit,quantity,
-              labour_norm,labour_total_hours,labour_hours_input_mode,
+              labour_norm,labour_total_hours,labour_hours_input_mode,labour_role_ref,labour_rate_id,
               labour_unit_cost,material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,
               vat_regime_id,price_source_type,office_source_id,source_reference,source_supplier,source_unit_price,
               source_price_date,source_document_id,source_details,source_visual_page,source_position_bounds,
@@ -1854,6 +1859,8 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         labourNorm:row.labour_norm==null?null:Number(row.labour_norm),
         labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
         labourHoursInputMode:row.labour_hours_input_mode==null?null:String(row.labour_hours_input_mode),
+        labourRoleRef:row.labour_role_ref==null?null:String(row.labour_role_ref),
+        labourRateId:row.labour_rate_id==null?null:Number(row.labour_rate_id),
         labourUnitCost:Number(row.labour_unit_cost??0),
         materialUnitCost:Number(row.material_unit_cost??0),
         equipmentUnitCost:Number(row.equipment_unit_cost??0),
@@ -2126,15 +2133,16 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
         const [insert]=await connection.execute<ResultSetHeader>(
           `INSERT INTO calculation_lines
             (version_id,parent_id,structure_key,sort_order,line_type,code,description,unit,quantity,
-             labour_norm,labour_total_hours,labour_hours_input_mode,
+             labour_norm,labour_total_hours,labour_hours_input_mode,labour_role_ref,labour_rate_id,
              labour_unit_cost,material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,
              vat_regime_id,price_source_type,office_source_id,source_reference,source_supplier,source_unit_price,
              source_price_date,source_document_id,source_details,source_visual_page,source_position_bounds,
              source_visual_crop,source_visual_search_region,source_text_regions,source_offer_summary)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             nextVersionId,parentId,key,Number.isFinite(Number(line.sortOrder))?Number(line.sortOrder):lineIdByKey.size,String(line.lineType),line.code??null,String(line.description??""),
             line.unit??null,line.quantity??null,line.labourNorm??null,line.labourTotalHours??null,line.labourHoursInputMode??null,
+            line.labourRoleRef??null,line.labourRateId??null,
             Number(line.labourUnitCost??0),Number(line.materialUnitCost??0),Number(line.equipmentUnitCost??0),
             Number(line.subcontractingUnitCost??0),Number(line.otherUnitCost??0),line.vatRegimeId??null,
             String(line.priceSourceType??"manual"),line.officeSourceId??null,line.sourceReference??null,line.sourceSupplier??null,
