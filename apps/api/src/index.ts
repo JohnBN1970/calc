@@ -25,6 +25,7 @@ import { getUserPreference, setUserPreference } from "./userPreferenceRepository
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
+import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
 import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
@@ -892,7 +893,7 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
         WHERE version_id=?`,
       [version.id]
     );
-    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
     const lineSales:VatSource[]=costRows.map(row=>({
       vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
       salesAmount:Number(row.labour_total_hours??0)*Number(row.labour_unit_cost??0)+
@@ -1470,7 +1471,7 @@ app.put("/api/workbench/current", async (req, res) => {
       if (!["manual", "article", "recipe", "supplier_quote"].includes(priceSourceType)) {
         throw new Error("Unknown price source type.");
       }
-      if (!["chapter", "paragraph", "note", "option"].includes(line.lineType)) {
+      if (lineContributesToCalculationTotals(line.lineType)) {
         const labourCost = (labourTotalHours ?? 0) * labour;
         const lineSalesAmount = labourCost + quantity * (material + equipment + subcontracting + other);
         directCost += lineSalesAmount;
@@ -1670,7 +1671,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         FOR UPDATE`,
       [version.id]
     );
-    const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
+    const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
 
     const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
