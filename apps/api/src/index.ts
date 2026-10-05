@@ -6,7 +6,6 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { calculateTakeoff } from "./takeoff.js";
-import { runCalculationPipeline, type CalculationPipelineInput } from "./calculationPipeline.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
@@ -645,75 +644,6 @@ app.get("/api/articles/search", async (req, res) => {
     res.json(result);
   } catch {
     res.status(502).json({ error: "Artikeldata kon niet uit BREBO Office worden opgehaald." });
-  }
-});
-
-app.post("/api/workbench/current/pipeline/preview", async (req, res) => {
-  const session = requireSession(req, res);
-  if (!session) return;
-
-  // Legacy preview only: recipe quantities are authoritative in Office.
-  // Refuse recipe-bearing input so Calc can never become a second recipe engine.
-  if (Array.isArray(req.body?.positions) && req.body.positions.some((position: any) =>
-    Array.isArray(position?.recipeLines) && position.recipeLines.length > 0
-  )) {
-    res.status(409).json({
-      error: "Lokale receptberekening is uitgeschakeld. Gebruik Office recipe instances via /api/workbench/current/generated-lines."
-    });
-    return;
-  }
-
-  const body = req.body as Partial<Omit<CalculationPipelineInput, "calculationId" | "versionNo" | "establishedAt">>;
-  if (
-    !Array.isArray(body.positions) ||
-    !Array.isArray(body.materialPlans) ||
-    !Array.isArray(body.labourNorms) ||
-    !Array.isArray(body.labourRates) ||
-    !Array.isArray(body.directCostComponents) ||
-    !Array.isArray(body.structure) ||
-    !Array.isArray(body.salesPriceComponents)
-  ) {
-    res.status(400).json({ error: "Pipeline-invoer is onvolledig." });
-    return;
-  }
-
-  const [versions] = await db.execute<RowDataPacket[]>(
-    "SELECT id, version_no, status, created_at FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
-    [session.calculationId]
-  );
-  const version = versions[0];
-  if (!version) {
-    res.status(404).json({ error: "Calculatieversie niet gevonden." });
-    return;
-  }
-  if (version.status !== "draft") {
-    res.status(409).json({ error: "Alleen een conceptversie kan via de pipeline worden doorgerekend." });
-    return;
-  }
-
-  try {
-    const createdAt = version.created_at instanceof Date
-      ? version.created_at.toISOString()
-      : new Date(String(version.created_at)).toISOString();
-
-    const result = runCalculationPipeline({
-      calculationId: String(session.calculationId),
-      versionNo: Number(version.version_no),
-      establishedAt: createdAt,
-      positions: body.positions,
-      materialPlans: body.materialPlans,
-      labourNorms: body.labourNorms,
-      labourRates: body.labourRates,
-      directCostComponents: body.directCostComponents,
-      structure: body.structure,
-      salesPriceComponents: body.salesPriceComponents
-    });
-
-    res.setHeader("Cache-Control", "no-store, private");
-    res.json(result);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "Ongeldige pipeline-invoer.";
-    res.status(422).json({ error: detail });
   }
 });
 
