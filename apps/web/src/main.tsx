@@ -484,9 +484,45 @@ function Icon({ name }: { name: IconName }) {
 }
 
 
+function parseDecimalInput(value:string):number|null{
+  const normalized=value.trim().replace(/\s/g,"").replace(",",".");
+  if(!normalized||normalized==="-"||normalized==="."||normalized==="-.")return null;
+  if(!/^-?\d*(?:\.\d*)?$/.test(normalized))return null;
+  const parsed=Number(normalized);
+  return Number.isFinite(parsed)?parsed:null;
+}
+
+function DecimalInput({value,onChange,className="cell number",allowEmpty=false,min,max}:{value:number|null;onChange:(value:number|null)=>void;className?:string;allowEmpty?:boolean;min?:number;max?:number}){
+  const [text,setText]=useState(()=>value==null?"":String(value).replace(".",","));
+  useEffect(()=>{
+    const parsed=parseDecimalInput(text);
+    if(value==null){
+      if(text!==""&&parsed!==null)setText("");
+      return;
+    }
+    if(parsed===null||Math.abs(parsed-value)>1e-9)setText(String(value).replace(".",","));
+  },[value]);
+  const commit=(raw:string)=>{
+    setText(raw);
+    if(raw.trim()===""&&allowEmpty){onChange(null);return;}
+    const parsed=parseDecimalInput(raw);
+    if(parsed===null)return;
+    const bounded=Math.max(min??-Infinity,Math.min(max??Infinity,parsed));
+    onChange(bounded);
+  };
+  return <input className={className} type="text" inputMode="decimal" value={text}
+    onChange={event=>commit(event.target.value)} onBlur={()=>{
+      if(text.trim()===""&&allowEmpty)return;
+      const parsed=parseDecimalInput(text);
+      const fallback=value??0;
+      const bounded=parsed===null?fallback:Math.max(min??-Infinity,Math.min(max??Infinity,parsed));
+      setText(String(bounded).replace(".",","));
+      if(parsed!==null)onChange(bounded);
+    }}/>;
+}
+
 function NumberCell({ value, onChange }: { value: number; onChange: (value: number) => void }) {
-  return <input className="cell number" type="number" step="0.01" value={Number.isFinite(value) ? value : 0}
-    onChange={event => onChange(Number(event.target.value))} />;
+  return <DecimalInput value={value} onChange={next=>onChange(next??0)} />;
 }
 
 function detectVisualCrop(full: HTMLCanvasElement, region: VisualCrop, textRegions: VisualCrop[] = [], anchor?: VisualCrop | null): VisualCrop | null {
@@ -2680,7 +2716,7 @@ function App() {
                   <option value="reverse_charge">Verlegd</option>
                   <option value="exempt">Vrijgesteld</option>
                 </select>
-                <input type="number" step="0.01" min="0" max="100" value={regime.rate??""} disabled={regime.treatment!=="normal"} onChange={event=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,rate:event.target.value===""?null:Number(event.target.value)}:item))} onBlur={()=>void patchVatSetting(regime.id,{rate:regime.rate})} aria-label="Tarief" />
+                <DecimalInput value={regime.rate} min={0} max={100} allowEmpty onChange={next=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,rate:next}:item))} className="" />
                 <label className="toggleLabel"><input type="checkbox" checked={regime.active} onChange={event=>void patchVatSetting(regime.id,{active:event.target.checked})} /> Actief</label>
               </div>)}
               {vatRegimes.length===0 && <p className="muted">Nog geen btw-regimes ingesteld.</p>}
@@ -2693,7 +2729,7 @@ function App() {
                 <option value="reverse_charge">Verlegd</option>
                 <option value="exempt">Vrijgesteld</option>
               </select>
-              <input type="number" step="0.01" min="0" max="100" placeholder="Tarief %" disabled={vatRegimeDraft.treatment!=="normal"} value={vatRegimeDraft.rate??""} onChange={event=>setVatRegimeDraft(current=>({...current,rate:event.target.value===""?null:Number(event.target.value)}))} />
+              <DecimalInput value={vatRegimeDraft.rate} min={0} max={100} allowEmpty onChange={next=>setVatRegimeDraft(current=>({...current,rate:next}))} className="" />
               <button type="button" onClick={()=>void createVatSetting()}>Regime toevoegen</button>
             </div>
             {vatSettingsStatus && <p className="settingsStatus">{vatSettingsStatus}</p>}
@@ -2864,9 +2900,9 @@ function App() {
                 <label><span>Kostensoort</span><select value={recipeLineDraft.costKind} onChange={event=>setRecipeLineDraft(current=>({...current,costKind:event.target.value}))}><option value="material">Materiaal</option><option value="labour">Arbeid</option><option value="equipment">Materieel</option><option value="subcontracting">OA</option><option value="other">Overig</option></select></label>
                 <label><span>Eenheid</span><input value={recipeLineDraft.unit} onChange={event=>setRecipeLineDraft(current=>({...current,unit:event.target.value}))} /></label>
                 <label><span>Uittrekbasis</span><select value={recipeLineDraft.takeoffBasis} onChange={event=>setRecipeLineDraft(current=>({...current,takeoffBasis:event.target.value}))}><option value="fixed">Vast</option><option value="area">Oppervlak</option><option value="perimeter">Omtrek</option><option value="two_sides_plus_head">2 zijden + bovendorpel</option><option value="width">Breedte</option><option value="height">Hoogte</option><option value="part_area">Vakoppervlak</option><option value="internal_joint">Interne koppeling</option></select></label>
-                <label><span>Factor</span><input type="number" step="0.01" value={recipeLineDraft.factor} onChange={event=>setRecipeLineDraft(current=>({...current,factor:Number(event.target.value)}))} /></label>
-                <label><span>Verlies %</span><input type="number" step="0.1" value={recipeLineDraft.wastePct} onChange={event=>setRecipeLineDraft(current=>({...current,wastePct:Number(event.target.value)}))} /></label>
-                {recipeLineDraft.takeoffBasis==="fixed" && <label><span>Vaste hoeveelheid</span><input type="number" step="0.01" value={recipeLineDraft.fixedQuantity} onChange={event=>setRecipeLineDraft(current=>({...current,fixedQuantity:Number(event.target.value)}))} /></label>}
+                <label><span>Factor</span><DecimalInput value={recipeLineDraft.factor} onChange={next=>setRecipeLineDraft(current=>({...current,factor:next??0}))} className="" /></label>
+                <label><span>Verlies %</span><DecimalInput value={recipeLineDraft.wastePct} onChange={next=>setRecipeLineDraft(current=>({...current,wastePct:next??0}))} className="" /></label>
+                {recipeLineDraft.takeoffBasis==="fixed" && <label><span>Vaste hoeveelheid</span><DecimalInput value={recipeLineDraft.fixedQuantity} onChange={next=>setRecipeLineDraft(current=>({...current,fixedQuantity:next??0}))} className="" /></label>}
                 <label><span>Normbron type</span><input value={recipeLineDraft.quantitySourceType} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceType:event.target.value}))} placeholder="norm" /></label>
                 <label><span>Normbron ref</span><input value={recipeLineDraft.quantitySourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceRef:event.target.value}))} placeholder="montage:kozijn_per_m" /></label>
                 <label><span>Kostprijsbron type</span><select value={recipeLineDraft.costSourceType} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceType:event.target.value}))}><option value="">Geen</option><option value="article">Artikel</option><option value="project_labour">Projectarbeid</option><option value="norm">Normwaarde</option></select></label>
@@ -2919,14 +2955,14 @@ function App() {
               <label><span>Code</span><input value={tailCostDraft.componentKey} onChange={e=>setTailCostDraft(v=>({...v,componentKey:e.target.value}))} /></label>
               <label><span>Omschrijving</span><input value={tailCostDraft.description} onChange={e=>setTailCostDraft(v=>({...v,description:e.target.value}))} /></label>
               <label><span>Berekening</span><select value={tailCostDraft.basis} onChange={e=>setTailCostDraft(v=>({...v,basis:e.target.value}))}><option value="percentage">Percentage</option><option value="fixed">Vast bedrag</option><option value="per_unit">Per eenheid</option></select></label>
-              <label><span>Waarde</span><input type="number" step="0.01" value={tailCostDraft.value} onChange={e=>setTailCostDraft(v=>({...v,value:Number(e.target.value)}))} /></label>
+              <label><span>Waarde</span><DecimalInput value={tailCostDraft.value} onChange={next=>setTailCostDraft(v=>({...v,value:next??0}))} className="" /></label>
               <label><span>Rekenbasis</span><select value={tailCostDraft.baseScope} onChange={e=>setTailCostDraft(v=>({...v,baseScope:e.target.value}))}>
                 <option value="owner_direct_cost">{tailCostDraft.ownerType==="subcalculation"?"Directe kost van deze deelcalculatie":"Alleen hoofdregels"}</option>
                 <option value="owner_running_total">{tailCostDraft.ownerType==="subcalculation"?"Lopend totaal van deze deelcalculatie":"Lopend totaal hoofdregels"}</option>
                 {tailCostDraft.ownerType==="calculation"&&<><option value="consolidated_direct_cost">Alle unieke directe kosten</option><option value="consolidated_running_total">Geconsolideerd lopend totaal</option></>}
                 <option value="quantity">Hoeveelheid</option>
               </select></label>
-              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><input type="number" step="0.01" value={tailCostDraft.quantity??""} onChange={e=>setTailCostDraft(v=>({...v,quantity:e.target.value===""?null:Number(e.target.value)}))} /></label>}
+              {tailCostDraft.basis==="per_unit"&&<label><span>Hoeveelheid</span><DecimalInput value={tailCostDraft.quantity} allowEmpty onChange={next=>setTailCostDraft(v=>({...v,quantity:next}))} className="" /></label>}
               <label><span>BTW</span><select value={tailCostDraft.vatRegimeId??""} onChange={e=>setTailCostDraft(v=>({...v,vatRegimeId:e.target.value===""?null:Number(e.target.value)}))}><option value="">—</option>{vatRegimes.filter(regime=>regime.active).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select></label>
               <button type="button" onClick={()=>void createTailCost()}>Toevoegen</button>
             </section>
