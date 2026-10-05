@@ -204,6 +204,7 @@ type CalcVersionHistoryItem={
   establishedAt:string|null;
   createdAt:string;
   snapshotContract:string|null;
+  directCostMix:{labour:number;material:number;equipment:number;subcontracting:number;other:number}|null;
   commercialSummary:{
     purchase:number;
     sales:number;
@@ -2566,7 +2567,7 @@ function App() {
         </div>
         <div className="contextActions">
           <span className="saveState">v{versionNo} · {versionStatus==="established"?"vastgesteld":"concept"} · {status}{publicationFreshness?.status==="current"?" · Office actueel":""}</span>
-          {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · verkoop {money.format(item.salesPrice)}</span>{item.commercialSummary&&<small>inkoop {money.format(item.commercialSummary.purchase)} · marge {money.format(item.commercialSummary.margin)} ({item.commercialSummary.marginPct.toFixed(1)}%) · btw {money.format(item.commercialSummary.vat)}</small>}{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
+          {versionHistory.length>0&&<details className="versionHistory"><summary>{versionHistory.length} versie{versionHistory.length===1?"":"s"}</summary><div className="versionHistoryList">{versionHistory.map(item=><div key={item.id}><strong>v{item.versionNo}</strong><span>{item.status==="established"?"vastgesteld":"concept"} · verkoop {money.format(item.salesPrice)}</span>{item.commercialSummary&&<small>inkoop {money.format(item.commercialSummary.purchase)} · marge {money.format(item.commercialSummary.margin)} ({item.commercialSummary.marginPct.toFixed(1)}%) · btw {money.format(item.commercialSummary.vat)}</small>}{item.directCostMix&&item.directCost>0&&<small>mix: arbeid {(item.directCostMix.labour/item.directCost*100).toFixed(1)}% · materiaal {(item.directCostMix.material/item.directCost*100).toFixed(1)}% · materieel {(item.directCostMix.equipment/item.directCost*100).toFixed(1)}% · onderaanneming {(item.directCostMix.subcontracting/item.directCost*100).toFixed(1)}%{item.directCostMix.other>0?` · overig ${(item.directCostMix.other/item.directCost*100).toFixed(1)}%`:""}</small>}{item.establishedAt&&<small>{new Date(item.establishedAt).toLocaleString("nl-NL")}</small>}</div>)}</div></details>}
         </div>
       </div>
 
