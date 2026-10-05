@@ -21,13 +21,13 @@ export function calculatePublicationReadiness(input:PublicationReadinessInput):P
   const reasons:string[]=[];
   if(input.versionStatus!=="draft")reasons.push("Alleen een conceptversie kan worden gepubliceerd.");
   if(!Number.isInteger(input.costLineCount)||input.costLineCount<=0)reasons.push("De calculatie bevat nog geen verkoopregels.");
-  const pairs:Array<[number,number,string]>=[
-    [input.directCost,input.storedDirectCost,"De directe kost wijkt af van de laatst opgeslagen Calc-doorrekening."],
-    [input.markupAmount,input.storedMarkupAmount,"De staartkosten wijken af van de laatst opgeslagen Calc-doorrekening."],
-    [input.salesPrice,input.storedSalesPrice,"De verkoopprijs wijkt af van de laatst opgeslagen Calc-doorrekening."]
-  ];
-  for(const [actual,stored,message] of pairs){
-    if(!Number.isFinite(actual)||!Number.isFinite(stored)||!close(actual,stored))reasons.push(message);
+  const totalsChanged=[
+    [input.directCost,input.storedDirectCost],
+    [input.markupAmount,input.storedMarkupAmount],
+    [input.salesPrice,input.storedSalesPrice]
+  ].some(([actual,stored])=>!Number.isFinite(actual)||!Number.isFinite(stored)||!close(actual,stored));
+  if(totalsChanged){
+    reasons.push("De calculatie is gewijzigd sinds de laatste opslag. Sla de calculatie opnieuw op om de actuele totalen door te rekenen.");
   }
   if(!Number.isFinite(input.vatTaxableBase)||!Number.isFinite(input.salesPrice)||!close(input.vatTaxableBase,input.salesPrice)){
     reasons.push("BTW-regime ontbreekt op een of meer verkoopregels of staartkostenregels.");
