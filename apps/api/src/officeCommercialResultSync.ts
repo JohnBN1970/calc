@@ -4,6 +4,7 @@ export type CommercialSummary = {
   margin:number;
   margin_pct:number;
   vat:number;
+  total_incl_vat:number;
   vat_rate:number|null;
   vat_breakdown:Array<{
     code:string;
@@ -51,7 +52,8 @@ export function verifyOfficeCommercialSummary(
     [Number(actual.sales), expected.sales, "verkoop"],
     [Number(actual.margin), expected.margin, "marge"],
     [Number(actual.margin_pct), expected.margin_pct, "margepercentage"],
-    [Number(actual.vat), expected.vat, "btw"]
+    [Number(actual.vat), expected.vat, "btw"],
+    [Number(actual.total_incl_vat), expected.total_incl_vat, "totaal incl. btw"]
   ];
   for (const [received, wanted, label] of checks) {
     if (!Number.isFinite(received) || Math.abs(received - wanted) > tolerance) {

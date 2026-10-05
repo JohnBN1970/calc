@@ -805,6 +805,37 @@ function App() {
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
   }, [lines, tailCostTotal]);
 
+  const liveVatTotals = useMemo(() => {
+    const byRegime=new Map<number,{regime:VatRegime;taxableBase:number;vatAmount:number}>();
+    const add=(vatRegimeId:number|null|undefined,amount:number)=>{
+      if(vatRegimeId==null||!Number.isFinite(amount)||Math.abs(amount)<0.000001)return;
+      const regime=vatRegimes.find(item=>item.id===vatRegimeId);
+      if(!regime)return;
+      const current=byRegime.get(vatRegimeId)??{regime,taxableBase:0,vatAmount:0};
+      current.taxableBase+=amount;
+      current.vatAmount=regime.treatment==="normal"
+        ? current.taxableBase*((regime.rate??0)/100)
+        : 0;
+      byRegime.set(vatRegimeId,current);
+    };
+    for(const line of lines){
+      if(isCostLine(line)&&line.lineType!=="option")add(line.vatRegimeId,lineDirect(line));
+    }
+    for(const tail of evaluatedTailCosts)add(tail.vatRegimeId,tail.amount);
+    const breakdown=[...byRegime.values()]
+      .map(item=>({
+        code:item.regime.code,
+        label:item.regime.label,
+        rate:item.regime.rate,
+        treatment:item.regime.treatment,
+        taxableBase:item.taxableBase,
+        vatAmount:item.vatAmount
+      }))
+      .sort((a,b)=>a.label.localeCompare(b.label,"nl"));
+    const vat=breakdown.reduce((sum,item)=>sum+item.vatAmount,0);
+    return{breakdown,vat,totalInclVat:totals.sales+vat};
+  },[lines,evaluatedTailCosts,vatRegimes,totals.sales]);
+
   const unresolvedLines = useMemo(
     () => lines.filter(line => line.resolutionStatus === "unresolved"),
     [lines]
@@ -2501,8 +2532,18 @@ function App() {
       <section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
-        <div className="primary"><span>Verkoopprijs</span><strong>{money.format(displayedTotals.sales)}</strong></div>
+        <div className="primary"><span>Verkoopprijs excl. BTW</span><strong>{money.format(displayedTotals.sales)}</strong></div>
       </section>
+
+      {!activeSubcalculationResult&&<section className="vatTotalsPanel">
+        <div className="settingsSectionHead"><div><h3>BTW-totalisatie</h3><p>Factuurbasis vanuit de BTW-regimes op calculatieregels en staartkosten.</p></div></div>
+        {liveVatTotals.breakdown.length>0?<div className="tailCostList">
+          {liveVatTotals.breakdown.map(item=><div key={item.code}><span><strong>{item.label}</strong><small>{item.treatment==="reverse_charge"?"verlegd":item.treatment==="exempt"?"vrijgesteld":item.rate==null?"geen tarief":`${item.rate}%`} · grondslag {money.format(item.taxableBase)}</small></span><b>{money.format(item.vatAmount)}</b></div>)}
+          <div className="tailCostTotal"><strong>Totaal excl. BTW</strong><b>{money.format(totals.sales)}</b></div>
+          <div className="tailCostTotal"><strong>Totaal BTW</strong><b>{money.format(liveVatTotals.vat)}</b></div>
+          <div className="tailCostTotal"><strong>Totaal incl. BTW</strong><b>{money.format(liveVatTotals.totalInclVat)}</b></div>
+        </div>:<p className="muted">Nog geen BTW-regimes aan verkoopregels of staartkosten gekoppeld.</p>}
+      </section>}
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}

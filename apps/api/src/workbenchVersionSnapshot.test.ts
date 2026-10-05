@@ -32,7 +32,7 @@ const base=()=>({
     markupAmount:20,
     salesPrice:120,
     summary:{
-      purchase:100,sales:120,margin:20,marginPct:20/120*100,vat:25.2,vatRate:21,
+      purchase:100,sales:120,margin:20,marginPct:20/120*100,vat:25.2,totalInclVat:145.2,vatRate:21,
       vatBreakdown:[{code:"21",label:"21% btw",rate:21,taxableBase:120,vatAmount:25.2,reverseCharged:false}]
     }
   }

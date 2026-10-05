@@ -13,6 +13,7 @@ export type CommercialSummary={
   margin:number;
   marginPct:number;
   vat:number;
+  totalInclVat:number;
   vatRate:number|null;
   vatBreakdown:VatBreakdownItem[];
 };
@@ -69,5 +70,5 @@ export function buildCommercialSummary(input:{
   const vatBreakdown=normalizedVatBreakdown({sales,vatRate,vatBreakdown:input.vatBreakdown});
   const vat=vatBreakdown.reduce((sum,item)=>sum+item.vatAmount,0);
   const effectiveVatRate=vatBreakdown.length===1&&!vatBreakdown[0].reverseCharged?vatBreakdown[0].rate:null;
-  return {purchase,sales,margin,marginPct,vat,vatRate:effectiveVatRate,vatBreakdown};
+  return {purchase,sales,margin,marginPct,vat,totalInclVat:sales+vat,vatRate:effectiveVatRate,vatBreakdown};
 }

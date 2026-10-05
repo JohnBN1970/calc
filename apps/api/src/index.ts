@@ -1947,6 +1947,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       margin:summary.margin,
       margin_pct:summary.marginPct,
       vat:summary.vat,
+      total_incl_vat:summary.totalInclVat,
       vat_rate:summary.vatRate,
       vat_breakdown:summary.vatBreakdown.map(item=>({
         code:item.code,label:item.label,rate:item.rate,taxable_base:item.taxableBase,
