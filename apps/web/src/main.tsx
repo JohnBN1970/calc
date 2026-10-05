@@ -771,7 +771,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 }
 
 
-type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis"|"vat-totals";
+type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
 type DockZone="left"|"right"|"top"|"bottom";
 type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean;dockZone?:DockZone|null};
 
@@ -2920,17 +2920,18 @@ function App() {
             </div>
           </div>:<small className="muted">Nog geen directe kosten.</small>}
         </div>
-      </section></DockableWindow>
-
-      {!activeSubcalculationResult&&<DockableWindow id="vat-totals" label="BTW-totalisatie" collapsible><section className="vatTotalsPanel">
-        <div className="settingsSectionHead"><div><h3>BTW-totalisatie</h3><p>Factuurbasis vanuit de BTW-keuzes op calculatieregels en staartkosten.</p></div></div>
+        {!activeSubcalculationResult&&<section className="vatKpi">
+        <div className="vatKpiHeading"><span>BTW</span><strong>{money.format(liveVatTotals.vat)}</strong></div>
         {liveVatTotals.breakdown.length>0?<div className="tailCostList">
           {liveVatTotals.breakdown.map(item=><div key={item.code}><span><strong>{item.label}</strong><small>{item.treatment==="reverse_charge"?"verlegd":item.treatment==="exempt"?"vrijgesteld":item.rate==null?"geen tarief":`${item.rate}%`} · grondslag {money.format(item.taxableBase)}</small></span><b>{money.format(item.vatAmount)}</b></div>)}
           <div className="tailCostTotal"><strong>Totaal excl. BTW</strong><b>{money.format(totals.sales)}</b></div>
           <div className="tailCostTotal"><strong>Totaal BTW</strong><b>{money.format(liveVatTotals.vat)}</b></div>
           <div className="tailCostTotal"><strong>Totaal incl. BTW</strong><b>{money.format(liveVatTotals.totalInclVat)}</b></div>
         </div>:<p className="muted">Nog geen BTW-keuzes aan verkoopregels of staartkosten gekoppeld.</p>}
-      </section></DockableWindow>}
+      </section>}
+      </section></DockableWindow>
+
+
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
