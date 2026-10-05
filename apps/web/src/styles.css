@@ -412,3 +412,5 @@
 @media(max-width:1000px){.labourRateWorkspace .managementGrid{grid-template-columns:1fr}.labourRateRow{grid-template-columns:1fr 110px}.labourRateRow .toggleLabel{justify-self:start}}
 
 .dockWindowActions{display:flex;align-items:center;gap:2px}.dockWindow.is-pinned:has(> .dockWindowBar + .dockWindowContent .kpis){margin:0 0 12px}.dockWindow.is-pinned:has(> .dockWindowBar + .dockWindowContent .kpis)>.dockWindowBar{border:1px solid #dfe4e8;border-bottom:0;border-radius:8px 8px 0 0;background:#f7f9fa}.dockWindow.is-pinned:has(> .dockWindowBar + .dockWindowContent .kpis) .kpis{margin-top:0;border-radius:0 0 8px 8px}
+
+.dockWindowSlot:empty{display:none}.dockWindowSlot{min-width:0}
