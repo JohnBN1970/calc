@@ -25,9 +25,9 @@ const geometryFacts=new Set(["quantity","width_mm","height_mm"]);
 const commercialFacts=new Set(["description","supplier_unit_price"]);
 
 type SourceProfile="geometry"|"specification"|"commercial"|"photo"|"email"|"generic";
-function sourceProfile(document:{title:string;documentType:string|null;documentFamily:string|null;mimeType?:string|null}):SourceProfile{
-  const haystack=[document.title,document.documentType??"",document.documentFamily??""].join(" ").toLocaleLowerCase("nl-NL");
-  const mime=("mimeType" in document?String((document as any).mimeType??""):"").toLocaleLowerCase("nl-NL");
+function sourceProfile(document:{title:string;document_type:string|null;document_family:string|null;mime_type?:string|null}):SourceProfile{
+  const haystack=[document.title,document.document_type??"",document.document_family??""].join(" ").toLocaleLowerCase("nl-NL");
+  const mime=String(document.mime_type??"").toLocaleLowerCase("nl-NL");
   if(mime.startsWith("image/")||/foto|photo|afbeelding|image/.test(haystack))return"photo";
   if(/message\/rfc822|email|e-mail|mailbericht|correspondentie/.test(mime+" "+haystack))return"email";
   if(/tekening|kozijn|gevel|plattegrond|detail|maat|meetstaat|uittrek|staat/.test(haystack))return"geometry";
