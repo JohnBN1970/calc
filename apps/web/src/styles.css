@@ -477,3 +477,5 @@ main{padding-top:6px}
 
 @media(max-width:1200px){.kpis{grid-template-columns:repeat(2,minmax(180px,1fr))}.costMixKpi{grid-column:span 2}}
 @media(max-width:700px){.kpis{grid-template-columns:1fr}.costMixKpi{grid-column:span 1}}
+
+.vatInclusiveKpi{min-width:0}.vatInclusiveBreakdown{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:6px}.vatInclusiveBreakdown small{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#6f7a83;white-space:nowrap}.vatInclusiveBreakdown small b{font-size:9px;color:#4e5962}.vatInclusiveBreakdown small em{font-style:normal;color:#8a949c}.vatInclusiveBreakdown small strong{font-size:9px;color:#4e5962;font-weight:650}
