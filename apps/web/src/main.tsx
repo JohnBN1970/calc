@@ -807,24 +807,46 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
   });
   const [zIndex,setZIndex]=useState(100);
   const [dockPreview,setDockPreview]=useState<DockZone|null>(null);
+  const [commandbarBottom,setCommandbarBottom]=useState(76);
   const dragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number}|null>(null);
 
   useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(state));},[state,storageKey]);
+  useEffect(()=>{
+    const update=()=>{
+      const bar=document.querySelector(".commandbarTop");
+      const rect=bar?.getBoundingClientRect();
+      setCommandbarBottom(Math.max(8,Math.ceil(rect?.bottom??68)));
+    };
+    update();
+    window.addEventListener("resize",update);
+    window.addEventListener("scroll",update,{passive:true});
+    return()=>{
+      window.removeEventListener("resize",update);
+      window.removeEventListener("scroll",update);
+    };
+  },[]);
 
   const zoneForPointer=(x:number,y:number):DockZone|null=>{
     const edgeX=Math.max(72,Math.min(150,window.innerWidth*0.07));
     const edgeY=Math.max(72,Math.min(130,window.innerHeight*0.1));
-    if(x<=edgeX)return"left";
-    if(x>=window.innerWidth-edgeX)return"right";
-    if(y<=edgeY)return"top";
+    if(x<=edgeX&&y>=commandbarBottom)return"left";
+    if(x>=window.innerWidth-edgeX&&y>=commandbarBottom)return"right";
+    if(y>=commandbarBottom&&y<=commandbarBottom+edgeY)return"top";
     if(y>=window.innerHeight-edgeY)return"bottom";
     return null;
   };
 
   const isScreenDocked=!state.pinned&&state.dockZone!=null;
+  const dockStyle:React.CSSProperties|undefined=isScreenDocked
+    ? state.dockZone==="left"||state.dockZone==="right"
+      ? {top:commandbarBottom,bottom:0,zIndex:40}
+      : state.dockZone==="top"
+        ? {top:commandbarBottom,zIndex:40}
+        : {bottom:0,zIndex:40}
+    : undefined;
   const shell=<div
     className={"dockWindow "+(state.pinned?"is-pinned":isScreenDocked?`is-screen-docked dock-${state.dockZone}`:"is-floating")}
-    style={state.pinned||isScreenDocked?undefined:{left:state.x,top:state.y,zIndex}}
+    style={state.pinned?undefined:isScreenDocked?dockStyle:{left:state.x,top:Math.max(commandbarBottom+8,state.y),zIndex}}
     onPointerDown={()=>{if(!state.pinned)setZIndex(Date.now()%100000+100);}}
   >
     <div className="dockWindowBar"
@@ -843,7 +865,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
         const drag=dragRef.current;
         if(!drag||drag.pointerId!==event.pointerId)return;
         const x=Math.max(8,Math.min(window.innerWidth-280,drag.originX+event.clientX-drag.startX));
-        const y=Math.max(68,Math.min(window.innerHeight-80,drag.originY+event.clientY-drag.startY));
+        const y=Math.max(commandbarBottom+8,Math.min(window.innerHeight-80,drag.originY+event.clientY-drag.startY));
         setState(current=>({...current,x,y,dockZone:null}));
         setDockPreview(zoneForPointer(event.clientX,event.clientY));
       }}
@@ -882,7 +904,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
   return <>
     <div className="dockWindowSlot" data-window-slot={id}>{state.pinned?shell:null}</div>
     {!state.pinned&&createPortal(shell,document.body)}
-    {dockPreview&&createPortal(<div className={`dockPreview dockPreview-${dockPreview}`} aria-hidden="true"/>,document.body)}
+    {dockPreview&&createPortal(<div className={`dockPreview dockPreview-${dockPreview}`} style={dockPreview==="left"||dockPreview==="right"?{top:commandbarBottom,bottom:0}:dockPreview==="top"?{top:commandbarBottom}:undefined} aria-hidden="true"/>,document.body)}
   </>;
 }
 
