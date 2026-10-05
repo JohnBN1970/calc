@@ -1194,8 +1194,65 @@ function App() {
 
   const openSettings=async()=>{
     setSettingsOpen(true);
-    await loadVatRegimes();
+    await Promise.all([loadVatRegimes(),loadLabourRates()]);
   };
+
+  const loadLabourRates=async()=>{
+    setLabourRateStatus("Uurtarieven laden…");
+    try{
+      const response=await fetch("/api/settings/labour-rates",{headers:{Accept:"application/json"}});
+      const payload=await response.json().catch(()=>({})) as {rates?:LabourRateRecord[];error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarieven konden niet worden geladen."));
+      setLabourRates(Array.isArray(payload.rates)?payload.rates:[]);
+      setLabourRateStatus("");
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarieven konden niet worden geladen.");
+    }
+  };
+
+  const openLabourRates=async()=>{
+    setLabourRatesOpen(true);
+    await loadLabourRates();
+  };
+
+  const createLabourRateSetting=async()=>{
+    setLabourRateStatus("Uurtarief opslaan…");
+    try{
+      const response=await fetch("/api/settings/labour-rates",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({
+          ...labourRateDraft,
+          sourceRef:labourRateDraft.sourceRef||null,
+          validFrom:labourRateDraft.validFrom||null,
+          validTo:labourRateDraft.validTo||null
+        })
+      });
+      const payload=await response.json().catch(()=>({})) as LabourRateRecord&{error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarief kon niet worden opgeslagen."));
+      setLabourRateDraft({roleRef:"",label:"",hourlyCostRate:0,sourceRef:"",active:true,isDefault:false,validFrom:"",validTo:""});
+      await loadLabourRates();
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarief kon niet worden opgeslagen.");
+    }
+  };
+
+  const patchLabourRate=async(id:number,patch:Partial<LabourRateRecord>)=>{
+    setLabourRateStatus("Uurtarief bijwerken…");
+    try{
+      const response=await fetch(`/api/settings/labour-rates/${id}`,{
+        method:"PUT",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify(patch)
+      });
+      const payload=await response.json().catch(()=>({})) as LabourRateRecord&{error?:string};
+      if(!response.ok)throw new Error(String(payload.error??"Uurtarief kon niet worden bijgewerkt."));
+      await loadLabourRates();
+    }catch(error){
+      setLabourRateStatus(error instanceof Error?error.message:"Uurtarief kon niet worden bijgewerkt.");
+    }
+  };
+
 
   const createVatSetting=async()=>{
     setVatSettingsStatus("Btw-regime opslaan…");
