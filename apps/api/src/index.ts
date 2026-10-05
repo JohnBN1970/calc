@@ -1464,7 +1464,8 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
   try{
     await connection.beginTransaction();
     const [versions]=await connection.execute<RowDataPacket[]>(
-      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price
+      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price,
+              source_office_version,source_selection_version
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -1499,6 +1500,34 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     );
     const costRows=lineRows.filter(row=>!["chapter","paragraph","note"].includes(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
+
+    const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
+      priceSourceType:String(row.price_source_type??"manual"),
+      sourceDetails:row.source_details==null?null:String(row.source_details)
+    })));
+    if(derivedContext.status==="mixed"){
+      throw new Error("Receptregels gebruiken verschillende Office-broncontexten. Bouw het concept opnieuw op.");
+    }
+    if(derivedContext.status==="unbound"){
+      throw new Error("Receptregels missen een aantoonbare Office-broncontext. Bouw het concept opnieuw op.");
+    }
+    if(derivedContext.status==="bound"){
+      if(String(version.source_office_version??"")!==derivedContext.binding!.officeVersion||
+         (version.source_selection_version==null?null:String(version.source_selection_version))!==derivedContext.binding!.selectionVersion){
+        throw new Error("De opgeslagen broncontextbinding wijkt af van de receptregels. Sla de calculatie opnieuw op.");
+      }
+      const [currentOffice,currentContext]=await Promise.all([
+        fetchOfficeWorkspaceState(session.officeCalculationId),
+        fetchCalculationContextSnapshot(session.officeCalculationId)
+      ]);
+      if(!sourceContextIsCurrent({
+        binding:derivedContext.binding,
+        officeVersion:String(currentOffice.version.version),
+        selectionVersion:currentContext.context.document_set?.selection_version??null
+      })){
+        throw new Error("De Office-broncontext is gewijzigd sinds dit Calc-concept is opgebouwd. Bouw het concept opnieuw op vóór publicatie.");
+      }
+    }
 
     const lineSales:VatSource[]=costRows.map(row=>{
       const quantity=Number(row.quantity??0);
