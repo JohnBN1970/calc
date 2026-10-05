@@ -7,6 +7,7 @@ export type OfficeCommercialSummary={
   margin:number;
   margin_pct:number;
   vat:number;
+  total_incl_vat:number;
   vat_rate:number|null;
   vat_breakdown:Array<{
     code:string;
