@@ -3320,8 +3320,20 @@ function App() {
 
       <div className="commandbar commandbarTop" role="toolbar" aria-label="Calculatie acties">
         <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
-        <button className="command" type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={() => addLine("chapter")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":classificationScheme!=="custom"?"Hoofdgroepen komen uit het gekozen classificatiestelsel":"Nieuw hoofdstuk"}><Icon name="chapter" /><span>Hoofdstuk</span></button>
-        <button className="command" type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={() => addLine("paragraph")} title={versionStatus==="established"?"Start een nieuwe versie om te wijzigen":classificationScheme!=="custom"?"Paragrafen komen uit het gekozen classificatiestelsel":"Nieuwe paragraaf"}><Icon name="paragraph" /><span>Paragraaf</span></button>
+        <details className="columnChooser structureChooser">
+          <summary className="command" title="Structuuracties"><Icon name="chapter" /><span>Structuur</span></summary>
+          <div className="columnChooserMenu structureChooserMenu" onClick={event=>event.stopPropagation()}>
+            <div className="columnChooserHead"><strong>Structuur</strong><small>{classificationLabel[classificationScheme]}</small></div>
+            <div className="structureChooserList">
+              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("chapter")}>Nieuw hoofdstuk</button>
+              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("paragraph")}>Nieuwe paragraaf</button>
+              {classificationScheme!=="custom"&&<small>Hoofdgroepen en paragrafen komen uit de {classificationLabel[classificationScheme]}-zoekboom.</small>}
+              <hr />
+              <button type="button" onClick={collapseAllStructure}>Alles inklappen</button>
+              <button type="button" onClick={expandAllStructure}>Alles uitklappen</button>
+            </div>
+          </div>
+        </details>
         <button className="command" type="button"
           disabled={versionStatus==="established"||(activeSubcalculationId!=null&&!activeScopeRef)}
           onClick={() => addLine("item",activeScopeRef?{scopeType:activeScopeType,scopeRef:activeScopeRef}:undefined)}
@@ -4011,10 +4023,6 @@ function App() {
           <button type="button" className="danger" onClick={bulkDelete}>Verwijderen</button>
           <button type="button" onClick={() => setSelectedLineIds([])}>Selectie wissen</button>
         </div>}
-        <div className="structureBulkActions" aria-label="Calculatiestructuur">
-          <button type="button" title="Alles inklappen" aria-label="Alles inklappen" onClick={collapseAllStructure}>▴</button>
-          <button type="button" title="Alles uitklappen" aria-label="Alles uitklappen" onClick={expandAllStructure}>▾</button>
-        </div>
         <div className={"grid"+(versionStatus==="established"?" is-readonly":"")} aria-readonly={versionStatus==="established"}>
           <div className="row head configurableRow" style={{gridTemplateColumns}}>
             {visibleColumns.map(column => <b className={column.key === "code" ? "codeHead resizableHead" : "resizableHead"} key={column.key}>
