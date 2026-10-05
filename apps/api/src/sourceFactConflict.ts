@@ -1,8 +1,11 @@
 import type { OfficeCalculationContextSnapshot } from "./officeClient.js";
+import { measurementKindForFact, measurementKindLabel } from "./measurementSemantics.js";
 
 export type SourceFactConflict={
   positionRef:string;
   factType:string;
+  measurementKind:string;
+  measurementLabel:string;
   values:Array<{
     documentId:number;
     value:string;
@@ -25,7 +28,8 @@ export function detectSourceFactConflicts(snapshot:OfficeCalculationContextSnaps
   for(const fact of snapshot.context.facts){
     const positionRef=fact.position_ref?.trim();
     if(!positionRef||!comparableFactTypes.has(fact.fact_type))continue;
-    const key=positionRef+"\u0000"+fact.fact_type;
+    const measurementKind=["width_mm","height_mm"].includes(fact.fact_type)?measurementKindForFact(fact):"not_applicable";
+    const key=positionRef+"\u0000"+fact.fact_type+"\u0000"+measurementKind;
     const rows=groups.get(key)??[];
     rows.push(fact);
     groups.set(key,rows);
@@ -47,6 +51,8 @@ export function detectSourceFactConflicts(snapshot:OfficeCalculationContextSnaps
     conflicts.push({
       positionRef:first.position_ref!.trim(),
       factType:first.fact_type,
+      measurementKind:["width_mm","height_mm"].includes(first.fact_type)?measurementKindForFact(first):"not_applicable",
+      measurementLabel:["width_mm","height_mm"].includes(first.fact_type)?measurementKindLabel(measurementKindForFact(first)):"n.v.t.",
       values:[...normalized.values()].map(bucket=>({
         documentId:Number(bucket[0].document_id),
         value:factValue(bucket[0])!,
