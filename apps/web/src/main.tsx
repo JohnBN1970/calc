@@ -2505,7 +2505,7 @@ function App() {
         </div>
       </details>}
 
-      {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Nog niet publiceerbaar</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
+      {versionStatus==="draft"&&publicationReadiness&&!publicationReadiness.canPublish&&<div className="readinessBanner" role="status"><div><strong>Publiceren nog niet mogelijk</strong><span>{publicationReadiness.reasons[0]??"Controleer de calculatie."}</span></div>{publicationReadiness.reasons.length>1&&<div className="readinessItems">{publicationReadiness.reasons.slice(1).map((reason,index)=><span key={index}><small>{reason}</small></span>)}</div>}</div>}
       {!calculationReady && <div className="readinessBanner" role="alert">
         <div><strong>Calculatie onvolledig</strong><span>{unresolvedLines.length} prijs- of normbron(nen) ontbreken. Publiceren is geblokkeerd; het concept kan pas worden opgeslagen zodra de bronregels zijn opgelost.</span></div>
         <div className="readinessItems">{unresolvedLines.map(line=><button type="button" key={line.id} onClick={()=>setSelectedLineId(line.id)}><b>{line.code || "Regel"}</b><span>{line.description}</span><small>{line.resolutionReason || "Bron niet beschikbaar."}</small></button>)}</div>
