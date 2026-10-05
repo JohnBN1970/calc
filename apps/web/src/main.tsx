@@ -395,6 +395,9 @@ type CalcSubcalculationResult = {
   directShare:number;
   allocatedTailCost:number;
   salesPrice:number;
+  vatBreakdown:Array<{code:string;label:string;rate:number|null;taxableBase:number;vatAmount:number;reverseCharged:boolean}>;
+  vat:number;
+  salesPriceInclVat:number;
 };
 
 type VatRegime={
