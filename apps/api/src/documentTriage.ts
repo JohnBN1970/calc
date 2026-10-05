@@ -23,6 +23,15 @@ export type CalcDocumentTriageItem={
 const geometryFacts=new Set(["quantity","width_mm","height_mm"]);
 const commercialFacts=new Set(["description","supplier_unit_price"]);
 
+type SourceProfile="geometry"|"specification"|"commercial"|"generic";
+function sourceProfile(document:{title:string;documentType:string|null;documentFamily:string|null}):SourceProfile{
+  const haystack=[document.title,document.documentType??"",document.documentFamily??""].join(" ").toLocaleLowerCase("nl-NL");
+  if(/tekening|kozijn|gevel|plattegrond|detail|maat|meetstaat|uittrek|staat/.test(haystack))return"geometry";
+  if(/bestek|stabu|nlsfb|werkomschrijving|technische omschrijving|specificatie/.test(haystack))return"specification";
+  if(/offerte|prijs|begroting|leverancier|aanbieding/.test(haystack))return"commercial";
+  return"generic";
+}
+
 export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnapshot,overrides:Array<{officeDocumentId:number;decision:CalcDocumentTriageStatus;reason:string|null}>=[]):CalcDocumentTriageItem[]{
   const overrideByDocument=new Map(overrides.map(item=>[item.officeDocumentId,item]));
   const factsByDocument=new Map<number,typeof snapshot.context.facts>();
@@ -51,25 +60,30 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
 
     const positionRefs=[...byPosition.keys()].sort((a,b)=>a.localeCompare(b,"nl"));
     const signals:string[]=[];
+    const profile=sourceProfile(document);
     let score=0;
 
+    if(profile==="geometry")signals.push("bronprofiel: geometrie/maatvoering");
+    else if(profile==="specification")signals.push("bronprofiel: bestek/specificatie");
+    else if(profile==="commercial")signals.push("bronprofiel: commercieel/prijs");
+
     if(completeGeometry.length){
-      score+=60+Math.min(20,(completeGeometry.length-1)*5);
+      score+=(profile==="geometry"?68:60)+Math.min(20,(completeGeometry.length-1)*5);
       signals.push(completeGeometry.length+" positie(s) met complete hoeveelheid + B×H");
     }
     const geometryCount=relevant.filter(fact=>geometryFacts.has(fact.fact_type)).length;
     if(geometryCount&&!completeGeometry.length){
-      score+=20;
+      score+=profile==="geometry"?28:20;
       signals.push(geometryCount+" geometrisch(e) bronfeit(en), maar nog niet compleet per positie");
     }
     const descriptions=relevant.filter(fact=>fact.fact_type==="description").length;
     if(descriptions){
-      score+=Math.min(10,descriptions*2);
+      score+=Math.min(profile==="specification"?18:10,descriptions*2);
       signals.push(descriptions+" omschrijving(en)");
     }
     const prices=relevant.filter(fact=>fact.fact_type==="supplier_unit_price").length;
     if(prices){
-      score+=Math.min(10,prices*2);
+      score+=Math.min(profile==="commercial"?25:10,prices*3);
       signals.push(prices+" leveranciersprijs/-prijzen");
     }
     if(relevant.length&&reviewed.length===relevant.length){
@@ -87,6 +101,8 @@ export function triageCalculationDocuments(snapshot:OfficeCalculationContextSnap
     const automaticStatus:"primary"|"supporting"|"review"=
       document.exclusion_reason?"review":
       completeGeometry.length?"primary":
+      profile==="commercial"&&prices>0?"supporting":
+      profile==="specification"&&descriptions>0?"supporting":
       relevant.length?"supporting":
       "review";
     const override=overrideByDocument.get(Number(document.document_id));
