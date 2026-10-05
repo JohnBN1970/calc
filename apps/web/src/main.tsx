@@ -2930,7 +2930,7 @@ function App() {
           </>}
         </div>}
 
-        {recipeLibraryOpen && <div className="managementWorkspace">
+        {recipeLibraryOpen && <DockableWindow id="recipe-library" label="Recepten beheren"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Receptbibliotheek</h2><p>Calc bepaalt de samenstelling; Office levert actuele normen, tarieven en prijzen.</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeLibraryOpen(false)} aria-label="Sluiten">×</button>
@@ -2972,9 +2972,9 @@ function App() {
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
-        </div>}
+        </div></DockableWindow>}
 
-        {subcalculationOpen && <div className="managementWorkspace">
+        {subcalculationOpen && <DockableWindow id="subcalculations" label="Deelcalculaties"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Deelcalculaties</h2><p>Eén calculatieregel of positie kan in meerdere deelcalculaties tegelijk vallen.</p></div>
             <button className="panelClose" type="button" onClick={() => setSubcalculationOpen(false)} aria-label="Sluiten">×</button>
@@ -2999,8 +2999,8 @@ function App() {
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
-        </div>}
-        {tailCostOpen && <div className="managementWorkspace">
+        </div></DockableWindow>}
+        {tailCostOpen && <DockableWindow id="tail-costs" label="Staartkosten"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
@@ -3037,7 +3037,7 @@ function App() {
             </section>
           </div>
           {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}
-        </div>}
+        </div></DockableWindow>}
         {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
           <div className="columnSettingsList">
