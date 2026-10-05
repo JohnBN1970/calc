@@ -1304,9 +1304,15 @@ function App() {
     return root;
   },[recipes,recipeTreeQuery,classificationScheme]);
 
-  const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>
-    <details className="recipeTreeGroup" open={recipeTreeQuery.trim().length>0||undefined} key={node.path}>
-      <summary><span>{node.name}</span><small>{node.items.length+node.children.reduce((sum,child)=>sum+child.items.length,0)}</small></summary>
+  const recipeTreeItemCount=(node:RecipeTreeNode):number=>
+    node.items.length+node.children.reduce((sum,child)=>sum+recipeTreeItemCount(child),0);
+  const recipeTreeDepth=(node:RecipeTreeNode):number=>node.path?node.path.split(" / ").length:0;
+  const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>{
+    const depth=recipeTreeDepth(node);
+    const openByDefault=recipeTreeQuery.trim().length>0||depth===1;
+    return(
+    <details className="recipeTreeGroup" open={openByDefault||undefined} key={node.path}>
+      <summary><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
       <div className="recipeTreeBranch">
         {renderRecipeTreeNodes(node.children)}
         <div className="recipeTreeItems">{node.items.map(recipe=>
@@ -1334,7 +1340,8 @@ function App() {
         )}</div>
       </div>
     </details>
-  );
+    );
+  });
 
   const directCostMix = useMemo(() => {
     const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
