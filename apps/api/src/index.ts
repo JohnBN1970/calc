@@ -26,6 +26,7 @@ import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } f
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
+import { calculateLineAmount } from "./calculationLineAmount.js";
 import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
@@ -896,9 +897,15 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
     const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
     const lineSales:VatSource[]=costRows.map(row=>({
       vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
-      salesAmount:Number(row.labour_total_hours??0)*Number(row.labour_unit_cost??0)+
-        Number(row.quantity??0)*(Number(row.material_unit_cost??0)+Number(row.equipment_unit_cost??0)+
-        Number(row.subcontracting_unit_cost??0)+Number(row.other_unit_cost??0))
+      salesAmount:calculateLineAmount({
+        quantity:Number(row.quantity??0),
+        labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+        labourUnitCost:Number(row.labour_unit_cost??0),
+        materialUnitCost:Number(row.material_unit_cost??0),
+        equipmentUnitCost:Number(row.equipment_unit_cost??0),
+        subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+        otherUnitCost:Number(row.other_unit_cost??0)
+      })
     }));
     const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
     const [components,partitions,vatRegimes]=await Promise.all([
@@ -1472,8 +1479,15 @@ app.put("/api/workbench/current", async (req, res) => {
         throw new Error("Unknown price source type.");
       }
       if (lineContributesToCalculationTotals(line.lineType)) {
-        const labourCost = (labourTotalHours ?? 0) * labour;
-        const lineSalesAmount = labourCost + quantity * (material + equipment + subcontracting + other);
+        const lineSalesAmount = calculateLineAmount({
+          quantity,
+          labourTotalHours,
+          labourUnitCost:labour,
+          materialUnitCost:material,
+          equipmentUnitCost:equipment,
+          subcontractingUnitCost:subcontracting,
+          otherUnitCost:other
+        });
         directCost += lineSalesAmount;
         lineVatSources.push({
           vatRegimeId: line.vatRegimeId == null ? null : Number(line.vatRegimeId),
@@ -1702,19 +1716,18 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       }
     }
 
-    const lineSales:VatSource[]=costRows.map(row=>{
-      const quantity=Number(row.quantity??0);
-      const labourHours=Number(row.labour_total_hours??0);
-      const labour=Number(row.labour_unit_cost??0);
-      const material=Number(row.material_unit_cost??0);
-      const equipment=Number(row.equipment_unit_cost??0);
-      const subcontracting=Number(row.subcontracting_unit_cost??0);
-      const other=Number(row.other_unit_cost??0);
-      return{
-        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
-        salesAmount:labourHours*labour+quantity*(material+equipment+subcontracting+other)
-      };
-    });
+    const lineSales:VatSource[]=costRows.map(row=>({
+      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+      salesAmount:calculateLineAmount({
+        quantity:Number(row.quantity??0),
+        labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+        labourUnitCost:Number(row.labour_unit_cost??0),
+        materialUnitCost:Number(row.material_unit_cost??0),
+        equipmentUnitCost:Number(row.equipment_unit_cost??0),
+        subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+        otherUnitCost:Number(row.other_unit_cost??0)
+      })
+    }));
     const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
 
     const [tailRows]=await connection.execute<RowDataPacket[]>(
