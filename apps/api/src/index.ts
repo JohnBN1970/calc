@@ -1039,7 +1039,7 @@ app.post("/api/workbench/current/tail-costs", async (req,res)=>{
       description:String(req.body?.description??""),
       basis:String(req.body?.basis??"percentage") as any,
       value:Number(req.body?.value??0),
-      baseScope:String(req.body?.baseScope??"direct_cost") as any,
+      baseScope:String(req.body?.baseScope??"owner_direct_cost") as any,
       baseRef:req.body?.baseRef==null?null:String(req.body.baseRef),
       quantity:req.body?.quantity==null?null:Number(req.body.quantity),
       vatRegimeId:req.body?.vatRegimeId==null?null:Number(req.body.vatRegimeId),
