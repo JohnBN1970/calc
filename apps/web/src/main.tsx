@@ -864,10 +864,10 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
           event.stopPropagation();
           dragRef.current=null;
           setDockPreview(null);
-          setState(current=>current.pinned
-            ? {...current,pinned:false,dockZone:null}
-            : {...current,pinned:true,dockZone:null}
-          );
+          setState(current=>{
+            if(current.pinned)return{...current,pinned:false,dockZone:null};
+            return{...current,pinned:true,dockZone:null};
+          });
         }}><PinIcon pinned={state.pinned}/></button>
       </div>
     </div>
