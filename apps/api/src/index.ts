@@ -1097,9 +1097,16 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
-    const [components,partitions]=await Promise.all([
+    const [components,partitions,vatRegimes,lineVatRows]=await Promise.all([
       listTailCostComponents(versionId),
-      evaluateCalculationPartitions(versionId)
+      evaluateCalculationPartitions(versionId),
+      listVatRegimes(true),
+      db.execute<RowDataPacket[]>(`
+        SELECT id,vat_regime_id,quantity,labour_total_hours,labour_unit_cost,
+               material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
+          FROM calculation_lines
+         WHERE version_id=?
+      `,[versionId]).then(([rows])=>rows)
     ]);
     const hierarchy=evaluateTailCostHierarchy({
       totalDirectCost:partitions.totalDirectCost,
@@ -1107,14 +1114,40 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
       subcalculations:partitions.subcalculations,
       components
     });
-    const results=hierarchy.subcalculations.map(result=>({
-      ...result,
-      allocatedTailCost:result.tailCost,
-      directShare:hierarchy.totalDirectCost>0?result.directCost/hierarchy.totalDirectCost:0
-    }));
+    const lineVatById=new Map<number,VatSource>(lineVatRows.map(row=>[
+      Number(row.id),
+      {
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+        salesAmount:calculateLineAmount({
+          quantity:Number(row.quantity??0),
+          labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+          labourUnitCost:Number(row.labour_unit_cost??0),
+          materialUnitCost:Number(row.material_unit_cost??0),
+          equipmentUnitCost:Number(row.equipment_unit_cost??0),
+          subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+          otherUnitCost:Number(row.other_unit_cost??0)
+        })
+      }
+    ]));
+    const results=hierarchy.subcalculations.map(result=>{
+      const vatBreakdown=aggregateVat({
+        regimes:vatRegimes,
+        lineSales:result.lineIds.map(id=>lineVatById.get(id)).filter((row):row is VatSource=>Boolean(row)),
+        tailCosts:result.tailCosts
+      });
+      const vat=vatBreakdown.reduce((sum,item)=>sum+item.vatAmount,0);
+      return{
+        ...result,
+        allocatedTailCost:result.tailCost,
+        directShare:hierarchy.totalDirectCost>0?result.directCost/hierarchy.totalDirectCost:0,
+        vatBreakdown,
+        vat,
+        salesPriceInclVat:result.salesPrice+vat
+      };
+    });
     res.setHeader("Cache-Control","no-store, private");
     res.json({
-      contract:"brebo-calc-subcalculation-results-v2",
+      contract:"brebo-calc-subcalculation-results-v3",
       versionId,
       totalDirect:hierarchy.totalDirectCost,
       mainDirect:hierarchy.mainDirectCost,
