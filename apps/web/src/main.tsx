@@ -3387,6 +3387,7 @@ function App() {
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs excl. BTW</span><strong>{money.format(displayedTotals.sales)}</strong></div>
+        {!activeSubcalculationResult&&<div className="primary"><span>Verkoopprijs incl. BTW</span><strong>{money.format(liveVatTotals.totalInclVat)}</strong>{liveVatTotals.breakdown.length>0&&<small>{liveVatTotals.breakdown.map(item=>`${item.label}: ${money.format(item.vatAmount)}`).join(" · ")}</small>}</div>}
         <div className="costMixKpi">
           <div className="costMixHeading"><span>Kostenverhouding directe kosten</span>{directCostMix.total>0&&<strong>{money.format(directCostMix.total)}</strong>}</div>
           {directCostMix.total>0?<div className="costMixBody">
@@ -3407,15 +3408,6 @@ function App() {
             </div>
           </div>:<small className="muted">Nog geen directe kosten.</small>}
         </div>
-        {!activeSubcalculationResult&&<section className="vatKpi">
-        <div className="vatKpiHeading"><span>BTW</span><strong>{money.format(liveVatTotals.vat)}</strong></div>
-        {liveVatTotals.breakdown.length>0?<div className="tailCostList">
-          {liveVatTotals.breakdown.map(item=><div key={item.code}><span><strong>{item.label}</strong><small>{item.treatment==="reverse_charge"?"verlegd":item.treatment==="exempt"?"vrijgesteld":item.rate==null?"geen tarief":`${item.rate}%`} · grondslag {money.format(item.taxableBase)}</small></span><b>{money.format(item.vatAmount)}</b></div>)}
-          <div className="tailCostTotal"><strong>Totaal excl. BTW</strong><b>{money.format(totals.sales)}</b></div>
-          <div className="tailCostTotal"><strong>Totaal BTW</strong><b>{money.format(liveVatTotals.vat)}</b></div>
-          <div className="tailCostTotal"><strong>Totaal incl. BTW</strong><b>{money.format(liveVatTotals.totalInclVat)}</b></div>
-        </div>:<p className="muted">Nog geen BTW-keuzes aan verkoopregels of staartkosten gekoppeld.</p>}
-      </section>}
       </section></DockableWindow>
 
 
