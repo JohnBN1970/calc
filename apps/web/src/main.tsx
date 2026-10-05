@@ -777,7 +777,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 }
 
 
-type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
+type DockWindowId="recipe-tree"|"recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
 type DockZone="left"|"right"|"top"|"bottom";
 type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean;dockZone?:DockZone|null};
 
@@ -812,10 +812,21 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
 
   useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(state));},[state,storageKey]);
   useEffect(()=>{
+    const reset=()=>setState({pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:Math.max(commandbarBottom+8,120),collapsed:false,dockZone:null});
+    window.addEventListener("brebo-calc-reset-windows",reset);
+    return()=>window.removeEventListener("brebo-calc-reset-windows",reset);
+  },[defaultFloating,commandbarBottom]);
+  useEffect(()=>{
     const update=()=>{
       const bar=document.querySelector(".commandbarTop");
       const rect=bar?.getBoundingClientRect();
-      setCommandbarBottom(Math.max(8,Math.ceil(rect?.bottom??68)));
+      const bottom=Math.max(8,Math.ceil(rect?.bottom??68));
+      setCommandbarBottom(bottom);
+      setState(current=>current.pinned||current.dockZone?current:{
+        ...current,
+        x:Math.max(8,Math.min(window.innerWidth-280,current.x)),
+        y:Math.max(bottom+8,Math.min(window.innerHeight-80,current.y))
+      });
     };
     update();
     window.addEventListener("resize",update);
@@ -3149,11 +3160,22 @@ function App() {
               {labourRates.filter(rate=>rate.isDefault).length===0&&<p className="muted">Nog geen standaard uurtarieven ingesteld.</p>}
             </div>
           </div>
+          <div className="settingsSection">
+            <div className="settingsSectionHead">
+              <div><h3>Vensters</h3><p>Zet alle dockbare Calc-vensters terug naar hun veilige standaardpositie.</p></div>
+              <button type="button" className="secondary" onClick={()=>{
+                for(const key of Object.keys(localStorage))if(key.startsWith("brebo-calc-window-"))localStorage.removeItem(key);
+                window.dispatchEvent(new Event("brebo-calc-reset-windows"));
+                setStatus("Vensters hersteld");
+              }}>Vensters herstellen</button>
+            </div>
+          </div>
         </div>
       </div>}
 
       <div className={"calcWorkspaceShell"+(recipeTreeCollapsed?" recipeTreeCollapsed":"")}>
-        <aside className="recipeTreeSidebar" aria-label="Recepten en vensters">
+        <DockableWindow id="recipe-tree" label="Recepten" collapsible>
+          <aside className="recipeTreeSidebar isDockableRecipeTree" aria-label="Recepten en vensters">
           <div className="recipeTreeHeader">
             {!recipeTreeCollapsed&&<strong>Recepten</strong>}
             <button type="button" className="recipeTreeCollapse" onClick={()=>setRecipeTreeCollapsed(value=>!value)} title={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"} aria-label={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"}>{recipeTreeCollapsed?"›":"‹"}</button>
@@ -3199,7 +3221,8 @@ function App() {
               <button type="button" onClick={()=>void openLabourRates()}>Uurtarieven</button>
             </div>
           </>}
-        </aside>
+          </aside>
+        </DockableWindow>
         <section className="workbench">
 
         {labourRatesOpen&&<DockableWindow id="hour-rates" label="Uurtarieven" defaultFloating><div className="managementWorkspace labourRateWorkspace">
