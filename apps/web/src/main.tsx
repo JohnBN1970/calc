@@ -969,6 +969,18 @@ function App() {
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
   const [collapsedStructureIds,setCollapsedStructureIds]=useState<Set<number>>(()=>new Set());
+  const collapseStateKey=project?.id ? `brebo.calc.structure-collapse.v1.${project.id}.${versionNo}` : null;
+  useEffect(()=>{
+    if(!collapseStateKey){setCollapsedStructureIds(new Set());return;}
+    try{
+      const parsed=JSON.parse(localStorage.getItem(collapseStateKey)??"[]");
+      setCollapsedStructureIds(new Set(Array.isArray(parsed)?parsed.map(Number).filter(Number.isFinite):[]));
+    }catch{setCollapsedStructureIds(new Set());}
+  },[collapseStateKey]);
+  useEffect(()=>{
+    if(!collapseStateKey)return;
+    localStorage.setItem(collapseStateKey,JSON.stringify([...collapsedStructureIds]));
+  },[collapseStateKey,collapsedStructureIds]);
   const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
   const [manualScopeType,setManualScopeType]=useState<ScopeFilterType>("position");
   const [manualScopeRef,setManualScopeRef]=useState("");
