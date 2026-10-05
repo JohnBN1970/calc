@@ -937,6 +937,7 @@ function App() {
   const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
   const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
   const [recipeTreeQuery,setRecipeTreeQuery]=useState("");
+  const [recipeTreeExpansion,setRecipeTreeExpansion]=useState<"default"|"all"|"none">("default");
   const [recipeDropTargetId,setRecipeDropTargetId]=useState<number|null>(null);
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
@@ -1323,7 +1324,7 @@ function App() {
   const recipeTreeDepth=(node:RecipeTreeNode):number=>node.path?node.path.split(" / ").length:0;
   const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>{
     const depth=recipeTreeDepth(node);
-    const openByDefault=recipeTreeQuery.trim().length>0||depth===1;
+    const openByDefault=recipeTreeQuery.trim().length>0||recipeTreeExpansion==="all"||(recipeTreeExpansion==="default"&&depth===1);
     return(
     <details className="recipeTreeGroup" open={openByDefault||undefined} key={node.path}>
       <summary><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
@@ -3489,6 +3490,10 @@ function App() {
               <span aria-hidden="true">⌕</span>
               <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
               {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
+            </div>
+            <div className="recipeTreeExpandActions">
+              <button type="button" onClick={()=>setRecipeTreeExpansion("none")}>Alles inklappen</button>
+              <button type="button" onClick={()=>setRecipeTreeExpansion("all")}>Alles uitklappen</button>
             </div>
             <div className="recipeTreeBody">
               {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
