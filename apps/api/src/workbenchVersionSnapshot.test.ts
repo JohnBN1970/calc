@@ -9,13 +9,13 @@ const base=()=>({
   establishedAt:"2026-10-04T08:00:00.000Z",
   lines:[
     {
-      structureKey:"chapter-a",parentStructureKey:null,lineType:"chapter",code:"01",description:"Kozijnen",unit:null,quantity:null,
+      structureKey:"chapter-a",parentStructureKey:null,lineType:"chapter",sortOrder:10,code:"01",description:"Kozijnen",unit:null,quantity:null,
       labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,labourUnitCost:0,materialUnitCost:0,equipmentUnitCost:0,
       subcontractingUnitCost:0,otherUnitCost:0,vatRegimeId:null,priceSourceType:"manual",officeSourceId:null,sourceReference:null,
       sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null
     },
     {
-      structureKey:"line-a",parentStructureKey:"chapter-a",lineType:"item",code:"01.01",description:"Regel",unit:"st",quantity:1,
+      structureKey:"line-a",parentStructureKey:"chapter-a",lineType:"item",sortOrder:20,code:"01.01",description:"Regel",unit:"st",quantity:1,
       labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,labourUnitCost:0,materialUnitCost:100,equipmentUnitCost:0,
       subcontractingUnitCost:0,otherUnitCost:0,vatRegimeId:1,priceSourceType:"manual",officeSourceId:null,sourceReference:null,
       sourceSupplier:null,sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null
@@ -41,6 +41,7 @@ const base=()=>({
 test("workbench snapshot is stable and fingerprintable",()=>{
   const snapshot=createWorkbenchEstablishedSnapshot(base());
   assert.equal(snapshot.contract,"brebo-calc-workbench-snapshot-v3");
+  assert.deepEqual(snapshot.lines.map(line=>line.sortOrder),[10,20]);
   assert.match(fingerprintWorkbenchSnapshot(snapshot),/^[0-9a-f]{64}$/);
   assert.equal(fingerprintWorkbenchSnapshot(snapshot),fingerprintWorkbenchSnapshot(snapshot));
 });

@@ -1795,6 +1795,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         structureKey:String(row.structure_key),
         parentStructureKey:parent?String(parent.structure_key):null,
         lineType:String(row.line_type),
+        sortOrder:Number(row.sort_order),
         code:row.code==null?null:String(row.code),
         description:String(row.description??""),
         unit:row.unit==null?null:String(row.unit),
@@ -2055,7 +2056,7 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
              source_visual_crop,source_visual_search_region,source_text_regions,source_offer_summary)
            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
-            nextVersionId,parentId,key,lineIdByKey.size,String(line.lineType),line.code??null,String(line.description??""),
+            nextVersionId,parentId,key,Number.isFinite(Number(line.sortOrder))?Number(line.sortOrder):lineIdByKey.size,String(line.lineType),line.code??null,String(line.description??""),
             line.unit??null,line.quantity??null,line.labourNorm??null,line.labourTotalHours??null,line.labourHoursInputMode??null,
             Number(line.labourUnitCost??0),Number(line.materialUnitCost??0),Number(line.equipmentUnitCost??0),
             Number(line.subcontractingUnitCost??0),Number(line.otherUnitCost??0),line.vatRegimeId??null,
