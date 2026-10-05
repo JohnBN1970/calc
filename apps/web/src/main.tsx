@@ -781,13 +781,13 @@ function PinIcon({pinned}:{pinned:boolean}){
   </svg>;
 }
 
-function DockableWindow({id,label,children,collapsible=false}:{id:DockWindowId;label:string;children:React.ReactNode;collapsible?:boolean}){
+function DockableWindow({id,label,children,collapsible=false,defaultFloating=false}:{id:DockWindowId;label:string;children:React.ReactNode;collapsible?:boolean;defaultFloating?:boolean}){
   const storageKey="brebo-calc-window-"+id;
   const [state,setState]=useState<DockWindowState>(()=>{
     try{
       const saved=JSON.parse(localStorage.getItem(storageKey)??"null") as Partial<DockWindowState>|null;
-      return{pinned:saved?.pinned!==false,x:Number(saved?.x??120),y:Number(saved?.y??120),collapsed:Boolean(saved?.collapsed)};
-    }catch{return{pinned:true,x:120,y:120,collapsed:false};}
+      return{pinned:saved?.pinned!=null?Boolean(saved.pinned):!defaultFloating,x:Number(saved?.x??Math.max(80,window.innerWidth*0.22)),y:Number(saved?.y??120),collapsed:Boolean(saved?.collapsed)};
+    }catch{return{pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:120,collapsed:false};}
   });
   const [zIndex,setZIndex]=useState(100);
   const dragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number}|null>(null);
@@ -3039,7 +3039,7 @@ function App() {
         </aside>
         <section className="workbench">
 
-        {labourRatesOpen&&<DockableWindow id="hour-rates" label="Uurtarieven"><div className="managementWorkspace labourRateWorkspace">
+        {labourRatesOpen&&<DockableWindow id="hour-rates" label="Uurtarieven" defaultFloating><div className="managementWorkspace labourRateWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC TARIEVEN</span><h2>Uurtarieven</h2><p>Beheer concrete arbeidskosttarieven. Eén tarief per rol kan als standaard worden gemarkeerd.</p></div>
             <button className="panelClose" type="button" onClick={()=>setLabourRatesOpen(false)} aria-label="Sluiten">×</button>
@@ -3069,7 +3069,7 @@ function App() {
           {labourRateStatus&&<div className="managementStatus" role="status">{labourRateStatus}</div>}
         </div></DockableWindow>}
 
-        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen"><div className="recipeWorkspace">
+        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen" defaultFloating><div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · recepten beheerd door Calc` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
@@ -3174,7 +3174,7 @@ function App() {
           </>}
         </div></DockableWindow>}
 
-        {recipeLibraryOpen && <DockableWindow id="recipe-library" label="Recepten beheren"><div className="managementWorkspace">
+        {recipeLibraryOpen && <DockableWindow id="recipe-library" label="Recepten beheren" defaultFloating><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Receptbibliotheek</h2><p>Calc bepaalt de samenstelling; Office levert actuele normen, tarieven en prijzen.</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeLibraryOpen(false)} aria-label="Sluiten">×</button>
@@ -3218,7 +3218,7 @@ function App() {
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div></DockableWindow>}
 
-        {subcalculationOpen && <DockableWindow id="subcalculations" label="Deelcalculaties"><div className="managementWorkspace">
+        {subcalculationOpen && <DockableWindow id="subcalculations" label="Deelcalculaties" defaultFloating><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Deelcalculaties</h2><p>Eén calculatieregel of positie kan in meerdere deelcalculaties tegelijk vallen.</p></div>
             <button className="panelClose" type="button" onClick={() => setSubcalculationOpen(false)} aria-label="Sluiten">×</button>
@@ -3244,7 +3244,7 @@ function App() {
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
         </div></DockableWindow>}
-        {tailCostOpen && <DockableWindow id="tail-costs" label="Staartkosten"><div className="managementWorkspace">
+        {tailCostOpen && <DockableWindow id="tail-costs" label="Staartkosten" defaultFloating><div className="managementWorkspace">
           <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
@@ -3293,7 +3293,7 @@ function App() {
             </div>)}
           </div>
         </div>}
-        {priceWorkspaceOpen && <DockableWindow id="prices" label="Prijzen"><div className="priceWorkspace">
+        {priceWorkspaceOpen && <DockableWindow id="prices" label="Prijzen" defaultFloating><div className="priceWorkspace">
           <div className="priceWorkspaceHead">
             <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
             <button className="panelClose" type="button" onClick={() => setPriceWorkspaceOpen(false)} aria-label="Sluiten">×</button>
