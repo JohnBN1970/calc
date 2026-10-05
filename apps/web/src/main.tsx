@@ -968,6 +968,7 @@ function App() {
   const [articleResults, setArticleResults] = useState<ArticleSearchItem[]>([]);
   const [articleSearchStatus, setArticleSearchStatus] = useState("Zoek in de centrale Office-artikelstam.");
   const [selectedLineId, setSelectedLineId] = useState<number | null>(null);
+  const [collapsedStructureIds,setCollapsedStructureIds]=useState<Set<number>>(()=>new Set());
   const [selectedLineIds, setSelectedLineIds] = useState<number[]>([]);
   const [manualScopeType,setManualScopeType]=useState<ScopeFilterType>("position");
   const [manualScopeRef,setManualScopeRef]=useState("");
@@ -1134,6 +1135,20 @@ function App() {
     }
     return base.filter(line=>included.has(line.id));
   }, [lines, activeSubcalculationResult,activeScopeType,activeScopeRef]);
+
+  const visibleWorkbenchLines=useMemo(()=>{
+    const byId=new Map(workbenchLines.map(line=>[line.id,line]));
+    return workbenchLines.filter(line=>{
+      let parentId=line.parentId;
+      const seen=new Set<number>();
+      while(parentId!=null&&!seen.has(parentId)){
+        if(collapsedStructureIds.has(parentId))return false;
+        seen.add(parentId);
+        parentId=byId.get(parentId)?.parentId??null;
+      }
+      return true;
+    });
+  },[workbenchLines,collapsedStructureIds]);
 
   const structureMetrics=useMemo(()=>{
     const lineById=new Map(workbenchLines.map(line=>[line.id,line]));
@@ -3952,12 +3967,13 @@ function App() {
               <span className="columnResizeHandle" role="separator" aria-orientation="vertical" title="Sleep om kolombreedte te wijzigen" onPointerDown={event => startColumnResize(event,column.key)} />
             </b>)}
           </div>
-          {workbenchLines.map(line => {
+          {visibleWorkbenchLines.map(line => {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               const metric=structureMetrics.get(line.id)??{depth:line.lineType==="chapter"?1:2,subtotal:0};
+              const collapsed=collapsedStructureIds.has(line.id);
               return <div className={line.lineType} key={line.id}>
                 <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} />{classificationScheme==="custom"?<input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} aria-label="Vrije structuurcode" />:<span className="structureCodeLocked">{line.code}</span>}</div>
-                <span>▾</span>
+                <button type="button" className="structureCollapseToggle" aria-label={collapsed?"Uitklappen":"Inklappen"} title={collapsed?"Uitklappen":"Inklappen"} onClick={()=>setCollapsedStructureIds(current=>{const next=new Set(current);if(next.has(line.id))next.delete(line.id);else next.add(line.id);return next;})}>{collapsed?"▸":"▾"}</button>
                 <div className="structureDescription">{classificationScheme==="custom"?<input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />:<strong className="structureDescriptionLocked">{line.description}</strong>}<small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}{classificationScheme!=="custom"?" · "+classificationLabel[classificationScheme]:""}</small></div>
                 <div className="structureSubtotal"><small>Subtotaal</small><strong>{money.format(metric.subtotal)}</strong></div>
                 <LineActions line={line} />
