@@ -27,6 +27,7 @@ import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
+import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
@@ -678,6 +679,123 @@ async function currentCalcDraftVersionId(calculationId:number):Promise<number> {
   if(version.status!=="draft")throw new Error("Deze calculatieversie is vastgesteld en kan niet meer worden gewijzigd. Start eerst een nieuwe versie.");
   return version.id;
 }
+
+app.get("/api/workbench/current/version-diff", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const [versions]=await db.execute<RowDataPacket[]>(
+      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price
+         FROM calculation_versions
+        WHERE calculation_id=?
+        ORDER BY version_no DESC`,
+      [session.calculationId]
+    );
+    const current=versions[0];
+    if(!current){
+      res.status(404).json({error:"Calculatieversie niet gevonden."});
+      return;
+    }
+    const baseline=versions.find(row=>Number(row.version_no)<Number(current.version_no)&&String(row.status)==="established")??null;
+    if(!baseline){
+      res.setHeader("Cache-Control","no-store, private");
+      res.json({
+        contract:"brebo-calc-version-diff-v1",
+        currentVersionNo:Number(current.version_no),
+        baselineVersionNo:null,
+        changes:[],
+        counts:{added:0,removed:0,changed:0},
+        commercialDelta:null
+      });
+      return;
+    }
+
+    const [[snapshotRows],[lineRows]]=await Promise.all([
+      db.execute<RowDataPacket[]>(
+        "SELECT snapshot_json FROM calculation_version_snapshots WHERE version_id=? LIMIT 1",
+        [baseline.id]
+      ),
+      db.execute<RowDataPacket[]>(
+        `SELECT structure_key,line_type,code,description,unit,quantity,labour_norm,labour_total_hours,
+                labour_hours_input_mode,labour_unit_cost,material_unit_cost,equipment_unit_cost,
+                subcontracting_unit_cost,other_unit_cost,vat_regime_id,price_source_type,source_reference
+           FROM calculation_lines
+          WHERE version_id=?
+          ORDER BY sort_order,id`,
+        [current.id]
+      )
+    ]);
+    const stored=snapshotRows[0];
+    if(!stored)throw new Error("Vorige vastgestelde versie heeft geen snapshot.");
+    const snapshot=typeof stored.snapshot_json==="string"?JSON.parse(stored.snapshot_json):stored.snapshot_json;
+    if(!snapshot||!Array.isArray(snapshot.lines))throw new Error("Vorige snapshot is ongeldig.");
+
+    const before:VersionDiffLine[]=snapshot.lines.map((line:any)=>({
+      structureKey:String(line.structureKey),
+      lineType:String(line.lineType),
+      code:line.code==null?null:String(line.code),
+      description:String(line.description??""),
+      unit:line.unit==null?null:String(line.unit),
+      quantity:line.quantity==null?null:Number(line.quantity),
+      labourNorm:line.labourNorm==null?null:Number(line.labourNorm),
+      labourTotalHours:line.labourTotalHours==null?null:Number(line.labourTotalHours),
+      labourHoursInputMode:line.labourHoursInputMode==null?null:String(line.labourHoursInputMode),
+      labourUnitCost:Number(line.labourUnitCost??0),
+      materialUnitCost:Number(line.materialUnitCost??0),
+      equipmentUnitCost:Number(line.equipmentUnitCost??0),
+      subcontractingUnitCost:Number(line.subcontractingUnitCost??0),
+      otherUnitCost:Number(line.otherUnitCost??0),
+      vatRegimeId:line.vatRegimeId==null?null:Number(line.vatRegimeId),
+      priceSourceType:String(line.priceSourceType??"manual"),
+      sourceReference:line.sourceReference==null?null:String(line.sourceReference)
+    }));
+    const after:VersionDiffLine[]=lineRows.map(row=>({
+      structureKey:String(row.structure_key),
+      lineType:String(row.line_type),
+      code:row.code==null?null:String(row.code),
+      description:String(row.description??""),
+      unit:row.unit==null?null:String(row.unit),
+      quantity:row.quantity==null?null:Number(row.quantity),
+      labourNorm:row.labour_norm==null?null:Number(row.labour_norm),
+      labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+      labourHoursInputMode:row.labour_hours_input_mode==null?null:String(row.labour_hours_input_mode),
+      labourUnitCost:Number(row.labour_unit_cost??0),
+      materialUnitCost:Number(row.material_unit_cost??0),
+      equipmentUnitCost:Number(row.equipment_unit_cost??0),
+      subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+      otherUnitCost:Number(row.other_unit_cost??0),
+      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
+      priceSourceType:String(row.price_source_type??"manual"),
+      sourceReference:row.source_reference==null?null:String(row.source_reference)
+    }));
+    const changes=diffVersionLines({before,after});
+    const counts={
+      added:changes.filter(item=>item.kind==="added").length,
+      removed:changes.filter(item=>item.kind==="removed").length,
+      changed:changes.filter(item=>item.kind==="changed").length
+    };
+    const beforeCommercial={
+      directCost:Number(snapshot.commercial?.directCost??baseline.direct_cost??0),
+      markupAmount:Number(snapshot.commercial?.markupAmount??baseline.markup_amount??0),
+      salesPrice:Number(snapshot.commercial?.salesPrice??baseline.sales_price??0)
+    };
+    const afterCommercial={
+      directCost:Number(current.direct_cost??0),
+      markupAmount:Number(current.markup_amount??0),
+      salesPrice:Number(current.sales_price??0)
+    };
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({
+      contract:"brebo-calc-version-diff-v1",
+      currentVersionNo:Number(current.version_no),
+      baselineVersionNo:Number(baseline.version_no),
+      changes,
+      counts,
+      commercialDelta:diffCommercialTotals({before:beforeCommercial,after:afterCommercial})
+    });
+  }catch(error){
+    res.status(422).json({error:error instanceof Error?error.message:"Versieverschil kon niet worden bepaald."});
+  }
+});
 
 app.get("/api/workbench/current/versions", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
