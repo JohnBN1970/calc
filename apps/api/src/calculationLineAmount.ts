@@ -13,15 +13,27 @@ function moneyNumber(value:number|null|undefined):number{
   return Number.isFinite(parsed)?parsed:0;
 }
 
-export function calculateLineAmount(input:CalculationLineAmountInput):number{
+export type CalculationLineCostBreakdown={
+  labour:number;
+  material:number;
+  equipment:number;
+  subcontracting:number;
+  other:number;
+};
+
+export function calculateLineCostBreakdown(input:CalculationLineAmountInput):CalculationLineCostBreakdown{
   const quantity=moneyNumber(input.quantity);
   const labourHours=moneyNumber(input.labourTotalHours);
-  const labour=moneyNumber(input.labourUnitCost);
-  const material=moneyNumber(input.materialUnitCost);
-  const equipment=moneyNumber(input.equipmentUnitCost);
-  const subcontracting=moneyNumber(input.subcontractingUnitCost);
-  const other=moneyNumber(input.otherUnitCost);
+  return{
+    labour:labourHours*moneyNumber(input.labourUnitCost),
+    material:quantity*moneyNumber(input.materialUnitCost),
+    equipment:quantity*moneyNumber(input.equipmentUnitCost),
+    subcontracting:quantity*moneyNumber(input.subcontractingUnitCost),
+    other:quantity*moneyNumber(input.otherUnitCost)
+  };
+}
 
-  return labourHours*labour+
-    quantity*(material+equipment+subcontracting+other);
+export function calculateLineAmount(input:CalculationLineAmountInput):number{
+  const costs=calculateLineCostBreakdown(input);
+  return costs.labour+costs.material+costs.equipment+costs.subcontracting+costs.other;
 }
