@@ -248,6 +248,11 @@ export type OfficeCalculationContextSnapshot = {
       selection_source: string;
       review_status: string;
       exclusion_reason: string | null;
+      document_number?: string | null;
+      revision?: string | null;
+      revision_date?: string | null;
+      document_status?: string | null;
+      issued_at?: string | null;
     }>;
     facts: Array<{
       id: number;
