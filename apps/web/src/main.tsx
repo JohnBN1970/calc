@@ -1166,6 +1166,14 @@ function App() {
     ()=>workbenchLines.filter(line=>line.lineType==="chapter"||line.lineType==="paragraph").map(line=>line.id),
     [workbenchLines]
   );
+  useEffect(()=>{
+    const valid=new Set(collapsibleStructureIds);
+    setCollapsedStructureIds(current=>{
+      const next=new Set([...current].filter(id=>valid.has(id)));
+      if(next.size===current.size&&[...next].every(id=>current.has(id)))return current;
+      return next;
+    });
+  },[collapsibleStructureIds]);
   const collapseAllStructure=()=>setCollapsedStructureIds(new Set(collapsibleStructureIds));
   const expandAllStructure=()=>setCollapsedStructureIds(new Set());
 
