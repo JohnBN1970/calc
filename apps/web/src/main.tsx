@@ -772,7 +772,8 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 
 
 type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis"|"vat-totals";
-type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean};
+type DockZone="left"|"right"|"top"|"bottom";
+type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean;dockZone?:DockZone|null};
 
 function PinIcon({pinned}:{pinned:boolean}){
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -786,38 +787,75 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
   const [state,setState]=useState<DockWindowState>(()=>{
     try{
       const saved=JSON.parse(localStorage.getItem(storageKey)??"null") as Partial<DockWindowState>|null;
-      return{pinned:saved?.pinned!=null?Boolean(saved.pinned):!defaultFloating,x:Number(saved?.x??Math.max(80,window.innerWidth*0.22)),y:Number(saved?.y??120),collapsed:Boolean(saved?.collapsed)};
-    }catch{return{pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:120,collapsed:false};}
+      const dockZone=["left","right","top","bottom"].includes(String(saved?.dockZone))?saved?.dockZone as DockZone:null;
+      return{
+        pinned:saved?.pinned!=null?Boolean(saved.pinned):!defaultFloating,
+        x:Number(saved?.x??Math.max(80,window.innerWidth*0.22)),
+        y:Number(saved?.y??120),
+        collapsed:Boolean(saved?.collapsed),
+        dockZone
+      };
+    }catch{
+      return{pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:120,collapsed:false,dockZone:null};
+    }
   });
   const [zIndex,setZIndex]=useState(100);
+  const [dockPreview,setDockPreview]=useState<DockZone|null>(null);
   const dragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number}|null>(null);
 
   useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(state));},[state,storageKey]);
 
+  const zoneForPointer=(x:number,y:number):DockZone|null=>{
+    const edgeX=Math.max(72,Math.min(150,window.innerWidth*0.07));
+    const edgeY=Math.max(72,Math.min(130,window.innerHeight*0.1));
+    if(x<=edgeX)return"left";
+    if(x>=window.innerWidth-edgeX)return"right";
+    if(y<=edgeY)return"top";
+    if(y>=window.innerHeight-edgeY)return"bottom";
+    return null;
+  };
+
+  const isScreenDocked=!state.pinned&&state.dockZone!=null;
   const shell=<div
-    className={"dockWindow "+(state.pinned?"is-pinned":"is-floating")}
-    style={state.pinned?undefined:{left:state.x,top:state.y,zIndex}}
+    className={"dockWindow "+(state.pinned?"is-pinned":isScreenDocked?`is-screen-docked dock-${state.dockZone}`:"is-floating")}
+    style={state.pinned||isScreenDocked?undefined:{left:state.x,top:state.y,zIndex}}
     onPointerDown={()=>{if(!state.pinned)setZIndex(Date.now()%100000+100);}}
   >
     <div className="dockWindowBar"
       onPointerDown={event=>{
         if(state.pinned||event.button!==0)return;
-        dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,originX:state.x,originY:state.y};
+        const rect=event.currentTarget.parentElement?.getBoundingClientRect();
+        const originX=state.dockZone&&rect?rect.left:state.x;
+        const originY=state.dockZone&&rect?rect.top:state.y;
+        if(state.dockZone){
+          setState(current=>({...current,dockZone:null,x:originX,y:originY}));
+        }
+        dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,originX,originY};
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={event=>{
         const drag=dragRef.current;
         if(!drag||drag.pointerId!==event.pointerId)return;
         const x=Math.max(8,Math.min(window.innerWidth-280,drag.originX+event.clientX-drag.startX));
-        const y=Math.max(72,Math.min(window.innerHeight-80,drag.originY+event.clientY-drag.startY));
-        setState(current=>({...current,x,y}));
+        const y=Math.max(68,Math.min(window.innerHeight-80,drag.originY+event.clientY-drag.startY));
+        setState(current=>({...current,x,y,dockZone:null}));
+        setDockPreview(zoneForPointer(event.clientX,event.clientY));
       }}
       onPointerUp={event=>{
-        if(dragRef.current?.pointerId===event.pointerId)dragRef.current=null;
+        const drag=dragRef.current;
+        if(!drag||drag.pointerId!==event.pointerId)return;
+        const targetZone=zoneForPointer(event.clientX,event.clientY);
+        dragRef.current=null;
+        setDockPreview(null);
+        if(targetZone)setState(current=>({...current,pinned:false,dockZone:targetZone}));
+      }}
+      onPointerCancel={()=>{
+        dragRef.current=null;
+        setDockPreview(null);
       }}
     >
       <strong>{label}</strong>
-      <div className="dockWindowActions">
+      <div className="dockWindowActions" onPointerDown={event=>event.stopPropagation()} onPointerMove={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()}>
         {collapsible&&<button type="button" className="pinButton" title={state.collapsed?"Uitklappen":"Inklappen"} onClick={event=>{
           event.stopPropagation();
           setState(current=>({...current,collapsed:!current.collapsed}));
@@ -825,13 +863,21 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
         <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Terugzetten in Calc"} aria-label={state.pinned?"Losmaken en verslepen":"Terugzetten in Calc"} onClick={event=>{
           event.stopPropagation();
           dragRef.current=null;
-          setState(current=>({...current,pinned:!current.pinned}));
+          setDockPreview(null);
+          setState(current=>{
+            if(current.pinned)return{...current,pinned:false,dockZone:null};
+            return{...current,pinned:true,dockZone:null};
+          });
         }}><PinIcon pinned={state.pinned}/></button>
       </div>
     </div>
     {!state.collapsed&&<div className="dockWindowContent">{children}</div>}
   </div>;
-  return <><div className="dockWindowSlot" data-window-slot={id}>{state.pinned?shell:null}</div>{!state.pinned&&createPortal(shell,document.body)}</>;
+  return <>
+    <div className="dockWindowSlot" data-window-slot={id}>{state.pinned?shell:null}</div>
+    {!state.pinned&&createPortal(shell,document.body)}
+    {dockPreview&&createPortal(<div className={`dockPreview dockPreview-${dockPreview}`} aria-hidden="true"/>,document.body)}
+  </>;
 }
 
 function App() {
