@@ -771,8 +771,8 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 }
 
 
-type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates";
-type DockWindowState={pinned:boolean;x:number;y:number};
+type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
+type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean};
 
 function PinIcon({pinned}:{pinned:boolean}){
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -781,13 +781,13 @@ function PinIcon({pinned}:{pinned:boolean}){
   </svg>;
 }
 
-function DockableWindow({id,label,children}:{id:DockWindowId;label:string;children:React.ReactNode}){
+function DockableWindow({id,label,children,collapsible=false}:{id:DockWindowId;label:string;children:React.ReactNode;collapsible?:boolean}){
   const storageKey="brebo-calc-window-"+id;
   const [state,setState]=useState<DockWindowState>(()=>{
     try{
       const saved=JSON.parse(localStorage.getItem(storageKey)??"null") as Partial<DockWindowState>|null;
-      return{pinned:saved?.pinned!==false,x:Number(saved?.x??120),y:Number(saved?.y??120)};
-    }catch{return{pinned:true,x:120,y:120};}
+      return{pinned:saved?.pinned!==false,x:Number(saved?.x??120),y:Number(saved?.y??120),collapsed:Boolean(saved?.collapsed)};
+    }catch{return{pinned:true,x:120,y:120,collapsed:false};}
   });
   const [zIndex,setZIndex]=useState(100);
   const dragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number}|null>(null);
@@ -817,12 +817,18 @@ function DockableWindow({id,label,children}:{id:DockWindowId;label:string;childr
       }}
     >
       <strong>{label}</strong>
-      <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Vastzetten in Calc"} onClick={event=>{
-        event.stopPropagation();
-        setState(current=>({...current,pinned:!current.pinned}));
-      }}><PinIcon pinned={state.pinned}/></button>
+      <div className="dockWindowActions">
+        {collapsible&&<button type="button" className="pinButton" title={state.collapsed?"Uitklappen":"Inklappen"} onClick={event=>{
+          event.stopPropagation();
+          setState(current=>({...current,collapsed:!current.collapsed}));
+        }} aria-label={state.collapsed?"Uitklappen":"Inklappen"}>{state.collapsed?"▾":"▴"}</button>}
+        <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Vastzetten in Calc"} onClick={event=>{
+          event.stopPropagation();
+          setState(current=>({...current,pinned:!current.pinned}));
+        }}><PinIcon pinned={state.pinned}/></button>
+      </div>
     </div>
-    <div className="dockWindowContent">{children}</div>
+    {!state.collapsed&&<div className="dockWindowContent">{children}</div>}
   </div>;
   return state.pinned?shell:createPortal(shell,document.body);
 }
@@ -1136,7 +1142,7 @@ function App() {
       try{
         const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
         const payload=await response.json().catch(()=>({})) as {regimes?:VatRegime[]};
-        if(!response.ok)throw new Error("Btw-regimes konden niet worden geladen.");
+        if(!response.ok)throw new Error("BTW-keuzes konden niet worden geladen.");
         if(!cancelled)setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
       }catch{
         if(!cancelled)setVatRegimes([]);
@@ -1180,15 +1186,15 @@ function App() {
 
 
   const loadVatRegimes=async()=>{
-    setVatSettingsStatus("Btw-instellingen laden…");
+    setVatSettingsStatus("BTW-instellingen laden…");
     try{
       const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
       const payload=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(String(payload.error??"Btw-instellingen konden niet worden geladen."));
+      if(!response.ok)throw new Error(String(payload.error??"BTW-instellingen konden niet worden geladen."));
       setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
       setVatSettingsStatus("");
     }catch(error){
-      setVatSettingsStatus(error instanceof Error?error.message:"Btw-instellingen konden niet worden geladen.");
+      setVatSettingsStatus(error instanceof Error?error.message:"BTW-instellingen konden niet worden geladen.");
     }
   };
 
@@ -2775,7 +2781,7 @@ function App() {
         </div>
       </div>
 
-      <section className="kpis">
+      <DockableWindow id="kpis" label="KPI's" collapsible><section className="kpis">
         <div><span>Directe kostprijs</span><strong>{money.format(displayedTotals.direct)}</strong></div>
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs excl. BTW</span><strong>{money.format(displayedTotals.sales)}</strong></div>
@@ -2799,16 +2805,16 @@ function App() {
             </div>
           </div>:<small className="muted">Nog geen directe kosten.</small>}
         </div>
-      </section>
+      </section></DockableWindow>
 
       {!activeSubcalculationResult&&<section className="vatTotalsPanel">
-        <div className="settingsSectionHead"><div><h3>BTW-totalisatie</h3><p>Factuurbasis vanuit de BTW-regimes op calculatieregels en staartkosten.</p></div></div>
+        <div className="settingsSectionHead"><div><h3>BTW-totalisatie</h3><p>Factuurbasis vanuit de BTW-keuzes op calculatieregels en staartkosten.</p></div></div>
         {liveVatTotals.breakdown.length>0?<div className="tailCostList">
           {liveVatTotals.breakdown.map(item=><div key={item.code}><span><strong>{item.label}</strong><small>{item.treatment==="reverse_charge"?"verlegd":item.treatment==="exempt"?"vrijgesteld":item.rate==null?"geen tarief":`${item.rate}%`} · grondslag {money.format(item.taxableBase)}</small></span><b>{money.format(item.vatAmount)}</b></div>)}
           <div className="tailCostTotal"><strong>Totaal excl. BTW</strong><b>{money.format(totals.sales)}</b></div>
           <div className="tailCostTotal"><strong>Totaal BTW</strong><b>{money.format(liveVatTotals.vat)}</b></div>
           <div className="tailCostTotal"><strong>Totaal incl. BTW</strong><b>{money.format(liveVatTotals.totalInclVat)}</b></div>
-        </div>:<p className="muted">Nog geen BTW-regimes aan verkoopregels of staartkosten gekoppeld.</p>}
+        </div>:<p className="muted">Nog geen BTW-keuzes aan verkoopregels of staartkosten gekoppeld.</p>}
       </section>}
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
@@ -2870,11 +2876,11 @@ function App() {
       {settingsOpen && <div className="settingsOverlay" role="dialog" aria-modal="true" aria-label="Calc-instellingen">
         <div className="settingsPanel">
           <div className="settingsHead">
-            <div><span className="eyebrow">CALC CONFIGURATIE</span><h2>Instellingen</h2><p>Centraal beheer van calculatie-instellingen. Btw-regimes zijn hier configureerbaar en niet hardcoded.</p></div>
+            <div><span className="eyebrow">CALC CONFIGURATIE</span><h2>Instellingen</h2><p>Centraal beheer van calculatie-instellingen. BTW-keuzes zijn hier configureerbaar en niet hardcoded.</p></div>
             <button type="button" className="panelClose" onClick={()=>setSettingsOpen(false)} aria-label="Sluiten">×</button>
           </div>
           <div className="settingsSection">
-            <div className="settingsSectionHead"><div><h3>Btw-regimes</h3><p>Gebruik eigen regimes voor bijvoorbeeld verschillende tarieven, verlegging of vrijstelling.</p></div></div>
+            <div className="settingsSectionHead"><div><h3>BTW-keuzes</h3><p>Gebruik eigen keuzes voor bijvoorbeeld verschillende tarieven, verlegging of vrijstelling.</p></div></div>
             <div className="vatRegimeList">
               {vatRegimes.map(regime=><div className="vatRegimeRow" key={regime.id}>
                 <input value={regime.label} onChange={event=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,label:event.target.value}:item))} onBlur={()=>void patchVatSetting(regime.id,{label:regime.label})} aria-label="Omschrijving" />
@@ -2887,7 +2893,7 @@ function App() {
                 <DecimalInput value={regime.rate} min={0} max={100} allowEmpty onChange={next=>setVatRegimes(current=>current.map(item=>item.id===regime.id?{...item,rate:next}:item))} className="" />
                 <label className="toggleLabel"><input type="checkbox" checked={regime.active} onChange={event=>void patchVatSetting(regime.id,{active:event.target.checked})} /> Actief</label>
               </div>)}
-              {vatRegimes.length===0 && <p className="muted">Nog geen btw-regimes ingesteld.</p>}
+              {vatRegimes.length===0 && <p className="muted">Nog geen BTW-keuzes ingesteld.</p>}
             </div>
             <div className="vatRegimeCreate">
               <input placeholder="Omschrijving" value={vatRegimeDraft.label} onChange={event=>setVatRegimeDraft(current=>({...current,label:event.target.value}))} />
@@ -2898,7 +2904,7 @@ function App() {
                 <option value="exempt">Vrijgesteld</option>
               </select>
               <DecimalInput value={vatRegimeDraft.rate} min={0} max={100} allowEmpty onChange={next=>setVatRegimeDraft(current=>({...current,rate:next}))} className="" />
-              <button type="button" onClick={()=>void createVatSetting()}>Regime toevoegen</button>
+              <button type="button" onClick={()=>void createVatSetting()}>BTW-keuze toevoegen</button>
             </div>
             {vatSettingsStatus && <p className="settingsStatus">{vatSettingsStatus}</p>}
           </div>
@@ -3387,7 +3393,7 @@ function App() {
               position: <span className="cell traceCell">{trace.position??"—"}</span>,
               recipe: <span className="cell traceCell">{trace.recipe??"—"}</span>,
               source: <span className="cell traceCell" title={trace.source??""}>{trace.source??"—"}</span>,
-              vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}{regime.treatment==="normal"&&regime.rate!=null?` (${regime.rate}%)`:regime.treatment==="reverse_charge"?" (verlegd)":regime.treatment==="exempt"?" (vrijgesteld)":""}</option>)}</select>,
+              vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
             return <div className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}`} style={{gridTemplateColumns}} key={line.id} onClick={() => {setSelectedLineId(line.id);setQuoteStatus(`Regel #${line.id} geselecteerd: ${line.description || "zonder omschrijving"}`);}}>
