@@ -33,6 +33,7 @@ import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
+import { detectSourceFactConflicts } from "./sourceFactConflict.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
 
@@ -487,8 +488,9 @@ app.get("/api/workbench/current/concept", async (req, res) => {
     }
     const overrides=await listDocumentTriageOverrides(session.calculationId);
     const concept = buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
+    const sourceConflicts=detectSourceFactConflicts(snapshot);
     res.setHeader("Cache-Control", "no-store, private");
-    res.json(concept);
+    res.json({...concept,sourceConflicts,automationBlocked:sourceConflicts.length>0});
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende conceptfout";
     console.error("BREBO Calc concept build failed:", detail);
