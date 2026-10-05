@@ -2575,7 +2575,7 @@ function App() {
         <div><span>Staartkosten</span><strong>{money.format(displayedTotals.markupAmount)}</strong></div>
         <div className="primary"><span>Verkoopprijs excl. BTW</span><strong>{money.format(displayedTotals.sales)}</strong></div>
         <div className="costMixKpi">
-          <span>Kostenverhouding directe kost</span>
+          <div className="costMixHeading"><span>Kostenverhouding directe kosten</span>{directCostMix.total>0&&<strong>{money.format(directCostMix.total)}</strong>}</div>
           {directCostMix.total>0?<div className="costMixBody">
             <div className="costMixChart" aria-label="Verdeling directe kosten">
               <svg viewBox="0 0 42 42" role="img">
@@ -2588,7 +2588,6 @@ function App() {
                   strokeDashoffset={-item.offset}
                 ><title>{item.label}: {item.percentage.toFixed(1)}% · {money.format(item.amount)}</title></circle>)}
               </svg>
-              <div className="costMixCenter"><strong>{money.format(directCostMix.total)}</strong><small>direct</small></div>
             </div>
             <div className="costMixLegend">
               {directCostMix.rows.map(item=><div key={item.key}><i className={`costMixDot costMix-${item.key}`}></i><span>{item.label}</span><b>{item.percentage.toFixed(1)}%</b><small>{money.format(item.amount)}</small></div>)}
