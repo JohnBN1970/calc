@@ -758,6 +758,63 @@ function mapServerLine(raw: Record<string, unknown>): Line {
   };
 }
 
+
+type DockWindowId="recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates";
+type DockWindowState={pinned:boolean;x:number;y:number};
+
+function PinIcon({pinned}:{pinned:boolean}){
+  return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 4h8"/><path d="M9 4v5l-3 4h12l-3-4V4"/><path d="M12 13v7"/>
+    {!pinned&&<path d="M5 19 19 5"/>}
+  </svg>;
+}
+
+function DockableWindow({id,label,children}:{id:DockWindowId;label:string;children:React.ReactNode}){
+  const storageKey="brebo-calc-window-"+id;
+  const [state,setState]=useState<DockWindowState>(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem(storageKey)??"null") as Partial<DockWindowState>|null;
+      return{pinned:saved?.pinned!==false,x:Number(saved?.x??120),y:Number(saved?.y??120)};
+    }catch{return{pinned:true,x:120,y:120};}
+  });
+  const [zIndex,setZIndex]=useState(100);
+  const dragRef=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number}|null>(null);
+
+  useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(state));},[state,storageKey]);
+
+  const shell=<div
+    className={"dockWindow "+(state.pinned?"is-pinned":"is-floating")}
+    style={state.pinned?undefined:{left:state.x,top:state.y,zIndex}}
+    onPointerDown={()=>{if(!state.pinned)setZIndex(Date.now()%100000+100);}}
+  >
+    <div className="dockWindowBar"
+      onPointerDown={event=>{
+        if(state.pinned||event.button!==0)return;
+        dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,originX:state.x,originY:state.y};
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={event=>{
+        const drag=dragRef.current;
+        if(!drag||drag.pointerId!==event.pointerId)return;
+        const x=Math.max(8,Math.min(window.innerWidth-280,drag.originX+event.clientX-drag.startX));
+        const y=Math.max(72,Math.min(window.innerHeight-80,drag.originY+event.clientY-drag.startY));
+        setState(current=>({...current,x,y}));
+      }}
+      onPointerUp={event=>{
+        if(dragRef.current?.pointerId===event.pointerId)dragRef.current=null;
+      }}
+    >
+      <strong>{label}</strong>
+      <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Vastzetten in Calc"} onClick={event=>{
+        event.stopPropagation();
+        setState(current=>({...current,pinned:!current.pinned}));
+      }}><PinIcon pinned={state.pinned}/></button>
+    </div>
+    <div className="dockWindowContent">{children}</div>
+  </div>;
+  return state.pinned?shell:createPortal(shell,document.body);
+}
+
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
@@ -2768,7 +2825,7 @@ function App() {
       <section className="workbench">
 
 
-        {recipeWorkspaceOpen && <div className="recipeWorkspace">
+        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen"><div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · recepten beheerd door Calc` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
@@ -2871,9 +2928,9 @@ function App() {
               <div><span>Calc verkoopprijs</span><strong>{money.format(totals.sales)}</strong><small>wordt na opslaan teruggekoppeld naar Office</small></div>
             </div>
           </>}
-        </div>}
+        </div></DockableWindow>}
 
-        {recipeLibraryOpen && <div className="managementWorkspace">
+        {recipeLibraryOpen && <DockableWindow id="recipe-library" label="Recepten beheren"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Receptbibliotheek</h2><p>Calc bepaalt de samenstelling; Office levert actuele normen, tarieven en prijzen.</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeLibraryOpen(false)} aria-label="Sluiten">×</button>
@@ -2915,9 +2972,9 @@ function App() {
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
-        </div>}
+        </div></DockableWindow>}
 
-        {subcalculationOpen && <div className="managementWorkspace">
+        {subcalculationOpen && <DockableWindow id="subcalculations" label="Deelcalculaties"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead">
             <div><span className="eyebrow">CALC-OWNED</span><h2>Deelcalculaties</h2><p>Eén calculatieregel of positie kan in meerdere deelcalculaties tegelijk vallen.</p></div>
             <button className="panelClose" type="button" onClick={() => setSubcalculationOpen(false)} aria-label="Sluiten">×</button>
@@ -2942,8 +2999,8 @@ function App() {
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
-        </div>}
-        {tailCostOpen && <div className="managementWorkspace">
+        </div></DockableWindow>}
+        {tailCostOpen && <DockableWindow id="tail-costs" label="Staartkosten"><div className="managementWorkspace">
           <div className="recipeWorkspaceHead"><div><span className="eyebrow">CALC-OWNED</span><h2>Staartkosten</h2><p>De verkoopprijs wordt door Calc opgebouwd bovenop de directe kostprijs.</p></div><button className="panelClose" type="button" onClick={()=>setTailCostOpen(false)}>×</button></div>
           <div className="managementGrid">
             <section className="managementCard"><h3>Component toevoegen</h3>
@@ -2980,7 +3037,7 @@ function App() {
             </section>
           </div>
           {tailCostStatus&&<div className="managementStatus">{tailCostStatus}</div>}
-        </div>}
+        </div></DockableWindow>}
         {columnSettingsOpen && <div className="columnSettingsPanel">
           <div className="columnSettingsHead"><div><strong>Kolommen</strong><span>Toon, verberg, verplaats en stel breedtes in.</span></div><button type="button" onClick={resetColumns}>Standaard herstellen</button></div>
           <div className="columnSettingsList">
@@ -2992,7 +3049,7 @@ function App() {
             </div>)}
           </div>
         </div>}
-        {priceWorkspaceOpen && <div className="priceWorkspace">
+        {priceWorkspaceOpen && <DockableWindow id="prices" label="Prijzen"><div className="priceWorkspace">
           <div className="priceWorkspaceHead">
             <div><span className="eyebrow">OFFICE PRIJSBRONNEN</span><h2>Artikelen & prijzen</h2><p>Zoek brondata uit BREBO Office of verwerk een nieuwe prijsbron voor deze calculatie.</p></div>
             <button className="panelClose" type="button" onClick={() => setPriceWorkspaceOpen(false)} aria-label="Sluiten">×</button>
@@ -3050,7 +3107,7 @@ function App() {
             </div>)}
           </div>}
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
-        </div>}
+        </div></DockableWindow>}
 
         {financialIntegrityStatus&&<div className="financialIntegrityWarning" role="alert">
           <strong>Financiële overlap geblokkeerd</strong>
