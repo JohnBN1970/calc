@@ -1384,7 +1384,7 @@ function App() {
       setRecipeTreeOpenState(current=>current[node.path]===open?current:{...current,[node.path]:open});
       if(recipeTreeExpansion!=="default")setRecipeTreeExpansion("default");
     }}>
-      <summary><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
+      <summary title={classificationScheme==="custom"?"":versionStatus==="established"?"Start een nieuwe conceptversie om structuur toe te voegen":"Dubbelklik om deze classificatiestructuur aan de calculatie toe te voegen"} onDoubleClick={event=>{event.preventDefault();event.stopPropagation();addClassificationPathToCalculation(node.path);}}><span>{node.name}</span><small>{recipeTreeItemCount(node)}</small></summary>
       <div className="recipeTreeBranch">
         {renderRecipeTreeNodes(node.children)}
         <div className="recipeTreeItems">{node.items.map(recipe=>
@@ -2482,6 +2482,31 @@ function App() {
     sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,
     sourceTextRegions:null,sourceOfferSummary:null,manualScopes:[]
   });
+
+  const addClassificationPathToCalculation=(treePath:string)=>{
+    if(versionStatus==="established"||classificationScheme==="custom")return;
+    const path=treePath.split(" / ").map(part=>part.trim()).filter(Boolean);
+    if(!path.length)return;
+    const working=[...lines];
+    const created:Line[]=[];
+    let id=nextId;
+    let parent:Line|null=null;
+    for(let index=0;index<path.length;index++){
+      const raw=path[index];
+      const code=canonicalClassificationCode(raw);
+      const folder=classificationFolderAt(classificationScheme,path,index);
+      const lineType:"chapter"|"paragraph"=index===0?"chapter":"paragraph";
+      const parentId=index===0?null:parent?.id??null;
+      const existing=working.find(line=>line.lineType===lineType&&line.parentId===parentId&&canonicalClassificationCode(line.code)===code);
+      if(existing){parent=existing;continue;}
+      const createdLine=emptyStructureLine({id:id--,parentId,lineType,code,description:folder?.label??classificationPartLabel(raw)||`${classificationLabel[classificationScheme]} ${code}`});
+      working.push(createdLine);created.push(createdLine);parent=createdLine;
+    }
+    if(!created.length){setStatus("Deze classificatiestructuur staat al in de calculatie.");return;}
+    setLines(current=>[...current,...created]);
+    setNextId(id);
+    setStatus(`${created.length} structuurregel(s) uit ${classificationLabel[classificationScheme]} toegevoegd — nog opslaan`);
+  };
 
   const ensureRecipeClassificationTarget=(recipe:CalcRecipe):{
     paragraph:Line|null;
