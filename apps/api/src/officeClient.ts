@@ -260,6 +260,8 @@ export type OfficeCalculationContextSnapshot = {
       source_page: number | null;
       source_fragment: string | null;
       extraction_method: string | null;
+      measurement_kind?: string | null;
+      measurement_reference?: string | null;
       confidence: number;
       review_status: string;
     }>;
@@ -283,6 +285,8 @@ export type OfficeCalculationContextSnapshot = {
       bottom_m: number | null;
       left_m: number | null;
       right_m: number | null;
+      measurement_kind?: string | null;
+      measurement_reference?: string | null;
     }>;
     review: {
       has_context: boolean;
