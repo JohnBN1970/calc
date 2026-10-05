@@ -822,15 +822,16 @@ function DockableWindow({id,label,children,collapsible=false}:{id:DockWindowId;l
           event.stopPropagation();
           setState(current=>({...current,collapsed:!current.collapsed}));
         }} aria-label={state.collapsed?"Uitklappen":"Inklappen"}>{state.collapsed?"▾":"▴"}</button>}
-        <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Vastzetten in Calc"} onClick={event=>{
+        <button type="button" className="pinButton" title={state.pinned?"Losmaken en verslepen":"Terugzetten in Calc"} aria-label={state.pinned?"Losmaken en verslepen":"Terugzetten in Calc"} onClick={event=>{
           event.stopPropagation();
+          dragRef.current=null;
           setState(current=>({...current,pinned:!current.pinned}));
         }}><PinIcon pinned={state.pinned}/></button>
       </div>
     </div>
     {!state.collapsed&&<div className="dockWindowContent">{children}</div>}
   </div>;
-  return state.pinned?shell:createPortal(shell,document.body);
+  return <><div className="dockWindowSlot" data-window-slot={id}>{state.pinned?shell:null}</div>{!state.pinned&&createPortal(shell,document.body)}</>;
 }
 
 function App() {
