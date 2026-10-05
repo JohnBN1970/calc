@@ -751,7 +751,8 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const [versions]=await db.execute<RowDataPacket[]>(
-      `SELECT id,status,direct_cost,markup_amount,sales_price
+      `SELECT id,status,direct_cost,markup_amount,sales_price,
+              source_office_version,source_selection_version
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -765,7 +766,8 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
     }
     const [lineRows]=await db.execute<RowDataPacket[]>(
       `SELECT line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
-              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id
+              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id,
+              price_source_type,source_details
          FROM calculation_lines
         WHERE version_id=?`,
       [version.id]
@@ -809,10 +811,39 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       storedSalesPrice:Number(version.sales_price??0),
       vatTaxableBase
     });
+    const sourceReasons:string[]=[];
+    const derivedContext=deriveSourceContextBinding(lineRows.map(row=>({
+      priceSourceType:String(row.price_source_type??"manual"),
+      sourceDetails:row.source_details==null?null:String(row.source_details)
+    })));
+    if(derivedContext.status==="mixed")sourceReasons.push("Receptregels gebruiken verschillende Office-broncontexten.");
+    if(derivedContext.status==="unbound")sourceReasons.push("Receptregels missen een aantoonbare Office-broncontext; bouw het concept opnieuw op.");
+    if(derivedContext.status==="bound"){
+      const [currentOffice,currentContext]=await Promise.all([
+        fetchOfficeWorkspaceState(session.officeCalculationId),
+        fetchCalculationContextSnapshot(session.officeCalculationId)
+      ]);
+      const storedBinding={
+        officeVersion:version.source_office_version==null?"":String(version.source_office_version),
+        selectionVersion:version.source_selection_version==null?null:String(version.source_selection_version)
+      };
+      if(storedBinding.officeVersion!==derivedContext.binding!.officeVersion||
+         storedBinding.selectionVersion!==derivedContext.binding!.selectionVersion){
+        sourceReasons.push("De opgeslagen broncontextbinding wijkt af van de receptregels; sla de calculatie opnieuw op.");
+      }else if(!sourceContextIsCurrent({
+        binding:derivedContext.binding,
+        officeVersion:String(currentOffice.version.version),
+        selectionVersion:currentContext.context.document_set?.selection_version??null
+      })){
+        sourceReasons.push("Office-brondata of documentselectie is gewijzigd; bouw het Calc-concept opnieuw op vóór publicatie.");
+      }
+    }
     res.setHeader("Cache-Control","no-store, private");
     res.json({
       contract:"brebo-calc-publication-readiness-v1",
       ...readiness,
+      canPublish:readiness.canPublish&&sourceReasons.length===0,
+      reasons:[...readiness.reasons,...sourceReasons],
       totals:{directCost,markupAmount:hierarchy.tailCost,salesPrice:hierarchy.salesPrice,vatTaxableBase}
     });
   }catch(error){
