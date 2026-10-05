@@ -936,6 +936,7 @@ function App() {
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
   const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
   const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
+  const [recipeTreeQuery,setRecipeTreeQuery]=useState("");
   const [recipeDropTargetId,setRecipeDropTargetId]=useState<number|null>(null);
   const [subcalculationOpen, setSubcalculationOpen] = useState(false);
   const [recipes, setRecipes] = useState<CalcRecipe[]>([]);
@@ -1177,22 +1178,73 @@ function App() {
         sales: activeSubcalculationResult.salesPrice
       }
     : totals;
-  const recipeTreeGroups=useMemo(()=>{
-    const groups=new Map<string,CalcRecipe[]>();
-    for(const recipe of recipes.filter(item=>item.status!=="archived")){
-      const applicabilityCategory=typeof recipe.applicability?.category==="string"
-        ? String(recipe.applicability.category).trim()
-        : "";
-      const keyParts=recipe.recipeKey.split(/[\/:>]+/).map(item=>item.trim()).filter(Boolean);
-      const category=applicabilityCategory||(keyParts.length>1?keyParts.slice(0,-1).join(" / "):"Algemeen");
-      const items=groups.get(category)??[];
-      items.push(recipe);
-      groups.set(category,items);
+  type RecipeTreeNode={name:string;path:string;children:RecipeTreeNode[];items:CalcRecipe[]};
+  const recipeTree=useMemo(()=>{
+    const root:RecipeTreeNode={name:"",path:"",children:[],items:[]};
+    const query=recipeTreeQuery.trim().toLocaleLowerCase("nl");
+    const source=recipes.filter(recipe=>{
+      if(recipe.status==="archived")return false;
+      if(!query)return true;
+      return [recipe.name,recipe.recipeKey,recipe.description??"",typeof recipe.applicability?.category==="string"?String(recipe.applicability.category):""]
+        .some(value=>value.toLocaleLowerCase("nl").includes(query));
+    });
+    for(const recipe of source){
+      const category=typeof recipe.applicability?.category==="string"?String(recipe.applicability.category).trim():"";
+      const keyParts=recipe.recipeKey.split(/[\\/:>]+/).map(item=>item.trim()).filter(Boolean);
+      const pathParts=(category?category.split(/[\\/:>]+/):keyParts.slice(0,-1)).map(item=>item.trim()).filter(Boolean);
+      const parts=pathParts.length?pathParts:["Algemeen"];
+      let node=root;
+      for(const part of parts){
+        let child=node.children.find(item=>item.name===part);
+        if(!child){
+          const path=node.path?`${node.path} / ${part}`:part;
+          child={name:part,path,children:[],items:[]};
+          node.children.push(child);
+        }
+        node=child;
+      }
+      node.items.push(recipe);
     }
-    return [...groups.entries()]
-      .map(([category,items])=>({category,items:items.sort((a,b)=>a.name.localeCompare(b.name,"nl"))}))
-      .sort((a,b)=>a.category.localeCompare(b.category,"nl"));
-  },[recipes]);
+    const sortNode=(node:RecipeTreeNode)=>{
+      node.children.sort((a,b)=>a.name.localeCompare(b.name,"nl"));
+      node.items.sort((a,b)=>a.name.localeCompare(b.name,"nl"));
+      node.children.forEach(sortNode);
+    };
+    sortNode(root);
+    return root;
+  },[recipes,recipeTreeQuery]);
+
+  const renderRecipeTreeNodes=(nodes:RecipeTreeNode[]):React.ReactNode=>nodes.map(node=>
+    <details className="recipeTreeGroup" open={recipeTreeQuery.trim().length>0||undefined} key={node.path}>
+      <summary><span>{node.name}</span><small>{node.items.length+node.children.reduce((sum,child)=>sum+child.items.length,0)}</small></summary>
+      <div className="recipeTreeBranch">
+        {renderRecipeTreeNodes(node.children)}
+        <div className="recipeTreeItems">{node.items.map(recipe=>
+          <button
+            type="button"
+            className="recipeTreeItem"
+            key={recipe.id}
+            draggable={versionStatus!=="established"}
+            title="Sleep dit recept naar een paragraaf in de calculatie"
+            onDragStart={event=>{
+              event.dataTransfer.effectAllowed="copy";
+              event.dataTransfer.setData(recipeDragMime,String(recipe.id));
+              event.dataTransfer.setData("text/plain",recipe.name);
+              setSelectedRecipeVersionId(recipe.id);
+            }}
+            onDoubleClick={()=>{
+              setSelectedRecipeVersionId(recipe.id);
+              setRecipeWorkspaceOpen(true);
+              setRecipeActionStatus(`${recipe.name} geselecteerd. Kies een doelparagraaf en bronpositie.`);
+            }}
+          >
+            <span className="recipeTreeGrip" aria-hidden="true">⋮⋮</span>
+            <span><strong>{recipe.name}</strong><small>{recipe.recipeKey} · v{recipe.versionNo}</small></span>
+          </button>
+        )}</div>
+      </div>
+    </details>
+  );
 
   const directCostMix = useMemo(() => {
     const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
@@ -3176,40 +3228,14 @@ function App() {
       <div className={"calcWorkspaceShell"+(recipeTreeCollapsed?" recipeTreeCollapsed":"")}>
         <DockableWindow id="recipe-tree" label="Recepten" collapsible>
           <aside className="recipeTreeSidebar isDockableRecipeTree" aria-label="Recepten en vensters">
-          <div className="recipeTreeHeader">
-            {!recipeTreeCollapsed&&<strong>Recepten</strong>}
-            <button type="button" className="recipeTreeCollapse" onClick={()=>setRecipeTreeCollapsed(value=>!value)} title={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"} aria-label={recipeTreeCollapsed?"Recepten openen":"Recepten inklappen"}>{recipeTreeCollapsed?"›":"‹"}</button>
-          </div>
           {!recipeTreeCollapsed&&<>
+            <div className="recipeTreeSearch">
+              <span aria-hidden="true">⌕</span>
+              <input value={recipeTreeQuery} onChange={event=>setRecipeTreeQuery(event.target.value)} placeholder="Zoek recept…" aria-label="Zoek recept" />
+              {recipeTreeQuery&&<button type="button" onClick={()=>setRecipeTreeQuery("")} aria-label="Zoekopdracht wissen">×</button>}
+            </div>
             <div className="recipeTreeBody">
-              {recipeTreeGroups.length===0?<p className="muted">Nog geen recepten.</p>:recipeTreeGroups.map(group=>
-                <details className="recipeTreeGroup" open key={group.category}>
-                  <summary>{group.category}<small>{group.items.length}</small></summary>
-                  <div className="recipeTreeItems">{group.items.map(recipe=>
-                    <button
-                      type="button"
-                      className="recipeTreeItem"
-                      key={recipe.id}
-                      draggable={versionStatus!=="established"}
-                      title="Sleep dit recept naar een paragraaf in de calculatie"
-                      onDragStart={event=>{
-                        event.dataTransfer.effectAllowed="copy";
-                        event.dataTransfer.setData(recipeDragMime,String(recipe.id));
-                        event.dataTransfer.setData("text/plain",recipe.name);
-                        setSelectedRecipeVersionId(recipe.id);
-                      }}
-                      onDoubleClick={()=>{
-                        setSelectedRecipeVersionId(recipe.id);
-                        setRecipeWorkspaceOpen(true);
-                        setRecipeActionStatus(`${recipe.name} geselecteerd. Kies een doelparagraaf en bronpositie.`);
-                      }}
-                    >
-                      <span className="recipeTreeGrip" aria-hidden="true">⋮⋮</span>
-                      <span><strong>{recipe.name}</strong><small>{recipe.recipeKey} · v{recipe.versionNo}</small></span>
-                    </button>
-                  )}</div>
-                </details>
-              )}
+              {recipeTree.children.length===0?<p className="muted">{recipeTreeQuery?"Geen recepten gevonden.":"Nog geen recepten."}</p>:renderRecipeTreeNodes(recipeTree.children)}
             </div>
             <div className="recipeTreeActions">
               <strong>Vensters</strong>
