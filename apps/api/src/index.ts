@@ -1114,7 +1114,7 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
     }));
     res.setHeader("Cache-Control","no-store, private");
     res.json({
-      contract:"brebo-calc-subcalculation-results-v2",
+      contract:"brebo-calc-subcalculation-results-v3",
       versionId,
       totalDirect:hierarchy.totalDirectCost,
       mainDirect:hierarchy.mainDirectCost,
