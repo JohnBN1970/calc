@@ -2223,7 +2223,12 @@ function App() {
     }
     setRecipeActionStatus(parts.join(" · ")+".");
   };
-  const acceptRecipeProposal = async (proposal: WorkbenchAggregate["recipeProposals"][number], paragraphKeyOverride?:string) => {
+  const acceptRecipeProposal = async (
+    proposal: WorkbenchAggregate["recipeProposals"][number],
+    paragraphKeyOverride?:string,
+    paragraphLineOverride?:Line,
+    startingIdOverride?:number
+  ) => {
     const targetParagraphKey=paragraphKeyOverride??recipeParagraphKey;
     if (!targetParagraphKey || !aggregate) {
       setRecipeActionStatus("Kies eerst een Calc-paragraaf.");
@@ -2258,8 +2263,8 @@ function App() {
       if (!response.ok) throw new Error(String(payload.error ?? "Recept kon niet worden gegenereerd."));
       if (!Array.isArray(payload.lines) || payload.lines.length === 0) throw new Error("Het Calc-recept leverde geen regels op.");
 
-      let paragraphLine:Line|undefined;
-      if(targetParagraphKey==="__auto__"){
+      let paragraphLine:Line|undefined=paragraphLineOverride;
+      if(!paragraphLine&&targetParagraphKey==="__auto__"){
         const group=aggregate.structureProposal.groups.find(item=>
           item.recipeRef===proposal.recipeRef&&item.positionRefs.includes(proposal.positionRef)
         );
@@ -2270,14 +2275,14 @@ function App() {
           line.description.trim().toLocaleLowerCase("nl-NL")===group.label.trim().toLocaleLowerCase("nl-NL")
         ));
         if(!paragraphLine)throw new Error("Pas eerst het Calc-structuurvoorstel toe.");
-      }else{
+      }else if(!paragraphLine){
         paragraphLine=targetParagraphKey.startsWith("local:")
           ? lines.find(line=>line.lineType==="paragraph"&&line.id===Number(targetParagraphKey.slice(6)))
           : lines.find(line=>line.lineType==="paragraph"&&line.structureKey===targetParagraphKey);
       }
       if (!paragraphLine) throw new Error("De gekozen Calc-paragraaf is niet meer beschikbaar.");
 
-      let id = nextId;
+      let id = startingIdOverride??nextId;
       const created: Line[] = [];
       const paragraphId = paragraphLine.id;
 
@@ -2329,6 +2334,71 @@ function App() {
     }
   };
 
+  const normalizedStructureCode=(value:string)=>value.trim().toLocaleLowerCase("nl-NL").replace(/\s+/g,"");
+  const emptyStructureLine=(input:{id:number;parentId:number|null;lineType:"chapter"|"paragraph";code:string;description:string}):Line=>({
+    id:input.id,parentId:input.parentId,lineType:input.lineType,code:input.code,description:input.description,
+    unit:"",quantity:0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+    labour:0,material:0,equipment:0,subcontracting:0,other:0,
+    priceSourceType:"manual",officeSourceId:null,sourceReference:null,sourceSupplier:null,
+    sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:null,
+    sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,
+    sourceTextRegions:null,sourceOfferSummary:null,manualScopes:[]
+  });
+
+  const ensureRecipeClassificationTarget=(recipe:CalcRecipe):{
+    paragraph:Line|null;
+    created:Line[];
+    nextAvailableId:number;
+    message:string|null;
+  }=>{
+    if(classificationScheme==="custom")return{paragraph:null,created:[],nextAvailableId:nextId,message:null};
+    const path=recipeClassificationPath(recipe,classificationScheme);
+    if(path.length<2){
+      return{
+        paragraph:null,created:[],nextAvailableId:nextId,
+        message:`${recipe.name} heeft nog geen volledige ${classificationLabel[classificationScheme]}-indeling. Vul minimaal hoofdgroep en paragraafcode in bij Recepten beheren.`
+      };
+    }
+
+    const working=[...lines];
+    const created:Line[]=[];
+    let id=nextId;
+    let parent:Line|null=null;
+
+    for(let index=0;index<path.length;index++){
+      const code=path[index].trim();
+      const lineType=index===0?"chapter":"paragraph";
+      let parentId:number|null=null;
+      if(index>0&&parent!==null)parentId=(parent as Line).id;
+      const existing:Line|undefined=working.find((line:Line)=>
+        line.lineType===lineType&&
+        line.parentId===parentId&&
+        normalizedStructureCode(line.code)===normalizedStructureCode(code)
+      );
+      if(existing){
+        parent=existing;
+        continue;
+      }
+      const createdLine=emptyStructureLine({
+        id:id--,
+        parentId,
+        lineType,
+        code,
+        description:`${classificationLabel[classificationScheme]} ${code}`
+      });
+      working.push(createdLine);
+      created.push(createdLine);
+      parent=createdLine;
+    }
+
+    return{
+      paragraph:parent?.lineType==="paragraph"?parent:null,
+      created,
+      nextAvailableId:id,
+      message:null
+    };
+  };
+
   const recipeDragMime="application/x-brebo-calc-recipe";
   const paragraphForDrop=(line:Line):Line|null=>{
     if(line.lineType==="paragraph")return line;
@@ -2349,11 +2419,27 @@ function App() {
     const recipeId=Number(event.dataTransfer.getData(recipeDragMime));
     const recipe=recipes.find(item=>item.id===recipeId);
     if(!recipe)return;
-    const paragraph=paragraphForDrop(targetLine);
-    if(!paragraph){
-      setRecipeActionStatus("Sleep het recept op een paragraaf of op een regel binnen die paragraaf.");
+    const classifiedTarget=ensureRecipeClassificationTarget(recipe);
+    if(classifiedTarget.message){
+      setSelectedRecipeVersionId(recipe.id);
+      setRecipeLibraryOpen(true);
+      setRecipeActionStatus(classifiedTarget.message);
+      setManagementStatus(classifiedTarget.message);
       return;
     }
+
+    let paragraph=classifiedTarget.paragraph??paragraphForDrop(targetLine);
+    if(!paragraph){
+      setRecipeActionStatus("Sleep het recept op een paragraaf of vul eerst de classificatie van het recept aan.");
+      return;
+    }
+
+    if(classifiedTarget.created.length){
+      setLines(current=>[...current,...classifiedTarget.created]);
+      setNextId(classifiedTarget.nextAvailableId);
+      setStatus("Concept — classificatiestructuur toegevoegd, nog niet opgeslagen");
+    }
+
     const targetKey=paragraphKey(paragraph);
     setSelectedRecipeVersionId(recipe.id);
     setRecipeParagraphKey(targetKey);
@@ -2369,16 +2455,25 @@ function App() {
       const proposal=candidates[0];
       const takeoffs=aggregate?.takeoffs.filter(row=>row.position_ref.trim()===proposal.positionRef)??[];
       if(takeoffs.length<=1||selectedTakeoffByPosition[proposal.positionRef]){
-        setRecipeActionStatus(`${recipe.name} wordt in ${paragraph.description} geplaatst…`);
-        await acceptRecipeProposal(proposal,targetKey);
+        const placement=classificationScheme==="custom"
+          ? paragraph.description
+          : `${classificationLabel[classificationScheme]} ${paragraph.code}`;
+        setRecipeActionStatus(`${recipe.name} wordt in ${placement} geplaatst…`);
+        await acceptRecipeProposal(
+          proposal,
+          targetKey,
+          classifiedTarget.paragraph??undefined,
+          classifiedTarget.created.length?classifiedTarget.nextAvailableId:undefined
+        );
         return;
       }
     }
 
     setRecipeWorkspaceOpen(true);
+    const placementLabel=classificationScheme==="custom"?paragraph.description:`${classificationLabel[classificationScheme]} ${paragraph.code}`;
     setRecipeActionStatus(candidates.length===0
-      ? `${recipe.name} is op ${paragraph.description} neergezet. Kies in Recept toepassen de bronpositie waarmee dit recept moet worden doorgerekend.`
-      : `${recipe.name} is op ${paragraph.description} neergezet. Er zijn meerdere mogelijke bronposities; kies de juiste en bevestig.`);
+      ? `${recipe.name} is gekoppeld aan ${placementLabel}. Kies in Recept toepassen de bronpositie waarmee dit recept moet worden doorgerekend.`
+      : `${recipe.name} is gekoppeld aan ${placementLabel}. Er zijn meerdere mogelijke bronposities; kies de juiste en bevestig.`);
   };
 
   const patchLine = (id: number, patch: Partial<Line>) => {
@@ -3801,7 +3896,7 @@ function App() {
               vat: <select className="cell" value={line.vatRegimeId ?? ""} onClick={event=>event.stopPropagation()} onChange={event=>patchLine(line.id,{vatRegimeId:event.target.value===""?null:Number(event.target.value)})}><option value="">—</option>{vatRegimes.filter(regime=>regime.active||regime.id===line.vatRegimeId).map(regime=><option key={regime.id} value={regime.id}>{regime.label}</option>)}</select>,
               total: <div className="lineTotalCell"><strong>{line.lineType==="note" ? "—" : money.format(effectiveLineDirect(line))}</strong><LineActions line={line} /></div>
             };
-            const canReceiveRecipe=paragraphForDrop(line)!=null;
+            const canReceiveRecipe=classificationScheme!=="custom"||paragraphForDrop(line)!=null;
             return <div
               className={`row data configurableRow type-${line.lineType}${selectedLineId===line.id?" is-selected":""}${selectedLineIds.includes(line.id)?" is-bulk-selected":""}${recipeDropTargetId===line.id?" is-recipe-drop-target":""}`}
               style={{gridTemplateColumns}}
