@@ -33,6 +33,7 @@ import { calculatePublicationFreshness } from "./publicationFreshness.js";
 import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { diffCommercialTotals, diffVersionLines, type VersionDiffLine } from "./versionDiff.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
+import { assessDocumentRevisions } from "./sourceRevision.js";
 import { detectSourceFactConflicts } from "./sourceFactConflict.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
@@ -473,6 +474,23 @@ app.delete("/api/workbench/current/document-triage/:documentId", async (req,res)
     res.json({item});
   }catch(error){
     res.status(500).json({error:error instanceof Error?error.message:"Documenttriage kon niet worden hersteld."});
+  }
+});
+
+app.get("/api/workbench/current/source-revisions", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const snapshot=await fetchCalculationContextSnapshot(session.officeCalculationId);
+    const revisions=assessDocumentRevisions(snapshot);
+    res.setHeader("Cache-Control","no-store, private");
+    res.json({
+      contract:"brebo-calc-source-revisions-v1",
+      calculationId:session.calculationId,
+      sourceDocumentSetId:snapshot.context.document_set?.id??null,
+      revisions
+    });
+  }catch(error){
+    res.status(502).json({error:error instanceof Error?error.message:"Bronrevisies konden niet worden beoordeeld."});
   }
 });
 
