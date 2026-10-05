@@ -805,7 +805,7 @@ app.get("/api/workbench/current/versions", async (req,res)=>{
   try{
     const [rows]=await db.execute<RowDataPacket[]>(
       `SELECT v.id,v.version_no,v.status,v.direct_cost,v.markup_amount,v.sales_price,
-              v.content_hash,v.established_at,v.created_at,s.snapshot_contract
+              v.content_hash,v.established_at,v.created_at,s.snapshot_contract,s.snapshot_json
          FROM calculation_versions v
          LEFT JOIN calculation_version_snapshots s ON s.version_id=v.id
         WHERE v.calculation_id=?
@@ -815,18 +815,37 @@ app.get("/api/workbench/current/versions", async (req,res)=>{
     res.setHeader("Cache-Control","no-store, private");
     res.json({
       contract:"brebo-calc-version-history-v1",
-      versions:rows.map(row=>({
-        id:Number(row.id),
-        versionNo:Number(row.version_no),
-        status:String(row.status),
-        directCost:Number(row.direct_cost??0),
-        markupAmount:Number(row.markup_amount??0),
-        salesPrice:Number(row.sales_price??0),
-        contentHash:row.content_hash==null?null:String(row.content_hash),
-        establishedAt:row.established_at instanceof Date?row.established_at.toISOString():row.established_at==null?null:String(row.established_at),
-        createdAt:row.created_at instanceof Date?row.created_at.toISOString():String(row.created_at),
-        snapshotContract:row.snapshot_contract==null?null:String(row.snapshot_contract)
-      }))
+      versions:rows.map(row=>{
+        let commercialSummary:null|Record<string,unknown>=null;
+        if(row.snapshot_json!=null){
+          try{
+            const snapshot=typeof row.snapshot_json==="string"?JSON.parse(row.snapshot_json):row.snapshot_json;
+            const summary=snapshot?.commercial?.summary;
+            if(summary&&typeof summary==="object")commercialSummary=summary as Record<string,unknown>;
+          }catch{}
+        }
+        return{
+          id:Number(row.id),
+          versionNo:Number(row.version_no),
+          status:String(row.status),
+          directCost:Number(row.direct_cost??0),
+          markupAmount:Number(row.markup_amount??0),
+          salesPrice:Number(row.sales_price??0),
+          contentHash:row.content_hash==null?null:String(row.content_hash),
+          establishedAt:row.established_at instanceof Date?row.established_at.toISOString():row.established_at==null?null:String(row.established_at),
+          createdAt:row.created_at instanceof Date?row.created_at.toISOString():String(row.created_at),
+          snapshotContract:row.snapshot_contract==null?null:String(row.snapshot_contract),
+          commercialSummary:commercialSummary?{
+            purchase:Number(commercialSummary.purchase??0),
+            sales:Number(commercialSummary.sales??0),
+            margin:Number(commercialSummary.margin??0),
+            marginPct:Number(commercialSummary.marginPct??0),
+            vat:Number(commercialSummary.vat??0),
+            vatRate:commercialSummary.vatRate==null?null:Number(commercialSummary.vatRate),
+            vatBreakdown:Array.isArray(commercialSummary.vatBreakdown)?commercialSummary.vatBreakdown:[]
+          }:null
+        };
+      })
     });
   }catch(error){
     res.status(500).json({error:error instanceof Error?error.message:"Versiehistorie kon niet worden geladen."});
