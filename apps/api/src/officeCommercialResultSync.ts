@@ -68,3 +68,22 @@ export function verifyOfficeCommercialSummary(
   }
   verifyBreakdown(actual.vat_breakdown,expected.vat_breakdown,tolerance);
 }
+
+
+export type OfficePublicationBinding={
+  snapshot_id:number;
+  office_version:string;
+  calc_version:string;
+  current_for_office_version?:boolean;
+};
+
+export function verifyOfficePublicationBinding(
+  actual:OfficePublicationBinding|null|undefined,
+  expected:{snapshotId:number;officeVersion:string;calcVersion:string}
+):void{
+  if(!actual)throw new Error("Office bevestigde geen Calc-publicatie.");
+  if(Number(actual.snapshot_id)!==expected.snapshotId)throw new Error("Office bevestigde een andere Calc-publicatiesnapshot.");
+  if(String(actual.calc_version)!==String(expected.calcVersion))throw new Error("Office bevestigde een andere Calc-versie.");
+  if(String(actual.office_version)!==String(expected.officeVersion))throw new Error("Office bevestigde een andere Office-versie.");
+  if(actual.current_for_office_version!==true)throw new Error("Office is gewijzigd tijdens de Calc-publicatie. Publiceer opnieuw vanaf de actuele Office-versie.");
+}
