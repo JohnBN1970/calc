@@ -3107,7 +3107,7 @@ function App() {
             </div>)}
           </div>}
           <div className="sourcePrinciple"><strong>Office beheert de bron.</strong><span>Calc bewaart bij gebruik een prijssnapshot met Office-referentie, leverancier, prijsdatum en documentbron.</span></div>
-        </div>}
+        </div></DockableWindow>}
 
         {financialIntegrityStatus&&<div className="financialIntegrityWarning" role="alert">
           <strong>Financiële overlap geblokkeerd</strong>
@@ -3169,7 +3169,7 @@ function App() {
                 : <small>Nog geen deelcalculatie</small>}
             </button>)}
           </div>
-        </div></DockableWindow>}
+        </div>}
 
         {selectedLineIds.length > 0 && <div className="bulkBar">
           <strong>{selectedLineIds.length} geselecteerd</strong>
