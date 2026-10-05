@@ -26,6 +26,7 @@ import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } f
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { calculatePublicationFreshness } from "./publicationFreshness.js";
+import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
 import { triageCalculationDocuments } from "./documentTriage.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 
@@ -1222,6 +1223,12 @@ app.put("/api/workbench/current", async (req, res) => {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
   }
+  const sourceContext=deriveSourceContextBinding(lines);
+  if(sourceContext.status==="mixed"){
+    res.status(409).json({error:"Calculatie bevat receptregels uit verschillende Office-broncontexten. Bouw het Calc-concept opnieuw op vanuit één actuele context."});
+    return;
+  }
+
   const unresolvedLines = lines.filter(line => line.resolutionStatus === "unresolved");
   if (unresolvedLines.length) {
     res.status(409).json({
@@ -1390,8 +1397,18 @@ app.put("/api/workbench/current", async (req, res) => {
     const markupAmount = tailHierarchy.tailCost;
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
-      "UPDATE calculation_versions SET direct_cost = ?, markup_amount = ?, sales_price = ? WHERE id = ?",
-      [directCost, markupAmount, salesPrice, version.id]
+      `UPDATE calculation_versions
+          SET direct_cost=?,markup_amount=?,sales_price=?,
+              source_office_version=?,source_selection_version=?,
+              source_bound_at=?
+        WHERE id=?`,
+      [
+        directCost,markupAmount,salesPrice,
+        sourceContext.status==="bound"?sourceContext.binding!.officeVersion:null,
+        sourceContext.status==="bound"?sourceContext.binding!.selectionVersion:null,
+        sourceContext.status==="bound"?new Date():null,
+        version.id
+      ]
     );
     await connection.execute(
       "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
