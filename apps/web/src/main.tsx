@@ -3325,12 +3325,12 @@ function App() {
           <div className="columnChooserMenu structureChooserMenu" onClick={event=>event.stopPropagation()}>
             <div className="columnChooserHead"><strong>Structuur</strong><small>{classificationLabel[classificationScheme]}</small></div>
             <div className="structureChooserList">
-              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("chapter")}>Nieuw hoofdstuk</button>
-              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={()=>addLine("paragraph")}>Nieuwe paragraaf</button>
+              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={event=>{addLine("chapter");event.currentTarget.closest("details")?.removeAttribute("open");}}>Nieuw hoofdstuk</button>
+              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={event=>{addLine("paragraph");event.currentTarget.closest("details")?.removeAttribute("open");}}>Nieuwe paragraaf</button>
               {classificationScheme!=="custom"&&<small>Hoofdgroepen en paragrafen komen uit de {classificationLabel[classificationScheme]}-zoekboom.</small>}
               <hr />
-              <button type="button" onClick={collapseAllStructure}>Alles inklappen</button>
-              <button type="button" onClick={expandAllStructure}>Alles uitklappen</button>
+              <button type="button" onClick={event=>{collapseAllStructure();event.currentTarget.closest("details")?.removeAttribute("open");}}>Alles inklappen</button>
+              <button type="button" onClick={event=>{expandAllStructure();event.currentTarget.closest("details")?.removeAttribute("open");}}>Alles uitklappen</button>
             </div>
           </div>
         </details>
@@ -3485,8 +3485,8 @@ function App() {
           <div className="helpSearch"><Icon name="help"/><input autoFocus value={helpQuery} onChange={event=>setHelpQuery(event.target.value)} placeholder="Zoeken in Calc-help…" /></div>
           <div className="helpContents">
             {[
-              {title:"Starten met een calculatie",keywords:"start project office calculatie",body:"Open Calc vanuit Office. Voeg hoofdstukken, paragrafen en regels toe of gebruik de receptenboom. Werk altijd in een conceptversie; een vastgestelde versie is niet meer wijzigbaar."},
-              {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur",body:"Hoofdstukken zijn de hoofdgroepen van de calculatie. Paragrafen hangen onder een hoofdstuk en kunnen hun eigen prijs-/subtotalisatie tonen. Regels horen onder een paragraaf of rechtstreeks onder een hoofdstuk."},
+              {title:"Starten met een calculatie",keywords:"start project office calculatie structuur nlsfb stabu vrij",body:"Open Calc vanuit Office. Bij NL-SfB of STABU bouw je de calculatiestructuur vanuit de zoekboom; dubbelklik op een classificatiemap om de ontbrekende structuur toe te voegen. Bij Vrij maak je hoofdstukken en paragrafen zelf via Structuur. Gewone calculatieregels voeg je altijd vrij toe."},
+              {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur nlsfb stabu zoekboom",body:"De calculatie gebruikt één stelsel: NL-SfB, STABU of Vrij. Bij NL-SfB/STABU komen hoofdgroepen, paragrafen, codes en omschrijvingen uit de zoekboom en zijn ze niet vrij wijzigbaar. Alleen bij Vrij beheer je de structuur handmatig. Iedere structuurregel toont zijn niveau en eigen subtotaal."},
               {title:"Calculatieregels",keywords:"regel aantal norm uren uurprijs materiaal materieel onderaanneming btw",body:"Vul hoeveelheid, norm of totaaluren en de kostendragers in. Arbeid rekent met totaaluren × uurprijs; materiaal, materieel, onderaanneming en overig rekenen per hoeveelheid."},
               {title:"BTW",keywords:"btw hoog laag verlegd vrijgesteld",body:"Kies per verkoopregel de BTW-keuze Hoog, Laag, Verlegd of Vrijgesteld. De KPI-zone totaliseert de grondslag en het BTW-bedrag en toont totaal excl. en incl. BTW."},
               {title:"Recepten",keywords:"recept boom slepen toepassen",body:"Gebruik de receptenboom links. Sleep een recept naar een paragraaf of regel binnen die paragraaf. Bij een eenduidige bron wordt het recept direct toegepast; anders opent Recept toepassen voor controle."},
