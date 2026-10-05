@@ -1777,7 +1777,7 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
   try{
     await connection.beginTransaction();
     const [versions]=await connection.execute<RowDataPacket[]>(
-      `SELECT id,version_no,status
+      `SELECT id,version_no,status,source_office_version,source_selection_version,source_bound_at
          FROM calculation_versions
         WHERE calculation_id=?
         ORDER BY version_no DESC
@@ -1815,13 +1815,17 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
     const nextVersionNo=Number(current.version_no)+1;
     const [insertVersion]=await connection.execute<ResultSetHeader>(
       `INSERT INTO calculation_versions
-        (calculation_id,version_no,status,direct_cost,markup_amount,sales_price)
-       VALUES(?,?,'draft',?,?,?)`,
+        (calculation_id,version_no,status,direct_cost,markup_amount,sales_price,
+         source_office_version,source_selection_version,source_bound_at)
+       VALUES(?,?,'draft',?,?,?,?,?,?)`,
       [
         session.calculationId,nextVersionNo,
         Number(snapshot.commercial?.directCost??0),
         Number(snapshot.commercial?.markupAmount??0),
-        Number(snapshot.commercial?.salesPrice??0)
+        Number(snapshot.commercial?.salesPrice??0),
+        current.source_office_version==null?null:String(current.source_office_version),
+        current.source_selection_version==null?null:String(current.source_selection_version),
+        current.source_bound_at??null
       ]
     );
     const nextVersionId=insertVersion.insertId;
