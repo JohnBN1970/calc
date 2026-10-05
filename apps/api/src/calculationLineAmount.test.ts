@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateLineAmount } from "./calculationLineAmount.js";
+import { calculateLineAmount, calculateLineCostBreakdown } from "./calculationLineAmount.js";
 
 test("arbeid gebruikt totaaluren maal uurprijs",()=>{
   assert.equal(calculateLineAmount({quantity:10,labourTotalHours:10,labourUnitCost:0.15}),1.5);
@@ -27,4 +27,23 @@ test("arbeid en overige kostensoorten worden gecombineerd",()=>{
 
 test("lege waarden gedragen zich als nul",()=>{
   assert.equal(calculateLineAmount({quantity:null,labourTotalHours:null,labourUnitCost:null}),0);
+});
+
+
+test("kostopbouw gebruikt dezelfde centrale regelberekening",()=>{
+  assert.deepEqual(calculateLineCostBreakdown({
+    quantity:2,
+    labourTotalHours:3,
+    labourUnitCost:10,
+    materialUnitCost:5,
+    equipmentUnitCost:2,
+    subcontractingUnitCost:4,
+    otherUnitCost:1
+  }),{
+    labour:30,
+    material:10,
+    equipment:4,
+    subcontracting:8,
+    other:2
+  });
 });
