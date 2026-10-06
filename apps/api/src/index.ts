@@ -1405,7 +1405,7 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
   if (!session) return;
 
   try {
-    const [context, recipes, workspace, versions, triageOverrides] = await Promise.all([
+    const [context, recipes, workspace, versions, triageOverrides, recipeProposalDecisions] = await Promise.all([
       fetchCalculationContextSnapshot(session.officeCalculationId),
       listCalcRecipes(),
       fetchOfficeWorkspaceState(session.officeCalculationId),
@@ -1413,7 +1413,8 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
         "SELECT id FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
         [session.calculationId]
       ),
-      listDocumentTriageOverrides(session.calculationId)
+      listDocumentTriageOverrides(session.calculationId),
+      listRecipeProposalDecisions(session.calculationId)
     ]);
     if (context.context.project_id !== null && context.context.project_id !== session.officeProjectId) {
       res.status(409).json({ error: "Office calculation context hoort bij een ander project." });
@@ -1445,8 +1446,15 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
         description:String(row.description??"")
       })))
     });
+    const currentSelectionVersion=context.context.document_set?.selection_version??null;
     res.setHeader("Cache-Control", "no-store, private");
-    res.json(aggregate);
+    res.json({
+      ...aggregate,
+      recipeProposalDecisions:recipeProposalDecisions.map(item=>({
+        ...item,
+        current:item.sourceSelectionVersion===currentSelectionVersion
+      }))
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
     res.status(502).json({ error: `Workbench kon niet worden opgebouwd: ${detail}` });
