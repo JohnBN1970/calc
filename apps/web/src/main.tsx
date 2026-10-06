@@ -364,7 +364,7 @@ type WorkbenchAggregate = {
   recipeProposalDecisions:Array<{
     positionRef:string;
     recipeVersionId:number;
-    decision:"accepted"|"rejected";
+    decision:"accepted"|"rejected"|"reset";
     reason:string|null;
     sourceSelectionVersion:string|null;
     decidedBy:number;
@@ -2684,6 +2684,43 @@ function App() {
       : `${recipe.name} is gekoppeld aan ${placementLabel}. Er zijn meerdere mogelijke bronposities; kies de juiste en bevestig.`);
   };
 
+  const resetRecipeIssue=async(issue:WorkbenchAggregate["recipeSelectionIssues"][number])=>{
+    if(!aggregate?.editable)return;
+    try{
+      if(issue.code==="no_match"){
+        setActiveScopeType("position");
+        setActiveScopeRef(issue.positionRef);
+        setRecipeLibraryOpen(true);
+        setRecipeActionStatus(`${issue.positionRef}: kies of maak een passend recept.`);
+        return;
+      }
+      if(issue.code==="all_rejected"){
+        for(const recipeRef of issue.candidateRecipeRefs){
+          const response=await fetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(issue.positionRef)}/${encodeURIComponent(recipeRef)}/decision`,{
+            method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+            body:JSON.stringify({decision:"reset",reason:"Eerdere afwijzing heropend vanuit Nog te bepalen."})
+          });
+          const payload=await response.json().catch(()=>({}));
+          if(!response.ok)throw new Error(String(payload?.error??"Afwijzing kon niet worden heropend."));
+        }
+        setRecipeActionStatus(`${issue.positionRef}: afgewezen voorstellen opnieuw geopend.`);
+        await loadWorkbench();
+        return;
+      }
+      setActiveScopeType("position");
+      setActiveScopeRef(issue.positionRef);
+      const first=issue.candidateRecipeRefs[0];
+      if(first){
+        requestAnimationFrame(()=>document.getElementById(`recipe-proposal-${issue.positionRef}-${first}`)?.scrollIntoView({behavior:"smooth",block:"center"}));
+      }
+      setRecipeActionStatus(issue.code==="multiple_accepted"
+        ? `${issue.positionRef}: kies één geaccepteerd recept en wijs de overige af.`
+        : `${issue.positionRef}: kies één van de actuele receptvoorstellen.`);
+    }catch(error){
+      setRecipeActionStatus(error instanceof Error?error.message:"Herstelactie kon niet worden uitgevoerd.");
+    }
+  };
+
   const reviewRecipeProposal=async(proposal:WorkbenchAggregate["recipeProposals"][number],decision:"accepted"|"rejected")=>{
     if(!aggregate?.editable)return;
     const key=proposal.positionRef+"::"+proposal.recipeRef;
@@ -3804,9 +3841,9 @@ function App() {
                   {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
                 </div>;
               })}</div>
-              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
-                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
-                  const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
+              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><div><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div><button type="button" disabled={!aggregate.editable} onClick={()=>void resetRecipeIssue(issue)}>{issue.code==="no_match"?"Recept kiezen":issue.code==="all_rejected"?"Afwijzingen herstellen":"Keuzes tonen"}</button></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
+                <div className="recipeProposalCard" id={`recipe-proposal-${proposal.positionRef}-${proposal.recipeRef}`} key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
+                  const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.decision!=="reset"&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const busy=recipeReviewBusyKey===proposal.positionRef+"::"+proposal.recipeRef;
                   return <><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{decision&&<span className={"recipeReviewStatus is-"+decision.decision}>{decision.decision==="accepted"?"Geaccepteerd":"Afgewezen"}</span>}{!decision&&stale&&<span className="recipeReviewStatus is-stale">Oude review — bronselectie gewijzigd</span>}{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<div className="recipeReviewActions"><button type="button" disabled={busy||!aggregate.editable} onClick={()=>void reviewRecipeProposal(proposal,"rejected")}>Afwijzen</button><button type="button" disabled={busy||!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={()=>void reviewRecipeProposal(proposal,"accepted")}>Bevestigen & doorrekenen</button></div></>;
