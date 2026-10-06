@@ -1007,6 +1007,15 @@ function App() {
     positionRef:string;recipeLabel:string;
     old:{lines:number;quantity:number;labour:number;material:number;equipment:number;subcontracting:number;other:number};
     next:{lines:number;quantity:number;labour:number;material:number;equipment:number;subcontracting:number;other:number};
+    lineChanges:Array<{
+      key:string;
+      kind:"added"|"removed"|"changed";
+      description:string;
+      oldQuantity:number|null;
+      nextQuantity:number|null;
+      oldDirect:number|null;
+      nextDirect:number|null;
+    }>;
   }>(null);
   const [structureProposalStatus,setStructureProposalStatus]=useState("");
   const [documentTriageStatus,setDocumentTriageStatus]=useState("");
@@ -2446,6 +2455,47 @@ function App() {
     other:sum.other+Number(line.other||0)
   }),{lines:0,quantity:0,labour:0,material:0,equipment:0,subcontracting:0,other:0});
 
+  type RecipeRefreshLineChange={
+    key:string;
+    kind:"added"|"removed"|"changed";
+    description:string;
+    oldQuantity:number|null;
+    nextQuantity:number|null;
+    oldDirect:number|null;
+    nextDirect:number|null;
+  };
+  const recipeLineDiff=(oldRows:Line[],nextRows:Line[]):RecipeRefreshLineChange[]=>{
+    const keyOf=(line:Line)=>String(line.sourceReference??line.code??line.description).trim();
+    const oldByKey=new Map(oldRows.map(line=>[keyOf(line),line]));
+    const nextByKey=new Map(nextRows.map(line=>[keyOf(line),line]));
+    const keys=[...new Set([...oldByKey.keys(),...nextByKey.keys()])].sort((a,b)=>a.localeCompare(b,"nl"));
+    const changes:RecipeRefreshLineChange[]=[];
+    for(const key of keys){
+      const oldLine=oldByKey.get(key)??null;
+      const nextLine=nextByKey.get(key)??null;
+      if(!oldLine&&nextLine){
+        changes.push({key,kind:"added",description:nextLine.description,oldQuantity:null,nextQuantity:nextLine.quantity,oldDirect:null,nextDirect:lineDirect(nextLine)});
+        continue;
+      }
+      if(oldLine&&!nextLine){
+        changes.push({key,kind:"removed",description:oldLine.description,oldQuantity:oldLine.quantity,nextQuantity:null,oldDirect:lineDirect(oldLine),nextDirect:null});
+        continue;
+      }
+      if(!oldLine||!nextLine)continue;
+      const oldDirect=lineDirect(oldLine),nextDirect=lineDirect(nextLine);
+      const changed=
+        Math.abs(Number(oldLine.quantity)-Number(nextLine.quantity))>0.000001||
+        Math.abs(oldDirect-nextDirect)>0.005||
+        oldLine.description!==nextLine.description;
+      if(changed)changes.push({key,kind:"changed",description:nextLine.description,oldQuantity:oldLine.quantity,nextQuantity:nextLine.quantity,oldDirect,nextDirect});
+    }
+    return changes.sort((a,b)=>{
+      const impactA=Math.abs((a.nextDirect??0)-(a.oldDirect??0));
+      const impactB=Math.abs((b.nextDirect??0)-(b.oldDirect??0));
+      return impactB-impactA||a.description.localeCompare(b.description,"nl");
+    });
+  };
+
   const acceptRecipeProposal = async (
     proposal: WorkbenchAggregate["recipeProposals"][number],
     paragraphKeyOverride?:string,
@@ -2552,7 +2602,8 @@ function App() {
           positionRef:proposal.positionRef,
           recipeLabel:payload.recipeName??proposal.label,
           old:summarizeRecipeLines(oldRows),
-          next:summarizeRecipeLines(created)
+          next:summarizeRecipeLines(created),
+          lineChanges:recipeLineDiff(oldRows,created)
         });
       }
       setNextId(id);
@@ -3931,7 +3982,7 @@ function App() {
                   {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
                 </div>;
               })}</div>
-              <div className="recipePanel"><h3>Voorstellen</h3>{recipeRefreshDelta&&<div className="recipeRefreshDelta"><div><strong>Verversing {recipeRefreshDelta.positionRef}</strong><span>{recipeRefreshDelta.recipeLabel}</span></div><div className="recipeRefreshDeltaGrid"><span>Regels <b>{recipeRefreshDelta.old.lines} → {recipeRefreshDelta.next.lines}</b></span><span>Hoeveelheid <b>{recipeRefreshDelta.old.quantity.toLocaleString("nl-NL",{maximumFractionDigits:3})} → {recipeRefreshDelta.next.quantity.toLocaleString("nl-NL",{maximumFractionDigits:3})}</b></span><span>Arbeid <b>{money.format(recipeRefreshDelta.old.labour)} → {money.format(recipeRefreshDelta.next.labour)}</b><em>Δ {money.format(recipeRefreshDelta.next.labour-recipeRefreshDelta.old.labour)}</em></span><span>Materiaal <b>{money.format(recipeRefreshDelta.old.material)} → {money.format(recipeRefreshDelta.next.material)}</b><em>Δ {money.format(recipeRefreshDelta.next.material-recipeRefreshDelta.old.material)}</em></span><span>Materieel <b>{money.format(recipeRefreshDelta.old.equipment)} → {money.format(recipeRefreshDelta.next.equipment)}</b><em>Δ {money.format(recipeRefreshDelta.next.equipment-recipeRefreshDelta.old.equipment)}</em></span><span>OA <b>{money.format(recipeRefreshDelta.old.subcontracting)} → {money.format(recipeRefreshDelta.next.subcontracting)}</b><em>Δ {money.format(recipeRefreshDelta.next.subcontracting-recipeRefreshDelta.old.subcontracting)}</em></span><span>Overig <b>{money.format(recipeRefreshDelta.old.other)} → {money.format(recipeRefreshDelta.next.other)}</b><em>Δ {money.format(recipeRefreshDelta.next.other-recipeRefreshDelta.old.other)}</em></span><span className="recipeRefreshNet">Directe kost <b>{money.format(recipeRefreshDelta.old.labour+recipeRefreshDelta.old.material+recipeRefreshDelta.old.equipment+recipeRefreshDelta.old.subcontracting+recipeRefreshDelta.old.other)} → {money.format(recipeRefreshDelta.next.labour+recipeRefreshDelta.next.material+recipeRefreshDelta.next.equipment+recipeRefreshDelta.next.subcontracting+recipeRefreshDelta.next.other)}</b></span><span className="recipeRefreshNet">Netto impact <b>{money.format((recipeRefreshDelta.next.labour+recipeRefreshDelta.next.material+recipeRefreshDelta.next.equipment+recipeRefreshDelta.next.subcontracting+recipeRefreshDelta.next.other)-(recipeRefreshDelta.old.labour+recipeRefreshDelta.old.material+recipeRefreshDelta.old.equipment+recipeRefreshDelta.old.subcontracting+recipeRefreshDelta.old.other))}</b></span></div><button type="button" onClick={()=>setRecipeRefreshDelta(null)}>Sluiten</button></div>}{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><div><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div><button type="button" disabled={!aggregate.editable} onClick={()=>void resetRecipeIssue(issue)}>{issue.code==="no_match"?"Recept kiezen":issue.code==="all_rejected"?"Afwijzingen herstellen":"Keuzes tonen"}</button></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
+              <div className="recipePanel"><h3>Voorstellen</h3>{recipeRefreshDelta&&<div className="recipeRefreshDelta"><div><strong>Verversing {recipeRefreshDelta.positionRef}</strong><span>{recipeRefreshDelta.recipeLabel}</span></div><div className="recipeRefreshDeltaGrid"><span>Regels <b>{recipeRefreshDelta.old.lines} → {recipeRefreshDelta.next.lines}</b></span><span>Hoeveelheid <b>{recipeRefreshDelta.old.quantity.toLocaleString("nl-NL",{maximumFractionDigits:3})} → {recipeRefreshDelta.next.quantity.toLocaleString("nl-NL",{maximumFractionDigits:3})}</b></span><span>Arbeid <b>{money.format(recipeRefreshDelta.old.labour)} → {money.format(recipeRefreshDelta.next.labour)}</b><em>Δ {money.format(recipeRefreshDelta.next.labour-recipeRefreshDelta.old.labour)}</em></span><span>Materiaal <b>{money.format(recipeRefreshDelta.old.material)} → {money.format(recipeRefreshDelta.next.material)}</b><em>Δ {money.format(recipeRefreshDelta.next.material-recipeRefreshDelta.old.material)}</em></span><span>Materieel <b>{money.format(recipeRefreshDelta.old.equipment)} → {money.format(recipeRefreshDelta.next.equipment)}</b><em>Δ {money.format(recipeRefreshDelta.next.equipment-recipeRefreshDelta.old.equipment)}</em></span><span>OA <b>{money.format(recipeRefreshDelta.old.subcontracting)} → {money.format(recipeRefreshDelta.next.subcontracting)}</b><em>Δ {money.format(recipeRefreshDelta.next.subcontracting-recipeRefreshDelta.old.subcontracting)}</em></span><span>Overig <b>{money.format(recipeRefreshDelta.old.other)} → {money.format(recipeRefreshDelta.next.other)}</b><em>Δ {money.format(recipeRefreshDelta.next.other-recipeRefreshDelta.old.other)}</em></span><span className="recipeRefreshNet">Directe kost <b>{money.format(recipeRefreshDelta.old.labour+recipeRefreshDelta.old.material+recipeRefreshDelta.old.equipment+recipeRefreshDelta.old.subcontracting+recipeRefreshDelta.old.other)} → {money.format(recipeRefreshDelta.next.labour+recipeRefreshDelta.next.material+recipeRefreshDelta.next.equipment+recipeRefreshDelta.next.subcontracting+recipeRefreshDelta.next.other)}</b></span><span className="recipeRefreshNet">Netto impact <b>{money.format((recipeRefreshDelta.next.labour+recipeRefreshDelta.next.material+recipeRefreshDelta.next.equipment+recipeRefreshDelta.next.subcontracting+recipeRefreshDelta.next.other)-(recipeRefreshDelta.old.labour+recipeRefreshDelta.old.material+recipeRefreshDelta.old.equipment+recipeRefreshDelta.old.subcontracting+recipeRefreshDelta.old.other))}</b></span></div>{recipeRefreshDelta.lineChanges.length>0&&<details className="recipeRefreshLineDiff"><summary>Regelwijzigingen ({recipeRefreshDelta.lineChanges.length})</summary><div>{recipeRefreshDelta.lineChanges.map(change=><div className={"recipeRefreshLineChange is-"+change.kind} key={change.key}><span className="recipeRefreshLineBadge">{change.kind==="added"?"Toegevoegd":change.kind==="removed"?"Verwijderd":"Gewijzigd"}</span><div><strong>{change.description}</strong><small>{change.oldQuantity===null?"—":change.oldQuantity.toLocaleString("nl-NL",{maximumFractionDigits:3})} → {change.nextQuantity===null?"—":change.nextQuantity.toLocaleString("nl-NL",{maximumFractionDigits:3})} · {change.oldDirect===null?"—":money.format(change.oldDirect)} → {change.nextDirect===null?"—":money.format(change.nextDirect)}</small></div></div>)}</div></details>}<button type="button" onClick={()=>setRecipeRefreshDelta(null)}>Sluiten</button></div>}{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><div><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div><button type="button" disabled={!aggregate.editable} onClick={()=>void resetRecipeIssue(issue)}>{issue.code==="no_match"?"Recept kiezen":issue.code==="all_rejected"?"Afwijzingen herstellen":"Keuzes tonen"}</button></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
                 <div className="recipeProposalCard" id={`recipe-proposal-${proposal.positionRef}-${proposal.recipeRef}`} key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
                   const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.decision!=="reset"&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
