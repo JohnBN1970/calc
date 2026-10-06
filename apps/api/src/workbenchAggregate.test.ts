@@ -98,3 +98,15 @@ test("unresolved recipe selection explains no match, rejection and ambiguity sep
   assert.equal(issues.find(item=>item.positionRef==="K3")?.code,"multiple_candidates");
   assert.equal(issues.find(item=>item.positionRef==="K4")?.code,"multiple_accepted");
 });
+
+
+test("reset recipe review decision is neutral for automatic candidates",()=>{
+  const proposals=[
+    {positionRef:"K1",recipeRef:"10",label:"A",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true}
+  ];
+  const decisions=[
+    {positionRef:"K1",recipeVersionId:10,decision:"reset" as const,reason:"heropend",sourceSelectionVersion:"v1",decidedBy:1}
+  ];
+  const effective=applyRecipeProposalDecisions({proposals,decisions,sourceSelectionVersion:"v1"});
+  assert.deepEqual(effective.map(item=>item.recipeRef),["10"]);
+});

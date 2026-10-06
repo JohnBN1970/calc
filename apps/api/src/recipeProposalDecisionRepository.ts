@@ -1,7 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 
-export type RecipeProposalDecision="accepted"|"rejected";
+export type RecipeProposalDecision="accepted"|"rejected"|"reset";
 export type StoredRecipeProposalDecision={
   positionRef:string; recipeVersionId:number; decision:RecipeProposalDecision;
   reason:string|null; sourceSelectionVersion:string|null; decidedBy:number;
