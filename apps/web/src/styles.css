@@ -518,3 +518,9 @@ main{padding-top:6px}
 .recipeReviewStatus.is-stale{background:#fef3c7;color:#92400e}
 .recipeReviewActions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .recipeReviewActions button:last-child{font-weight:700}
+
+.recipeSelectionIssues{display:grid;gap:6px;margin-bottom:10px}
+.recipeSelectionIssue{display:grid;gap:2px;padding:8px 10px;border:1px solid var(--border,#d7dde5);border-radius:9px;background:#f8fafc}
+.recipeSelectionIssue strong{font-size:12px}
+.recipeSelectionIssue small{color:var(--muted,#687386)}
+.recipeSelectionIssue.is-all_rejected,.recipeSelectionIssue.is-multiple_accepted{background:#fff7ed}
