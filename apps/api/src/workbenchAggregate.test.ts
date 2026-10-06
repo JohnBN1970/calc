@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyRecipeProposalDecisions, calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage } from "./workbenchAggregate.js";
+import { applyRecipeProposalDecisions, calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage, explainRecipeSelectionIssues } from "./workbenchAggregate.js";
 
 test("Calc structuur gebruikt stabiele sleutel en niet database-id",()=>{
   const first=calcWorkbenchStructureFromLines([
@@ -75,4 +75,26 @@ test("current recipe review decisions drive automatic candidates without leaking
 
   const changedSources=applyRecipeProposalDecisions({proposals,decisions,sourceSelectionVersion:"v3"});
   assert.deepEqual(changedSources.map(item=>item.recipeRef),["10","11","20"]);
+});
+
+
+test("unresolved recipe selection explains no match, rejection and ambiguity separately",()=>{
+  const raw=[
+    {positionRef:"K2",recipeRef:"20",label:"A",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K3",recipeRef:"30",label:"B",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K3",recipeRef:"31",label:"C",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K4",recipeRef:"40",label:"D",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K4",recipeRef:"41",label:"E",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true}
+  ];
+  const decisions=[
+    {positionRef:"K2",recipeVersionId:20,decision:"rejected" as const,reason:null,sourceSelectionVersion:"v1",decidedBy:1},
+    {positionRef:"K4",recipeVersionId:40,decision:"accepted" as const,reason:null,sourceSelectionVersion:"v1",decidedBy:1},
+    {positionRef:"K4",recipeVersionId:41,decision:"accepted" as const,reason:null,sourceSelectionVersion:"v1",decidedBy:1}
+  ];
+  const effective=applyRecipeProposalDecisions({proposals:raw,decisions,sourceSelectionVersion:"v1"});
+  const issues=explainRecipeSelectionIssues({positions:["K1","K2","K3","K4"].map(positionRef=>({positionRef})),rawProposals:raw,effectiveProposals:effective,decisions,sourceSelectionVersion:"v1"});
+  assert.equal(issues.find(item=>item.positionRef==="K1")?.code,"no_match");
+  assert.equal(issues.find(item=>item.positionRef==="K2")?.code,"all_rejected");
+  assert.equal(issues.find(item=>item.positionRef==="K3")?.code,"multiple_candidates");
+  assert.equal(issues.find(item=>item.positionRef==="K4")?.code,"multiple_accepted");
 });
