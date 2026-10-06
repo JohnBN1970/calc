@@ -6,9 +6,9 @@ import type { CalculationConcept } from "./calculationConcept.js";
 const concept:CalculationConcept={
   contract:"brebo-calc-concept-v1",sourceDocumentSetId:null,sourceSelectionVersion:null,unresolved:[],readyForRecipeProposal:true,sourceDecisions:[],
   positions:[
-    {positionRef:"K1",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],reviewStatus:"reviewed",scopes:[],warnings:[]},
-    {positionRef:"K2",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],reviewStatus:"reviewed",scopes:[],warnings:[]},
-    {positionRef:"D1",quantity:1,widthMm:900,heightMm:2300,description:"deur",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[2],reviewStatus:"reviewed",scopes:[],warnings:[]}
+    {positionRef:"K1",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],sourceFacts:[],reviewStatus:"reviewed",scopes:[],warnings:[]},
+    {positionRef:"K2",quantity:1,widthMm:1000,heightMm:1200,description:"kozijn",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[1],sourceFacts:[],reviewStatus:"reviewed",scopes:[],warnings:[]},
+    {positionRef:"D1",quantity:1,widthMm:900,heightMm:2300,description:"deur",supplierUnitPrice:null,sourceDocumentIds:[1],sourcePages:[2],sourceFacts:[],reviewStatus:"reviewed",scopes:[],warnings:[]}
   ]
 };
 

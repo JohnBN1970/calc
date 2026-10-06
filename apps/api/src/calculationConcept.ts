@@ -4,6 +4,7 @@ import { measurementKindForFact, measurementKindLabel, type MeasurementKind } fr
 import { assessDocumentRevisions } from "./sourceRevision.js";
 import { evaluateSourceDecisions } from "./sourceDecisionEvaluation.js";
 import type { SourceDecision } from "./sourceDecision.js";
+import { fusePositionSources, type FusedSourceFact } from "./sourceFusion.js";
 
 export type CalculationConceptPosition = {
   positionRef: string;
@@ -14,6 +15,7 @@ export type CalculationConceptPosition = {
   supplierUnitPrice: number | null;
   sourceDocumentIds: number[];
   sourcePages: number[];
+  sourceFacts: FusedSourceFact[];
   reviewStatus: "reviewed" | "proposed";
   scopes: Array<{
     type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
@@ -47,6 +49,7 @@ export function buildConceptFromOfficeContext(
   const revisionAssessment=assessDocumentRevisions(snapshot);
   const supersededDocumentIds=new Set(revisionAssessment.filter(item=>item.supersededByDocumentId!==null).map(item=>item.documentId));
   const sourceDecisions=evaluateSourceDecisions(snapshot);
+  const fusedByPosition=new Map(fusePositionSources(snapshot,acceptedDocumentIds).map(item=>[item.positionRef,item]));
   const primaryDocumentIds=new Set(documentTriage.filter(item=>item.status==="primary"&&!supersededDocumentIds.has(item.documentId)).map(item=>item.documentId));
   const factsByPosition = new Map<string, typeof context.facts>();
 
@@ -140,8 +143,14 @@ export function buildConceptFromOfficeContext(
       unresolved.push(`Positie ${positionRef}: Office-takeoff sluit nog niet aan op de leidende actuele revisie; broncontext eerst verversen/reviewen.`);
       continue;
     }
-    const descriptions = facts.filter(f => f.fact_type === "description" && f.value_text?.trim());
-    const prices = facts.filter(f => f.fact_type === "supplier_unit_price" && f.value_number !== null);
+    const fusion=fusedByPosition.get(positionRef);
+    if(fusion?.blocked){
+      for(const reason of fusion.reasons)unresolved.push(`Positie ${positionRef}: ${reason}`);
+      continue;
+    }
+    const fusedFacts=fusion?.facts??[];
+    const descriptions = fusedFacts.filter(f => f.factType === "description" && f.valueText?.trim());
+    const prices = fusedFacts.filter(f => f.factType === "supplier_unit_price" && f.valueNumber !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
     const warnings: string[] = [];
 
@@ -150,9 +159,9 @@ export function buildConceptFromOfficeContext(
     if (completeTakeoffs.length > 1) {
       warnings.push(`${completeTakeoffs.length} geometrische take-offs gevonden; expliciete keuze vereist vóór receptplaatsing.`);
     }
-    const distinctDescriptions = [...new Set(descriptions.map(f => f.value_text!.trim()))];
+    const distinctDescriptions = [...new Set(descriptions.map(f => f.valueText!.trim()))];
     if (distinctDescriptions.length > 1) warnings.push("Meerdere bronbeschrijvingen gevonden.");
-    const distinctPrices = [...new Set(prices.map(f => Number(f.value_number)))];
+    const distinctPrices = [...new Set(prices.map(f => Number(f.valueNumber)))];
     if (distinctPrices.length > 1) warnings.push("Meerdere leveranciersprijzen gevonden.");
 
     const sourceDocumentIds = [...new Set(relevantFacts.map(f => f.document_id))].sort((a, b) => a - b);
@@ -170,6 +179,7 @@ export function buildConceptFromOfficeContext(
       supplierUnitPrice: distinctPrices[0] ?? null,
       sourceDocumentIds,
       sourcePages,
+      sourceFacts:fusedFacts,
       reviewStatus,
       scopes:scopesByPosition.get(positionRef)??[],
       warnings
