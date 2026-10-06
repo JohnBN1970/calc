@@ -654,16 +654,6 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       return;
     }
 
-    await setRecipeProposalDecision({
-      calculationId:session.calculationId,
-      positionRef,
-      recipeVersionId,
-      decision:"accepted",
-      reason:"Receptvoorstel geaccepteerd en gegenereerd.",
-      sourceSelectionVersion:concept.sourceSelectionVersion,
-      decidedBy:session.actorId
-    });
-
     const sourceRequests = calcRecipeSourceRequests(recipe);
     const resolution = sourceRequests.length
       ? await resolveOfficeCalcSources({ projectId: session.officeProjectId, sources: sourceRequests })
@@ -685,6 +675,16 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       }
     });
     const unresolved = generated.filter(line => line.resolutionStatus === "unresolved");
+
+    await setRecipeProposalDecision({
+      calculationId:session.calculationId,
+      positionRef,
+      recipeVersionId,
+      decision:"accepted",
+      reason:"Receptvoorstel geaccepteerd en gegenereerd.",
+      sourceSelectionVersion:concept.sourceSelectionVersion,
+      decidedBy:session.actorId
+    });
 
     res.setHeader("Cache-Control", "no-store, private");
     res.status(201).json({
