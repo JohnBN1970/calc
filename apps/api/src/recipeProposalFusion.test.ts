@@ -29,4 +29,7 @@ test("recipe applicability can match fused bestek or mail evidence",()=>{
   assert.equal(proposals[0].positionRef,"K12");
   assert.ok(proposals[0].reasons.some(reason=>reason.includes("broninhoud bevat")));
   assert.ok(proposals[0].reasons.some(reason=>reason.includes("meerdere actuele bronnen")));
+  const hrEvidence=proposals[0].evidence.find(item=>item.term.toLocaleLowerCase("nl-NL")==="hr++");
+  assert.equal(hrEvidence?.documentId,2);
+  assert.equal(hrEvidence?.sourcePage,18);
 });
