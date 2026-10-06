@@ -2435,7 +2435,8 @@ function App() {
     proposal: WorkbenchAggregate["recipeProposals"][number],
     paragraphKeyOverride?:string,
     paragraphLineOverride?:Line,
-    startingIdOverride?:number
+    startingIdOverride?:number,
+    replaceExistingPosition=false
   ) => {
     const targetParagraphKey=paragraphKeyOverride??recipeParagraphKey;
     if (!targetParagraphKey || !aggregate) {
@@ -2531,12 +2532,19 @@ function App() {
       }
 
       setNextId(id);
-      setLines(current => [...current, ...created]);
+      setLines(current => {
+        const base=replaceExistingPosition
+          ? current.filter(line=>generatedRecipeIdentityFromLine(line)?.positionRef!==proposal.positionRef)
+          : current;
+        return [...base,...created];
+      });
       setStatus("Concept — niet opgeslagen");
       const unresolvedCount=payload.lines.filter(line=>line.resolutionStatus==="unresolved").length;
       setRecipeActionStatus(unresolvedCount
         ? `${payload.recipeName ?? proposal.label}: ${unresolvedCount} bron(nen) ontbreken. Regels zijn zichtbaar, maar de calculatie kan zo niet worden opgeslagen.`
-        : `${payload.recipeName ?? proposal.label}: ${payload.lines.length} Calc-regel(s) gegenereerd. Nog opslaan.`);
+        : replaceExistingPosition
+          ? `${payload.recipeName ?? proposal.label}: bestaande receptregels voor ${proposal.positionRef} vervangen door ${payload.lines.length} actuele Calc-regel(s). Nog opslaan.`
+          : `${payload.recipeName ?? proposal.label}: ${payload.lines.length} Calc-regel(s) gegenereerd. Nog opslaan.`);
     } catch (error) {
       setRecipeActionStatus(error instanceof Error ? error.message : "Recept kon niet worden gegenereerd.");
     }
@@ -3880,7 +3888,14 @@ function App() {
                   const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.decision!=="reset"&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const busy=recipeReviewBusyKey===proposal.positionRef+"::"+proposal.recipeRef;
-                  return <><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{decision&&<span className={"recipeReviewStatus is-"+decision.decision}>{decision.decision==="accepted"?"Geaccepteerd":"Afgewezen"}</span>}{!decision&&stale&&<span className="recipeReviewStatus is-stale">Oude review — bronselectie gewijzigd</span>}{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<div className="recipeReviewActions"><button type="button" disabled={busy||!aggregate.editable} onClick={()=>void reviewRecipeProposal(proposal,"rejected")}>Afwijzen</button><button type="button" disabled={busy||!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={()=>void reviewRecipeProposal(proposal,"accepted")}>Bevestigen & doorrekenen</button></div></>;
+                  const existingForPosition=lines.map(line=>generatedRecipeIdentityFromLine(line)).filter(identity=>identity?.positionRef===proposal.positionRef);
+                  const currentExisting=existingForPosition.some(identity=>
+                    identity?.recipeVersionId===Number(proposal.recipeRef)&&
+                    identity?.officeVersion===aggregate.officeVersion&&
+                    (identity?.selectionVersion??null)===(aggregate.concept.sourceSelectionVersion??null)
+                  );
+                  const staleExisting=existingForPosition.length>0&&!currentExisting;
+                  return <><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{decision&&<span className={"recipeReviewStatus is-"+decision.decision}>{decision.decision==="accepted"?"Geaccepteerd":"Afgewezen"}</span>}{!decision&&stale&&<span className="recipeReviewStatus is-stale">Oude review — bronselectie gewijzigd</span>}{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<div className="recipeReviewActions"><button type="button" disabled={busy||!aggregate.editable} onClick={()=>void reviewRecipeProposal(proposal,"rejected")}>Afwijzen</button>{staleExisting&&<button type="button" disabled={busy||!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={()=>void acceptRecipeProposal(proposal,undefined,undefined,undefined,true)}>Verversen</button>}<button type="button" disabled={busy||!aggregate.editable || currentExisting || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={()=>void reviewRecipeProposal(proposal,"accepted")}>{currentExisting?"Actueel opgebouwd":"Bevestigen & doorrekenen"}</button></div></>;
                 })()}</div>
               )}</div>
               <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
