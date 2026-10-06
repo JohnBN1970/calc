@@ -4,6 +4,30 @@ import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import type { CalcDocumentTriageItem } from "./documentTriage.js";
 import { buildCalcStructureProposal } from "./structureProposal.js";
+import type { StoredRecipeProposalDecision } from "./recipeProposalDecisionRepository.js";
+import type { RecipeProposal } from "./recipeProposal.js";
+
+
+export function applyRecipeProposalDecisions(input:{
+  proposals:RecipeProposal[];
+  decisions:StoredRecipeProposalDecision[];
+  sourceSelectionVersion:string|null;
+}):RecipeProposal[]{
+  const current=input.decisions.filter(item=>item.sourceSelectionVersion===input.sourceSelectionVersion);
+  const byPosition=new Map<string,StoredRecipeProposalDecision[]>();
+  for(const decision of current){
+    const rows=byPosition.get(decision.positionRef)??[];
+    rows.push(decision);
+    byPosition.set(decision.positionRef,rows);
+  }
+  return input.proposals.filter(proposal=>{
+    const decisions=byPosition.get(proposal.positionRef)??[];
+    const accepted=new Set(decisions.filter(item=>item.decision==="accepted").map(item=>String(item.recipeVersionId)));
+    const rejected=new Set(decisions.filter(item=>item.decision==="rejected").map(item=>String(item.recipeVersionId)));
+    if(accepted.size>0)return accepted.has(String(proposal.recipeRef));
+    return !rejected.has(String(proposal.recipeRef));
+  });
+}
 
 export type CalcScopeCoverageItem={
   scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
@@ -86,10 +110,16 @@ export function buildWorkbenchAggregate(input:{
   workspace: OfficeWorkspaceState;
   structure: CalcWorkbenchStructureNode[];
   documentTriage: CalcDocumentTriageItem[];
+  recipeProposalDecisions?:StoredRecipeProposalDecision[];
 }) {
   const documentTriage=input.documentTriage;
   const concept=buildConceptFromOfficeContext(input.context,documentTriage);
-  const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
+  const rawProposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
+  const proposals=applyRecipeProposalDecisions({
+    proposals:rawProposals,
+    decisions:input.recipeProposalDecisions??[],
+    sourceSelectionVersion:concept.sourceSelectionVersion
+  });
   const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
   const scopeCoverage=calculateScopeCoverage(concept.positions);
   const automationReadiness=calculateAutomationReadiness({concept,structureProposal});
