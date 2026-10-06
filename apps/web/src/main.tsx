@@ -319,6 +319,10 @@ type WorkbenchAggregate = {
     unresolvedPositionRefs:string[];
     ready:boolean;
   };
+  autoBuildEligibility:{
+    eligiblePositionRefs:string[];
+    blocked:Array<{positionRef:string;reasons:string[]}>;
+  };
   recipeSelectionIssues:Array<{
     positionRef:string;
     code:"no_match"|"all_rejected"|"multiple_candidates"|"multiple_accepted";
@@ -2253,20 +2257,25 @@ function App() {
   };
   const generateUnambiguousRecipes=async()=>{
     if(!aggregate){setRecipeActionStatus("Calc-concept is nog niet geladen.");return;}
+    const allowed=new Set(aggregate.autoBuildEligibility.eligiblePositionRefs);
     const eligible=aggregate.structureProposal.groups
       .filter(group=>group.recipeRef!==null)
-      .flatMap(group=>group.positionRefs.map(positionRef=>({
+      .flatMap(group=>group.positionRefs.filter(positionRef=>allowed.has(positionRef)).map(positionRef=>({
         group,
         proposal:aggregate.recipeProposals.find(item=>item.positionRef===positionRef&&item.recipeRef===group.recipeRef)
       })))
       .filter((item):item is {group:WorkbenchAggregate["structureProposal"]["groups"][number];proposal:WorkbenchAggregate["recipeProposals"][number]}=>Boolean(item.proposal));
-    if(!eligible.length){setRecipeActionStatus("Geen eenduidige receptvoorstellen om op te bouwen.");return;}
+    if(!eligible.length){
+      const blocked=aggregate.autoBuildEligibility.blocked.map(item=>item.positionRef+": "+item.reasons.join(", ")).join(" · ");
+      setRecipeActionStatus(blocked?("Geen veilige posities om automatisch op te bouwen · "+blocked):"Geen eenduidige receptvoorstellen om op te bouwen.");
+      return;
+    }
 
     setRecipeActionStatus("Calc-concept opbouwen…");
     let id=nextId;
     const createdStructure:Line[]=[];
     const createdRecipeLines:Line[]=[];
-    const skipped:string[]=[];
+    const skipped:string[]=aggregate.autoBuildEligibility.blocked.map(item=>item.positionRef+" geblokkeerd ("+item.reasons.join(", ")+")");
     let incomplete=0;
 
     const chapterLabel=aggregate.structureProposal.chapter.label;
@@ -3740,7 +3749,7 @@ function App() {
             <section className="conceptBuilder">
               <div className="conceptBuilderIntro">
                 <div><span className="eyebrow">DIGITALE CALCULATOR</span><h3>Concept opbouwen uit projectdocumenten</h3><p>Calc selecteert bruikbare Office-bronnen, bouwt posities en receptvoorstellen op en laat twijfel eerst controleren.</p></div>
-                <button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || !aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
+                <button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
               </div>
               <div className="conceptBuilderSteps">
                 <div className={aggregate.documentTriage.some(item=>item.status==="primary")?"is-ready":"is-review"}><b>1</b><span>Bronnen<strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length} primair · {aggregate.documentTriage.filter(item=>item.status==="review").length} review</strong></span></div>
@@ -3771,7 +3780,7 @@ function App() {
             <div className="recipeSummary">
               <div><span>Primaire documenten</span><strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length}</strong></div>
               <div><span>Conceptposities</span><strong>{aggregate.concept.positions.length}</strong></div>
-              <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div>
+              <div><span>Receptvoorstellen</span><strong>{aggregate.recipeProposals.length}</strong></div><div><span>Veilig automatisch</span><strong>{aggregate.autoBuildEligibility.eligiblePositionRefs.length}</strong></div>
               <div><span>Calc-regels uit recept</span><strong>{lines.filter(line => line.priceSourceType === "recipe").length}</strong></div>
               <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
             </div>
@@ -3818,7 +3827,7 @@ function App() {
                 <div><strong>Calc-structuurvoorstel</strong><span>Alleen eenduidige receptmatches worden automatisch gegroepeerd; twijfel blijft apart zichtbaar.</span></div>
                 <div className="structureProposalActions">
                   <button type="button" disabled={!aggregate.structureProposal.ready} onClick={applyStructureProposal}>Structuur toepassen</button>
-                  <button type="button" disabled={!aggregate.structureProposal.groups.some(group=>group.recipeRef!==null)} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
+                  <button type="button" disabled={aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
                 </div>
               </div>
               {aggregate.structureProposal.groups.length===0?<p className="muted">Nog geen structuurvoorstel mogelijk.</p>:
