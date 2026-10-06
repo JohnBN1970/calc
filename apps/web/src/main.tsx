@@ -2455,23 +2455,44 @@ function App() {
     other:sum.other+Number(line.other||0)
   }),{lines:0,quantity:0,labour:0,material:0,equipment:0,subcontracting:0,other:0});
 
-  const recipeLineDiff=(oldRows:Line[],nextRows:Line[])=>{
+  type RecipeRefreshLineChange={
+    key:string;
+    kind:"added"|"removed"|"changed";
+    description:string;
+    oldQuantity:number|null;
+    nextQuantity:number|null;
+    oldDirect:number|null;
+    nextDirect:number|null;
+  };
+  const recipeLineDiff=(oldRows:Line[],nextRows:Line[]):RecipeRefreshLineChange[]=>{
     const keyOf=(line:Line)=>String(line.sourceReference??line.code??line.description).trim();
     const oldByKey=new Map(oldRows.map(line=>[keyOf(line),line]));
     const nextByKey=new Map(nextRows.map(line=>[keyOf(line),line]));
     const keys=[...new Set([...oldByKey.keys(),...nextByKey.keys()])].sort((a,b)=>a.localeCompare(b,"nl"));
-    return keys.flatMap(key=>{
+    const changes:RecipeRefreshLineChange[]=[];
+    for(const key of keys){
       const oldLine=oldByKey.get(key)??null;
       const nextLine=nextByKey.get(key)??null;
-      if(!oldLine&&nextLine)return[{key,kind:"added" as const,description:nextLine.description,oldQuantity:null,nextQuantity:nextLine.quantity,oldDirect:null,nextDirect:lineDirect(nextLine)}];
-      if(oldLine&&!nextLine)return[{key,kind:"removed" as const,description:oldLine.description,oldQuantity:oldLine.quantity,nextQuantity:null,oldDirect:lineDirect(oldLine),nextDirect:null}];
-      if(!oldLine||!nextLine)return[];
+      if(!oldLine&&nextLine){
+        changes.push({key,kind:"added",description:nextLine.description,oldQuantity:null,nextQuantity:nextLine.quantity,oldDirect:null,nextDirect:lineDirect(nextLine)});
+        continue;
+      }
+      if(oldLine&&!nextLine){
+        changes.push({key,kind:"removed",description:oldLine.description,oldQuantity:oldLine.quantity,nextQuantity:null,oldDirect:lineDirect(oldLine),nextDirect:null});
+        continue;
+      }
+      if(!oldLine||!nextLine)continue;
       const oldDirect=lineDirect(oldLine),nextDirect=lineDirect(nextLine);
       const changed=
         Math.abs(Number(oldLine.quantity)-Number(nextLine.quantity))>0.000001||
         Math.abs(oldDirect-nextDirect)>0.005||
         oldLine.description!==nextLine.description;
-      return changed?[{key,kind:"changed" as const,description:nextLine.description,oldQuantity:oldLine.quantity,nextQuantity:nextLine.quantity,oldDirect,nextDirect}]:[];
+      if(changed)changes.push({key,kind:"changed",description:nextLine.description,oldQuantity:oldLine.quantity,nextQuantity:nextLine.quantity,oldDirect,nextDirect});
+    }
+    return changes.sort((a,b)=>{
+      const impactA=Math.abs((a.nextDirect??0)-(a.oldDirect??0));
+      const impactB=Math.abs((b.nextDirect??0)-(b.oldDirect??0));
+      return impactB-impactA||a.description.localeCompare(b.description,"nl");
     });
   };
 
