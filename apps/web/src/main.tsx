@@ -1003,6 +1003,11 @@ function App() {
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
   const [recipeReviewBusyKey,setRecipeReviewBusyKey]=useState("");
+  const [recipeRefreshDelta,setRecipeRefreshDelta]=useState<null|{
+    positionRef:string;recipeLabel:string;
+    old:{lines:number;quantity:number;labour:number;material:number;equipment:number;subcontracting:number;other:number};
+    next:{lines:number;quantity:number;labour:number;material:number;equipment:number;subcontracting:number;other:number};
+  }>(null);
   const [structureProposalStatus,setStructureProposalStatus]=useState("");
   const [documentTriageStatus,setDocumentTriageStatus]=useState("");
   const [priceSearch, setPriceSearch] = useState("");
@@ -2431,6 +2436,16 @@ function App() {
     }
     setRecipeActionStatus(parts.join(" · ")+".");
   };
+  const summarizeRecipeLines=(rows:Line[])=>rows.reduce((sum,line)=>({
+    lines:sum.lines+1,
+    quantity:sum.quantity+Number(line.quantity||0),
+    labour:sum.labour+Number(line.labour||0),
+    material:sum.material+Number(line.material||0),
+    equipment:sum.equipment+Number(line.equipment||0),
+    subcontracting:sum.subcontracting+Number(line.subcontracting||0),
+    other:sum.other+Number(line.other||0)
+  }),{lines:0,quantity:0,labour:0,material:0,equipment:0,subcontracting:0,other:0});
+
   const acceptRecipeProposal = async (
     proposal: WorkbenchAggregate["recipeProposals"][number],
     paragraphKeyOverride?:string,
@@ -2531,6 +2546,15 @@ function App() {
         });
       }
 
+      if(replaceExistingPosition){
+        const oldRows=lines.filter(line=>generatedRecipeIdentityFromLine(line)?.positionRef===proposal.positionRef);
+        setRecipeRefreshDelta({
+          positionRef:proposal.positionRef,
+          recipeLabel:payload.recipeName??proposal.label,
+          old:summarizeRecipeLines(oldRows),
+          next:summarizeRecipeLines(created)
+        });
+      }
       setNextId(id);
       setLines(current => {
         const base=replaceExistingPosition
@@ -3907,7 +3931,7 @@ function App() {
                   {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
                 </div>;
               })}</div>
-              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><div><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div><button type="button" disabled={!aggregate.editable} onClick={()=>void resetRecipeIssue(issue)}>{issue.code==="no_match"?"Recept kiezen":issue.code==="all_rejected"?"Afwijzingen herstellen":"Keuzes tonen"}</button></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
+              <div className="recipePanel"><h3>Voorstellen</h3>{recipeRefreshDelta&&<div className="recipeRefreshDelta"><div><strong>Verversing {recipeRefreshDelta.positionRef}</strong><span>{recipeRefreshDelta.recipeLabel}</span></div><div className="recipeRefreshDeltaGrid"><span>Regels <b>{recipeRefreshDelta.old.lines} → {recipeRefreshDelta.next.lines}</b></span><span>Hoeveelheid <b>{formatNumber(recipeRefreshDelta.old.quantity)} → {formatNumber(recipeRefreshDelta.next.quantity)}</b></span><span>Arbeid <b>{formatCurrency(recipeRefreshDelta.old.labour)} → {formatCurrency(recipeRefreshDelta.next.labour)}</b></span><span>Materiaal <b>{formatCurrency(recipeRefreshDelta.old.material)} → {formatCurrency(recipeRefreshDelta.next.material)}</b></span><span>Materieel <b>{formatCurrency(recipeRefreshDelta.old.equipment)} → {formatCurrency(recipeRefreshDelta.next.equipment)}</b></span><span>OA <b>{formatCurrency(recipeRefreshDelta.old.subcontracting)} → {formatCurrency(recipeRefreshDelta.next.subcontracting)}</b></span><span>Overig <b>{formatCurrency(recipeRefreshDelta.old.other)} → {formatCurrency(recipeRefreshDelta.next.other)}</b></span></div><button type="button" onClick={()=>setRecipeRefreshDelta(null)}>Sluiten</button></div>}{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><div><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div><button type="button" disabled={!aggregate.editable} onClick={()=>void resetRecipeIssue(issue)}>{issue.code==="no_match"?"Recept kiezen":issue.code==="all_rejected"?"Afwijzingen herstellen":"Keuzes tonen"}</button></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
                 <div className="recipeProposalCard" id={`recipe-proposal-${proposal.positionRef}-${proposal.recipeRef}`} key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
                   const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.decision!=="reset"&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
