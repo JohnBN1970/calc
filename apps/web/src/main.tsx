@@ -355,6 +355,15 @@ type WorkbenchAggregate = {
     code: string | null;
     label: string;
   }>;
+  recipeProposalDecisions:Array<{
+    positionRef:string;
+    recipeVersionId:number;
+    decision:"accepted"|"rejected";
+    reason:string|null;
+    sourceSelectionVersion:string|null;
+    decidedBy:number;
+    current:boolean;
+  }>;
   readiness: unknown;
 };
 
@@ -982,6 +991,7 @@ function App() {
   const [recipeParagraphKey, setRecipeParagraphKey] = useState("");
   const [selectedTakeoffByPosition, setSelectedTakeoffByPosition] = useState<Record<string,number>>({});
   const [recipeActionStatus, setRecipeActionStatus] = useState("");
+  const [recipeReviewBusyKey,setRecipeReviewBusyKey]=useState("");
   const [structureProposalStatus,setStructureProposalStatus]=useState("");
   const [documentTriageStatus,setDocumentTriageStatus]=useState("");
   const [priceSearch, setPriceSearch] = useState("");
@@ -2668,6 +2678,30 @@ function App() {
       : `${recipe.name} is gekoppeld aan ${placementLabel}. Er zijn meerdere mogelijke bronposities; kies de juiste en bevestig.`);
   };
 
+  const reviewRecipeProposal=async(proposal:WorkbenchAggregate["recipeProposals"][number],decision:"accepted"|"rejected")=>{
+    if(!aggregate?.editable)return;
+    const key=proposal.positionRef+"::"+proposal.recipeRef;
+    setRecipeReviewBusyKey(key);
+    try{
+      if(decision==="accepted"){
+        await acceptRecipeProposal(proposal);
+        return;
+      }
+      const response=await fetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(proposal.positionRef)}/${encodeURIComponent(proposal.recipeRef)}/decision`,{
+        method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({decision:"rejected",reason:"Receptvoorstel afgewezen in Calc-review."})
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(String(payload?.error??"Reviewbeslissing kon niet worden opgeslagen."));
+      setRecipeActionStatus(`${proposal.label} voor ${proposal.positionRef} afgewezen.`);
+      await loadWorkbench();
+    }catch(error){
+      setRecipeActionStatus(error instanceof Error?error.message:"Reviewbeslissing kon niet worden opgeslagen.");
+    }finally{
+      setRecipeReviewBusyKey("");
+    }
+  };
+
   const patchLine = (id: number, patch: Partial<Line>) => {
     if(versionStatus==="established")return;
     setLines(current => current.map(line => line.id === id ? { ...line, ...patch } : line));
@@ -3765,7 +3799,12 @@ function App() {
                 </div>;
               })}</div>
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
-                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
+                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
+                  const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
+                  const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
+                  const busy=recipeReviewBusyKey===proposal.positionRef+"::"+proposal.recipeRef;
+                  return <><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{decision&&<span className={"recipeReviewStatus is-"+decision.decision}>{decision.decision==="accepted"?"Geaccepteerd":"Afgewezen"}</span>}{!decision&&stale&&<span className="recipeReviewStatus is-stale">Oude review — bronselectie gewijzigd</span>}{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<div className="recipeReviewActions"><button type="button" disabled={busy||!aggregate.editable} onClick={()=>void reviewRecipeProposal(proposal,"rejected")}>Afwijzen</button><button type="button" disabled={busy||!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={()=>void reviewRecipeProposal(proposal,"accepted")}>Bevestigen & doorrekenen</button></div></>;
+                })()}</div>
               )}</div>
               <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
                 <div className={"generatedLineCard"+(line.resolutionStatus==="unresolved"?" is-unresolved":"")} key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Calc-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b>{line.resolutionStatus==="unresolved"?<small className="sourceError">{line.resolutionReason || "Bron niet beschikbaar."}</small>:<small>{money.format(lineDirect(line))} direct</small>}</div>
