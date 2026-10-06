@@ -21,6 +21,13 @@ export type RecipeProposal = {
   priority: number;
   confidence: number;
   reasons: string[];
+  evidence:Array<{
+    term:string;
+    documentId:number|null;
+    sourcePage:number|null;
+    sourceFragment:string|null;
+    factType:string|null;
+  }>;
   reviewRequired: boolean;
 };
 
@@ -36,30 +43,45 @@ function sourceEvidenceText(position:CalculationConceptPosition):string{
   return normalize([position.description??"",...fragments].join(" "));
 }
 
-function matches(position: CalculationConceptPosition, rule: RecipeProposalRule): { ok: boolean; reasons: string[] } {
+function matches(position: CalculationConceptPosition, rule: RecipeProposalRule): { ok: boolean; reasons: string[]; evidence:RecipeProposal["evidence"] } {
   const reasons: string[] = [];
+  const evidence:RecipeProposal["evidence"]=[];
   const description = sourceEvidenceText(position);
 
-  if (rule.requiresReviewedGeometry && position.reviewStatus !== "reviewed") return { ok: false, reasons: [] };
+  if (rule.requiresReviewedGeometry && position.reviewStatus !== "reviewed") return { ok: false, reasons: [], evidence:[] };
 
   if (rule.descriptionIncludes?.length) {
     const hits = rule.descriptionIncludes.filter(term => description.includes(normalize(term)));
-    if (!hits.length) return { ok: false, reasons: [] };
+    if (!hits.length) return { ok: false, reasons: [], evidence:[] };
     reasons.push(`broninhoud bevat: ${hits.join(", ")}`);
+    for(const term of hits){
+      const normalizedTerm=normalize(term);
+      const fact=position.sourceFacts.find(item=>
+        normalize(item.valueText).includes(normalizedTerm)||normalize(item.sourceFragment).includes(normalizedTerm)
+      );
+      evidence.push({
+        term,
+        documentId:fact?.documentId??null,
+        sourcePage:fact?.sourcePage??null,
+        sourceFragment:fact?.sourceFragment??null,
+        factType:fact?.factType??null
+      });
+    }
   }
 
-  if (rule.descriptionExcludes?.some(term => description.includes(normalize(term)))) return { ok: false, reasons: [] };
+  if (rule.descriptionExcludes?.some(term => description.includes(normalize(term)))) return { ok: false, reasons: [], evidence:[] };
 
-  if (rule.minWidthMm != null && position.widthMm < rule.minWidthMm) return { ok: false, reasons: [] };
-  if (rule.maxWidthMm != null && position.widthMm > rule.maxWidthMm) return { ok: false, reasons: [] };
-  if (rule.minHeightMm != null && position.heightMm < rule.minHeightMm) return { ok: false, reasons: [] };
-  if (rule.maxHeightMm != null && position.heightMm > rule.maxHeightMm) return { ok: false, reasons: [] };
+  if (rule.minWidthMm != null && position.widthMm < rule.minWidthMm) return { ok: false, reasons: [], evidence:[] };
+  if (rule.maxWidthMm != null && position.widthMm > rule.maxWidthMm) return { ok: false, reasons: [], evidence:[] };
+  if (rule.minHeightMm != null && position.heightMm < rule.minHeightMm) return { ok: false, reasons: [], evidence:[] };
+  if (rule.maxHeightMm != null && position.heightMm > rule.maxHeightMm) return { ok: false, reasons: [], evidence:[] };
 
   reasons.push(`geometrie ${position.widthMm}×${position.heightMm} mm`);
   if (position.reviewStatus === "reviewed") reasons.push("bronfeiten zijn gereviewd");
   else reasons.push("bronfeiten zijn nog proposed");
 
-  return { ok: true, reasons };
+  evidence.push({term:"geometrie",documentId:position.sourceFacts.find(item=>item.factType==="width_mm"||item.factType==="height_mm")?.documentId??null,sourcePage:position.sourceFacts.find(item=>item.factType==="width_mm"||item.factType==="height_mm")?.sourcePage??null,sourceFragment:null,factType:"geometry"});
+  return { ok: true, reasons, evidence };
 }
 
 export function proposeRecipesForConcept(
@@ -89,6 +111,7 @@ export function proposeRecipesForConcept(
         priority: rule.priority,
         confidence,
         reasons: match.reasons,
+        evidence: match.evidence,
         reviewRequired: true
       });
     }
