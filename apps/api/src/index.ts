@@ -37,6 +37,7 @@ import { assessDocumentRevisions } from "./sourceRevision.js";
 import { detectSourceFactConflicts } from "./sourceFactConflict.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
+import { listRecipeProposalDecisions, setRecipeProposalDecision, type RecipeProposalDecision } from "./recipeProposalDecisionRepository.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -556,6 +557,36 @@ app.get("/api/workbench/current/concept/recipe-proposals", async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende receptvoorstelfout";
     res.status(422).json({ error: detail });
+  }
+});
+
+app.put("/api/workbench/current/concept/recipe-proposals/:positionRef/:recipeVersionId/decision", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  const positionRef=decodeURIComponent(String(req.params.positionRef??"")).trim();
+  const recipeVersionId=Number(req.params.recipeVersionId);
+  const decision=String(req.body?.decision??"") as RecipeProposalDecision;
+  const reason=String(req.body?.reason??"").trim().slice(0,1000)||null;
+  if(!positionRef||!Number.isInteger(recipeVersionId)||recipeVersionId<=0||!["accepted","rejected"].includes(decision)){
+    res.status(400).json({error:"Ongeldige reviewbeslissing."});return;
+  }
+  try{
+    const [snapshot,recipes]=await Promise.all([
+      fetchCalculationContextSnapshot(session.officeCalculationId),listCalcRecipes()
+    ]);
+    const overrides=await listDocumentTriageOverrides(session.calculationId);
+    const concept=buildConceptFromOfficeContext(snapshot,triageCalculationDocuments(snapshot,overrides));
+    const proposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(recipes));
+    if(!proposals.some(item=>item.positionRef===positionRef&&Number(item.recipeRef)===recipeVersionId)){
+      res.status(409).json({error:"Dit receptvoorstel is niet meer actueel voor deze positie."});return;
+    }
+    await setRecipeProposalDecision({
+      calculationId:session.calculationId,positionRef,recipeVersionId,decision,reason,
+      sourceSelectionVersion:concept.sourceSelectionVersion,decidedBy:session.actorId
+    });
+    const decisions=await listRecipeProposalDecisions(session.calculationId);
+    res.json({contract:"brebo-calc-recipe-proposal-decision-v1",decision:decisions.find(item=>item.positionRef===positionRef&&item.recipeVersionId===recipeVersionId)});
+  }catch(error){
+    res.status(422).json({error:error instanceof Error?error.message:"Reviewbeslissing kon niet worden opgeslagen."});
   }
 });
 
