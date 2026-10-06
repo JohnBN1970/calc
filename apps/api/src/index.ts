@@ -1437,6 +1437,7 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
       recipes,
       workspace,
       documentTriage:triageCalculationDocuments(context,triageOverrides),
+      recipeProposalDecisions,
       structure: calcWorkbenchStructureFromLines(structureLines.map(row=>({
         id:Number(row.id),
         parent_id:row.parent_id==null?null:Number(row.parent_id),
