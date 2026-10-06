@@ -529,3 +529,11 @@ main{padding-top:6px}
 .recipeSelectionIssue>div{display:grid;gap:2px}
 .recipeSelectionIssue>button{white-space:nowrap}
 @media(max-width:700px){.recipeSelectionIssue{grid-template-columns:1fr}.recipeSelectionIssue>button{width:max-content}}
+
+.recipeRefreshDelta{display:grid;gap:8px;margin-bottom:10px;padding:10px 12px;border:1px solid var(--border,#d7dde5);border-radius:10px;background:#f8fafc}
+.recipeRefreshDelta>div:first-child{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.recipeRefreshDelta>div:first-child span{color:var(--muted,#687386);font-size:12px}
+.recipeRefreshDeltaGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 12px;font-size:12px}
+.recipeRefreshDeltaGrid span{display:flex;justify-content:space-between;gap:8px}
+.recipeRefreshDelta>button{width:max-content}
+@media(max-width:700px){.recipeRefreshDelta>div:first-child{display:grid;gap:2px}}
