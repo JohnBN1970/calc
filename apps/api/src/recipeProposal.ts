@@ -28,16 +28,24 @@ function normalize(value: string | null): string {
   return (value ?? "").trim().toLocaleLowerCase("nl-NL");
 }
 
+function sourceEvidenceText(position:CalculationConceptPosition):string{
+  const fragments=position.sourceFacts.flatMap(fact=>[
+    fact.factType==="description"?fact.valueText:null,
+    fact.sourceFragment
+  ]).filter((value):value is string=>Boolean(value?.trim()));
+  return normalize([position.description??"",...fragments].join(" "));
+}
+
 function matches(position: CalculationConceptPosition, rule: RecipeProposalRule): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const description = normalize(position.description);
+  const description = sourceEvidenceText(position);
 
   if (rule.requiresReviewedGeometry && position.reviewStatus !== "reviewed") return { ok: false, reasons: [] };
 
   if (rule.descriptionIncludes?.length) {
     const hits = rule.descriptionIncludes.filter(term => description.includes(normalize(term)));
     if (!hits.length) return { ok: false, reasons: [] };
-    reasons.push(`omschrijving bevat: ${hits.join(", ")}`);
+    reasons.push(`broninhoud bevat: ${hits.join(", ")}`);
   }
 
   if (rule.descriptionExcludes?.some(term => description.includes(normalize(term)))) return { ok: false, reasons: [] };
@@ -70,7 +78,9 @@ export function proposeRecipesForConcept(
 
       const evidenceScore = position.reviewStatus === "reviewed" ? 0.85 : 0.65;
       const descriptionScore = rule.descriptionIncludes?.length ? 0.10 : 0;
-      const confidence = Math.min(0.99, evidenceScore + descriptionScore);
+      const multiSourceScore = new Set(position.sourceFacts.map(fact=>fact.documentId)).size>1 ? 0.02 : 0;
+      const confidence = Math.min(0.99, evidenceScore + descriptionScore + multiSourceScore);
+      if(multiSourceScore)match.reasons.push("onderbouwd door meerdere actuele bronnen");
 
       proposals.push({
         positionRef: position.positionRef,
