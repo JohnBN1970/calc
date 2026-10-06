@@ -2539,6 +2539,30 @@ function App() {
         return [...base,...created];
       });
       setStatus("Concept — niet opgeslagen");
+      setAggregate(current=>{
+        if(!current)return current;
+        const recipeVersionId=Number(proposal.recipeRef);
+        const filtered=current.recipeProposalDecisions.filter(item=>!(
+          item.positionRef===proposal.positionRef&&
+          item.recipeVersionId===recipeVersionId&&
+          item.current
+        ));
+        return{
+          ...current,
+          recipeProposalDecisions:[
+            ...filtered,
+            {
+              positionRef:proposal.positionRef,
+              recipeVersionId,
+              decision:"accepted",
+              reason:"Receptvoorstel geaccepteerd en gegenereerd.",
+              sourceSelectionVersion:current.concept.sourceSelectionVersion,
+              decidedBy:0,
+              current:true
+            }
+          ]
+        };
+      });
       const unresolvedCount=payload.lines.filter(line=>line.resolutionStatus==="unresolved").length;
       setRecipeActionStatus(unresolvedCount
         ? `${payload.recipeName ?? proposal.label}: ${unresolvedCount} bron(nen) ontbreken. Regels zijn zichtbaar, maar de calculatie kan zo niet worden opgeslagen.`
