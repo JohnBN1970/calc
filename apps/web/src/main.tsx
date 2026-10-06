@@ -1236,6 +1236,14 @@ function App() {
   const structureMetrics=useMemo(()=>{
     const lineById=new Map(workbenchLines.map(line=>[line.id,line]));
     const children=new Map<number|null,Line[]>();
+    const incomingByLine=new Map<number,number>();
+    const outgoingByLine=new Map<number,number>();
+    for(const allocation of allocations){
+      incomingByLine.set(allocation.targetLineId,(incomingByLine.get(allocation.targetLineId)??0)+allocation.amount);
+      outgoingByLine.set(allocation.sourceLineId,(outgoingByLine.get(allocation.sourceLineId)??0)+allocation.amount);
+    }
+    const effectiveDirect=(line:Line)=>
+      lineDirect(line)-(outgoingByLine.get(line.id)??0)+(incomingByLine.get(line.id)??0);
     for(const line of workbenchLines){
       const list=children.get(line.parentId)??[];
       list.push(line);
@@ -1258,7 +1266,7 @@ function App() {
       if(seen.has(id))return 0;
       seen.add(id);
       return(children.get(id)??[]).reduce((sum,child)=>{
-        if(isCostLine(child)&&child.lineType!=="option")return sum+lineDirect(child);
+        if(isCostLine(child)&&child.lineType!=="option")return sum+effectiveDirect(child);
         if(child.lineType==="chapter"||child.lineType==="paragraph")return sum+subtotal(child.id,seen);
         return sum;
       },0);
@@ -1270,7 +1278,7 @@ function App() {
       }
     }
     return result;
-  },[workbenchLines]);
+  },[workbenchLines,allocations]);
 
   const displayedTotals = activeSubcalculationResult
     ? {
