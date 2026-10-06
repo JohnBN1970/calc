@@ -551,3 +551,9 @@ main{padding-top:6px}
 .recipeRefreshLineChange.is-added .recipeRefreshLineBadge{background:#dcfce7;color:#166534}
 .recipeRefreshLineChange.is-removed .recipeRefreshLineBadge{background:#fee2e2;color:#991b1b}
 .recipeRefreshLineChange.is-changed .recipeRefreshLineBadge{background:#fef3c7;color:#92400e}
+
+.recipeRefreshLineLabels{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.recipeRefreshImpact{font-size:10px;font-weight:700;padding:3px 6px;border-radius:999px;background:#eef2f7;color:#475569}
+.recipeRefreshImpact.is-higher{background:#fee2e2;color:#991b1b}
+.recipeRefreshImpact.is-lower{background:#dcfce7;color:#166534}
+.recipeRefreshImpact.is-neutral{background:#f1f5f9;color:#475569}
