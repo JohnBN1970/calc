@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage } from "./workbenchAggregate.js";
+import { applyRecipeProposalDecisions, calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage } from "./workbenchAggregate.js";
 
 test("Calc structuur gebruikt stabiele sleutel en niet database-id",()=>{
   const first=calcWorkbenchStructureFromLines([
@@ -56,4 +56,23 @@ test("automatische conceptopslag vereist gereviewde, waarschuwingvrije en eendui
   assert.equal(blocked.reasons.some(reason=>reason.includes("menselijke bronreview")),true);
   assert.equal(blocked.reasons.some(reason=>reason.includes("Meerdere bronbeschrijvingen")),true);
   assert.equal(blocked.reasons.some(reason=>reason.includes("K2")),true);
+});
+
+
+test("current recipe review decisions drive automatic candidates without leaking across source versions",()=>{
+  const proposals=[
+    {positionRef:"K1",recipeRef:"10",label:"A",priority:10,confidence:.9,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K1",recipeRef:"11",label:"B",priority:9,confidence:.8,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K2",recipeRef:"20",label:"C",priority:10,confidence:.9,reasons:[],evidence:[],reviewRequired:true}
+  ];
+  const decisions=[
+    {positionRef:"K1",recipeVersionId:10,decision:"rejected" as const,reason:null,sourceSelectionVersion:"v2",decidedBy:1},
+    {positionRef:"K1",recipeVersionId:11,decision:"accepted" as const,reason:null,sourceSelectionVersion:"v2",decidedBy:1},
+    {positionRef:"K2",recipeVersionId:20,decision:"rejected" as const,reason:null,sourceSelectionVersion:"old",decidedBy:1}
+  ];
+  const current=applyRecipeProposalDecisions({proposals,decisions,sourceSelectionVersion:"v2"});
+  assert.deepEqual(current.map(item=>item.recipeRef),["11","20"]);
+
+  const changedSources=applyRecipeProposalDecisions({proposals,decisions,sourceSelectionVersion:"v3"});
+  assert.deepEqual(changedSources.map(item=>item.recipeRef),["10","11","20"]);
 });
