@@ -566,7 +566,7 @@ app.put("/api/workbench/current/concept/recipe-proposals/:positionRef/:recipeVer
   const recipeVersionId=Number(req.params.recipeVersionId);
   const decision=String(req.body?.decision??"") as RecipeProposalDecision;
   const reason=String(req.body?.reason??"").trim().slice(0,1000)||null;
-  if(!positionRef||!Number.isInteger(recipeVersionId)||recipeVersionId<=0||!["accepted","rejected"].includes(decision)){
+  if(!positionRef||!Number.isInteger(recipeVersionId)||recipeVersionId<=0||!["accepted","rejected","reset"].includes(decision)){
     res.status(400).json({error:"Ongeldige reviewbeslissing."});return;
   }
   try{
