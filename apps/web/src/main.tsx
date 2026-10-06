@@ -319,6 +319,12 @@ type WorkbenchAggregate = {
     unresolvedPositionRefs:string[];
     ready:boolean;
   };
+  recipeSelectionIssues:Array<{
+    positionRef:string;
+    code:"no_match"|"all_rejected"|"multiple_candidates"|"multiple_accepted";
+    message:string;
+    candidateRecipeRefs:string[];
+  }>;
   recipeProposals: Array<{
     positionRef: string;
     recipeRef: string;
@@ -3798,7 +3804,7 @@ function App() {
                   {candidates.length > 1 && <div className="takeoffReview"><strong>Meerdere geometrieën gevonden</strong>{candidates.map(candidate => <label key={candidate.id} className={selectedTakeoffId === candidate.id ? "is-selected" : ""}><input type="radio" name={`takeoff-${position.positionRef}`} checked={selectedTakeoffId === candidate.id} onChange={() => setSelectedTakeoffByPosition(current => ({...current,[position.positionRef]:candidate.id}))} /><span><b>Take-off #{candidate.id}</b><small>{candidate.quantity} × {candidate.width_mm ?? "—"} × {candidate.height_mm ?? "—"} mm · {candidate.area_m2 ?? "—"} m² · omtrek {candidate.perimeter_m ?? "—"} m</small></span></label>)}</div>}
                 </div>;
               })}</div>
-              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
+              <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeSelectionIssues.length>0&&<div className="recipeSelectionIssues">{aggregate.recipeSelectionIssues.map(issue=><div key={issue.positionRef} className={"recipeSelectionIssue is-"+issue.code}><strong>{issue.positionRef}</strong><small>{issue.message}{issue.candidateRecipeRefs.length?" · recept "+issue.candidateRecipeRefs.join(", "):""}</small></div>)}</div>}{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
                 <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}>{(()=>{
                   const decision=aggregate.recipeProposalDecisions.find(item=>item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));
                   const stale=aggregate.recipeProposalDecisions.some(item=>!item.current&&item.positionRef===proposal.positionRef&&item.recipeVersionId===Number(proposal.recipeRef));

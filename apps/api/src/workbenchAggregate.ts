@@ -29,6 +29,36 @@ export function applyRecipeProposalDecisions(input:{
   });
 }
 
+
+export type RecipeSelectionIssue={
+  positionRef:string;
+  code:"no_match"|"all_rejected"|"multiple_candidates"|"multiple_accepted";
+  message:string;
+  candidateRecipeRefs:string[];
+};
+
+export function explainRecipeSelectionIssues(input:{
+  positions:Array<{positionRef:string}>;
+  rawProposals:RecipeProposal[];
+  effectiveProposals:RecipeProposal[];
+  decisions:StoredRecipeProposalDecision[];
+  sourceSelectionVersion:string|null;
+}):RecipeSelectionIssue[]{
+  const current=input.decisions.filter(item=>item.sourceSelectionVersion===input.sourceSelectionVersion);
+  const issues:RecipeSelectionIssue[]=[];
+  for(const position of input.positions){
+    const raw=input.rawProposals.filter(item=>item.positionRef===position.positionRef);
+    const effective=input.effectiveProposals.filter(item=>item.positionRef===position.positionRef);
+    const accepted=current.filter(item=>item.positionRef===position.positionRef&&item.decision==="accepted");
+    const rejected=current.filter(item=>item.positionRef===position.positionRef&&item.decision==="rejected");
+    if(accepted.length>1){issues.push({positionRef:position.positionRef,code:"multiple_accepted",message:"Meerdere recepten zijn expliciet geaccepteerd; kies één recept.",candidateRecipeRefs:accepted.map(item=>String(item.recipeVersionId)).sort()});continue;}
+    if(raw.length===0){issues.push({positionRef:position.positionRef,code:"no_match",message:"Geen recept sluit voldoende aan op de actuele broninhoud.",candidateRecipeRefs:[]});continue;}
+    if(effective.length===0&&rejected.length>0){issues.push({positionRef:position.positionRef,code:"all_rejected",message:"Alle actuele receptvoorstellen zijn afgewezen.",candidateRecipeRefs:raw.map(item=>item.recipeRef).sort()});continue;}
+    if(effective.length>1){issues.push({positionRef:position.positionRef,code:"multiple_candidates",message:"Meerdere actuele recepten passen; menselijke keuze nodig.",candidateRecipeRefs:effective.map(item=>item.recipeRef).sort()});continue;}
+  }
+  return issues;
+}
+
 export type CalcScopeCoverageItem={
   scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
   covered:number;
@@ -120,6 +150,10 @@ export function buildWorkbenchAggregate(input:{
     decisions:input.recipeProposalDecisions??[],
     sourceSelectionVersion:concept.sourceSelectionVersion
   });
+  const recipeSelectionIssues=explainRecipeSelectionIssues({
+    positions:concept.positions,rawProposals,effectiveProposals:proposals,
+    decisions:input.recipeProposalDecisions??[],sourceSelectionVersion:concept.sourceSelectionVersion
+  });
   const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
   const scopeCoverage=calculateScopeCoverage(concept.positions);
   const automationReadiness=calculateAutomationReadiness({concept,structureProposal});
@@ -131,6 +165,7 @@ export function buildWorkbenchAggregate(input:{
     documentTriage,
     takeoffs: input.context.context.takeoff,
     recipeProposals:proposals,
+    recipeSelectionIssues,
     structureProposal,
     scopeCoverage,
     automationReadiness,
