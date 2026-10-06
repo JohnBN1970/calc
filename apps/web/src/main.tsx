@@ -325,6 +325,13 @@ type WorkbenchAggregate = {
     label: string;
     confidence: number;
     reasons: string[];
+    evidence:Array<{
+      term:string;
+      documentId:number|null;
+      sourcePage:number|null;
+      sourceFragment:string|null;
+      factType:string|null;
+    }>;
     reviewRequired: boolean;
   }>;
   takeoffs: Array<{
@@ -3758,7 +3765,7 @@ function App() {
                 </div>;
               })}</div>
               <div className="recipePanel"><h3>Voorstellen</h3>{aggregate.recipeProposals.length === 0 ? <p className="muted">Geen toepasselijke receptvoorstellen.</p> : aggregate.recipeProposals.map((proposal,index) =>
-                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
+                <div className="recipeProposalCard" key={`${proposal.positionRef}-${proposal.recipeRef}-${index}`}><div><strong>{proposal.label}</strong><span>{proposal.positionRef} · {Math.round(proposal.confidence*100)}%</span></div>{proposal.reasons.map((reason,i)=><small key={i}>{reason}</small>)}{proposal.evidence.length>0&&<div className="recipeEvidence">{proposal.evidence.map((item,i)=><small key={item.term+"-"+i}><b>{item.term}</b>{item.documentId!==null?` · bron #${item.documentId}${item.sourcePage!==null?" · p."+item.sourcePage:""}`:" · bron niet specifiek"}{item.sourceFragment?" · "+item.sourceFragment:""}</small>)}</div>}<button type="button" disabled={!aggregate.editable || !recipeParagraphKey || (aggregate.takeoffs.filter(row => row.position_ref.trim() === proposal.positionRef).length > 1 && !selectedTakeoffByPosition[proposal.positionRef])} onClick={() => void acceptRecipeProposal(proposal)}>Bevestigen & doorrekenen</button></div>
               )}</div>
               <div className="recipePanel"><h3>Door Calc gegenereerd</h3>{lines.filter(line => line.priceSourceType === "recipe").length === 0 ? <p className="muted">Nog geen receptregels in de calculatie.</p> : lines.filter(line => line.priceSourceType === "recipe").map(line =>
                 <div className={"generatedLineCard"+(line.resolutionStatus==="unresolved"?" is-unresolved":"")} key={line.id}><div><strong>{line.description}</strong><span>{line.sourceReference ?? "Calc-recept"}</span></div><b>{line.labourTotalHours != null ? line.labourTotalHours.toLocaleString("nl-NL",{maximumFractionDigits:4}) : line.quantity.toLocaleString("nl-NL",{maximumFractionDigits:4})} {line.unit}</b>{line.resolutionStatus==="unresolved"?<small className="sourceError">{line.resolutionReason || "Bron niet beschikbaar."}</small>:<small>{money.format(lineDirect(line))} direct</small>}</div>
