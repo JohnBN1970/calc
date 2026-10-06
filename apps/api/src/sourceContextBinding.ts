@@ -43,3 +43,44 @@ export function sourceContextIsCurrent(input:{
   return input.binding.officeVersion===input.officeVersion&&
     (input.binding.selectionVersion??null)===(input.selectionVersion??null);
 }
+
+
+export type GeneratedRecipeIdentity={
+  positionRef:string;
+  recipeVersionId:number;
+  officeVersion:string|null;
+  selectionVersion:string|null;
+};
+
+export function generatedRecipeIdentity(sourceDetails:string|null|undefined):GeneratedRecipeIdentity|null{
+  try{
+    const details=sourceDetails?JSON.parse(sourceDetails):null;
+    const positionRef=String(details?.position_ref??"").trim();
+    const recipeVersionId=Number(details?.recipe?.version_id??0);
+    if(!positionRef||!Number.isInteger(recipeVersionId)||recipeVersionId<=0)return null;
+    const officeRaw=details?.context_binding?.officeVersion;
+    const selectionRaw=details?.context_binding?.selectionVersion;
+    return{
+      positionRef,
+      recipeVersionId,
+      officeVersion:officeRaw==null||String(officeRaw).trim()===""?null:String(officeRaw).trim(),
+      selectionVersion:selectionRaw==null||String(selectionRaw).trim()===""?null:String(selectionRaw).trim()
+    };
+  }catch{return null;}
+}
+
+export function generatedRecipeIdentityIsCurrent(input:{
+  identity:GeneratedRecipeIdentity|null;
+  positionRef:string;
+  recipeVersionId:number;
+  officeVersion:string;
+  selectionVersion:string|null;
+}):boolean{
+  const identity=input.identity;
+  return Boolean(identity&&
+    identity.positionRef===input.positionRef&&
+    identity.recipeVersionId===input.recipeVersionId&&
+    identity.officeVersion===input.officeVersion&&
+    (identity.selectionVersion??null)===(input.selectionVersion??null)
+  );
+}

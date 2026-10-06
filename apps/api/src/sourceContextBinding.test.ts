@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveSourceContextBinding, sourceContextIsCurrent } from "./sourceContextBinding.js";
+import { deriveSourceContextBinding, sourceContextIsCurrent, generatedRecipeIdentity, generatedRecipeIdentityIsCurrent } from "./sourceContextBinding.js";
 
 const details=(officeVersion:string,selectionVersion:string|null)=>JSON.stringify({
   context_binding:{officeVersion,selectionVersion}
@@ -34,4 +34,18 @@ test("binding moet zowel Office- als documentselectieversie volgen",()=>{
   assert.equal(sourceContextIsCurrent({binding,officeVersion:"7",selectionVersion:"sel-2"}),true);
   assert.equal(sourceContextIsCurrent({binding,officeVersion:"8",selectionVersion:"sel-2"}),false);
   assert.equal(sourceContextIsCurrent({binding,officeVersion:"7",selectionVersion:"sel-3"}),false);
+});
+
+
+test("generated recipe identity binds position recipe and source context",()=>{
+  const sourceDetails=JSON.stringify({
+    recipe:{version_id:42},
+    position_ref:"K12",
+    context_binding:{officeVersion:"9",selectionVersion:"sel-4"}
+  });
+  const identity=generatedRecipeIdentity(sourceDetails);
+  assert.deepEqual(identity,{positionRef:"K12",recipeVersionId:42,officeVersion:"9",selectionVersion:"sel-4"});
+  assert.equal(generatedRecipeIdentityIsCurrent({identity,positionRef:"K12",recipeVersionId:42,officeVersion:"9",selectionVersion:"sel-4"}),true);
+  assert.equal(generatedRecipeIdentityIsCurrent({identity,positionRef:"K12",recipeVersionId:43,officeVersion:"9",selectionVersion:"sel-4"}),false);
+  assert.equal(generatedRecipeIdentityIsCurrent({identity,positionRef:"K12",recipeVersionId:42,officeVersion:"9",selectionVersion:"sel-5"}),false);
 });

@@ -268,6 +268,7 @@ type WorkbenchAggregate = {
       warnings: string[];
     }>;
     unresolved: string[];
+    sourceSelectionVersion:string|null;
     sourceDecisions:Array<{
       positionRef:string;
       factType:string;
@@ -2255,6 +2256,19 @@ function App() {
     if(aggregate.structureProposal.groups.some(group=>group.recipeRef!==null))setRecipeParagraphKey("__auto__");
     setStructureProposalStatus(created.length+" structuurregel(s) toegevoegd aan het concept. Controleer en sla daarna de calculatie op.");
   };
+  const generatedRecipeIdentityFromLine=(line:Line)=>{
+    if(line.priceSourceType!=="recipe"||!line.sourceDetails)return null;
+    try{
+      const details=JSON.parse(line.sourceDetails);
+      const positionRef=String(details?.position_ref??"").trim();
+      const recipeVersionId=Number(details?.recipe?.version_id??0);
+      const officeVersion=details?.context_binding?.officeVersion==null?null:String(details.context_binding.officeVersion);
+      const selectionVersion=details?.context_binding?.selectionVersion==null?null:String(details.context_binding.selectionVersion);
+      if(!positionRef||!Number.isInteger(recipeVersionId)||recipeVersionId<=0)return null;
+      return{positionRef,recipeVersionId,officeVersion,selectionVersion};
+    }catch{return null;}
+  };
+
   const generateUnambiguousRecipes=async()=>{
     if(!aggregate){setRecipeActionStatus("Calc-concept is nog niet geladen.");return;}
     const allowed=new Set(aggregate.autoBuildEligibility.eligiblePositionRefs);
@@ -2314,8 +2328,19 @@ function App() {
     }
 
     for(const {group,proposal} of eligible){
-      const alreadyExists=[...lines,...createdRecipeLines].some(line=>line.priceSourceType==="recipe"&&Boolean(line.sourceOfferSummary?.trim().endsWith("· "+proposal.positionRef)));
-      if(alreadyExists){skipped.push(proposal.positionRef+" bestaat al");continue;}
+      const existingIdentities=[...lines,...createdRecipeLines]
+        .map(line=>({line,identity:generatedRecipeIdentityFromLine(line)}))
+        .filter(item=>item.identity?.positionRef===proposal.positionRef);
+      const currentExisting=existingIdentities.some(item=>
+        item.identity?.recipeVersionId===Number(proposal.recipeRef)&&
+        item.identity?.officeVersion===aggregate.officeVersion&&
+        (item.identity?.selectionVersion??null)===(aggregate.concept.sourceSelectionVersion??null)
+      );
+      if(currentExisting){skipped.push(proposal.positionRef+" bestaat al en is actueel");continue;}
+      if(existingIdentities.length){
+        skipped.push(proposal.positionRef+" heeft bestaande receptregels uit andere recept-/broncontext; eerst review/verversen");
+        continue;
+      }
       const takeoffs=aggregate.takeoffs.filter(row=>row.position_ref.trim()===proposal.positionRef);
       if(takeoffs.length>1&&!selectedTakeoffByPosition[proposal.positionRef]){
         skipped.push(proposal.positionRef+" heeft meerdere geometrieën");
