@@ -59,6 +59,38 @@ export function explainRecipeSelectionIssues(input:{
   return issues;
 }
 
+
+export type AutoBuildEligibility={
+  eligiblePositionRefs:string[];
+  blocked:Array<{positionRef:string;reasons:string[]}>;
+};
+
+export function calculateAutoBuildEligibility(input:{
+  positions:Array<{positionRef:string;reviewStatus:"reviewed"|"proposed"}>;
+  recipeProposals:RecipeProposal[];
+  recipeSelectionIssues:RecipeSelectionIssue[];
+}):AutoBuildEligibility{
+  const issuesByPosition=new Map<string,RecipeSelectionIssue[]>();
+  for(const issue of input.recipeSelectionIssues){
+    const rows=issuesByPosition.get(issue.positionRef)??[];
+    rows.push(issue);issuesByPosition.set(issue.positionRef,rows);
+  }
+  const eligiblePositionRefs:string[]=[];
+  const blocked:Array<{positionRef:string;reasons:string[]}>=[];
+
+  for(const position of input.positions){
+    const reasons:string[]=[];
+    if(position.reviewStatus!=="reviewed")reasons.push("bronfeiten wachten nog op menselijke review");
+    const issues=issuesByPosition.get(position.positionRef)??[];
+    reasons.push(...issues.map(issue=>issue.message));
+    const proposalCount=input.recipeProposals.filter(item=>item.positionRef===position.positionRef).length;
+    if(proposalCount!==1&&!issues.length)reasons.push(proposalCount===0?"geen actueel receptvoorstel":"receptkeuze is niet eenduidig");
+    if(reasons.length)blocked.push({positionRef:position.positionRef,reasons:[...new Set(reasons)]});
+    else eligiblePositionRefs.push(position.positionRef);
+  }
+  return{eligiblePositionRefs:eligiblePositionRefs.sort((a,b)=>a.localeCompare(b,"nl")),blocked};
+}
+
 export type CalcScopeCoverageItem={
   scopeType:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
   covered:number;
@@ -154,6 +186,9 @@ export function buildWorkbenchAggregate(input:{
     positions:concept.positions,rawProposals,effectiveProposals:proposals,
     decisions:input.recipeProposalDecisions??[],sourceSelectionVersion:concept.sourceSelectionVersion
   });
+  const autoBuildEligibility=calculateAutoBuildEligibility({
+    positions:concept.positions,recipeProposals:proposals,recipeSelectionIssues
+  });
   const structureProposal=buildCalcStructureProposal({concept,recipeProposals:proposals});
   const scopeCoverage=calculateScopeCoverage(concept.positions);
   const automationReadiness=calculateAutomationReadiness({concept,structureProposal});
@@ -166,6 +201,7 @@ export function buildWorkbenchAggregate(input:{
     takeoffs: input.context.context.takeoff,
     recipeProposals:proposals,
     recipeSelectionIssues,
+    autoBuildEligibility,
     structureProposal,
     scopeCoverage,
     automationReadiness,
