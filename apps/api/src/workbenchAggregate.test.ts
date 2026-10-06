@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyRecipeProposalDecisions, calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage, explainRecipeSelectionIssues } from "./workbenchAggregate.js";
+import { applyRecipeProposalDecisions, calcWorkbenchStructureFromLines, calculateAutomationReadiness, calculateScopeCoverage, explainRecipeSelectionIssues, calculateAutoBuildEligibility } from "./workbenchAggregate.js";
 
 test("Calc structuur gebruikt stabiele sleutel en niet database-id",()=>{
   const first=calcWorkbenchStructureFromLines([
@@ -109,4 +109,27 @@ test("reset recipe review decision is neutral for automatic candidates",()=>{
   ];
   const effective=applyRecipeProposalDecisions({proposals,decisions,sourceSelectionVersion:"v1"});
   assert.deepEqual(effective.map(item=>item.recipeRef),["10"]);
+});
+
+
+test("auto-build eligibility is per position and requires reviewed unambiguous proposal",()=>{
+  const proposals=[
+    {positionRef:"K1",recipeRef:"10",label:"A",priority:1,confidence:.9,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K2",recipeRef:"20",label:"B",priority:1,confidence:.9,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K3",recipeRef:"30",label:"C",priority:1,confidence:.9,reasons:[],evidence:[],reviewRequired:true},
+    {positionRef:"K3",recipeRef:"31",label:"D",priority:1,confidence:.8,reasons:[],evidence:[],reviewRequired:true}
+  ];
+  const issues=[{positionRef:"K3",code:"multiple_candidates" as const,message:"Meerdere actuele recepten passen; menselijke keuze nodig.",candidateRecipeRefs:["30","31"]}];
+  const result=calculateAutoBuildEligibility({
+    positions:[
+      {positionRef:"K1",reviewStatus:"reviewed"},
+      {positionRef:"K2",reviewStatus:"proposed"},
+      {positionRef:"K3",reviewStatus:"reviewed"}
+    ],
+    recipeProposals:proposals,
+    recipeSelectionIssues:issues
+  });
+  assert.deepEqual(result.eligiblePositionRefs,["K1"]);
+  assert.equal(result.blocked.find(item=>item.positionRef==="K2")?.reasons.some(reason=>reason.includes("menselijke review")),true);
+  assert.equal(result.blocked.find(item=>item.positionRef==="K3")?.reasons.some(reason=>reason.includes("Meerdere actuele recepten")),true);
 });
