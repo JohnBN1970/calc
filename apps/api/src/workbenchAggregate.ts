@@ -45,17 +45,18 @@ export function explainRecipeSelectionIssues(input:{
   sourceSelectionVersion:string|null;
 }):RecipeSelectionIssue[]{
   const current=input.decisions.filter(item=>item.sourceSelectionVersion===input.sourceSelectionVersion);
-  return input.positions.flatMap(position=>{
+  const issues:RecipeSelectionIssue[]=[];
+  for(const position of input.positions){
     const raw=input.rawProposals.filter(item=>item.positionRef===position.positionRef);
     const effective=input.effectiveProposals.filter(item=>item.positionRef===position.positionRef);
     const accepted=current.filter(item=>item.positionRef===position.positionRef&&item.decision==="accepted");
     const rejected=current.filter(item=>item.positionRef===position.positionRef&&item.decision==="rejected");
-    if(accepted.length>1)return[{positionRef:position.positionRef,code:"multiple_accepted" as const,message:"Meerdere recepten zijn expliciet geaccepteerd; kies één recept.",candidateRecipeRefs:accepted.map(item=>String(item.recipeVersionId)).sort()}];
-    if(raw.length===0)return[{positionRef:position.positionRef,code:"no_match" as const,message:"Geen recept sluit voldoende aan op de actuele broninhoud.",candidateRecipeRefs:[]}];
-    if(effective.length===0&&rejected.length>0)return[{positionRef:position.positionRef,code:"all_rejected" as const,message:"Alle actuele receptvoorstellen zijn afgewezen.",candidateRecipeRefs:raw.map(item=>item.recipeRef).sort()}];
-    if(effective.length>1)return[{positionRef:position.positionRef,code:"multiple_candidates" as const,message:"Meerdere actuele recepten passen; menselijke keuze nodig.",candidateRecipeRefs:effective.map(item=>item.recipeRef).sort()}];
-    return[];
-  });
+    if(accepted.length>1){issues.push({positionRef:position.positionRef,code:"multiple_accepted",message:"Meerdere recepten zijn expliciet geaccepteerd; kies één recept.",candidateRecipeRefs:accepted.map(item=>String(item.recipeVersionId)).sort()});continue;}
+    if(raw.length===0){issues.push({positionRef:position.positionRef,code:"no_match",message:"Geen recept sluit voldoende aan op de actuele broninhoud.",candidateRecipeRefs:[]});continue;}
+    if(effective.length===0&&rejected.length>0){issues.push({positionRef:position.positionRef,code:"all_rejected",message:"Alle actuele receptvoorstellen zijn afgewezen.",candidateRecipeRefs:raw.map(item=>item.recipeRef).sort()});continue;}
+    if(effective.length>1){issues.push({positionRef:position.positionRef,code:"multiple_candidates",message:"Meerdere actuele recepten passen; menselijke keuze nodig.",candidateRecipeRefs:effective.map(item=>item.recipeRef).sort()});continue;}
+  }
+  return issues;
 }
 
 export type CalcScopeCoverageItem={
