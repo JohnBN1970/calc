@@ -524,3 +524,8 @@ main{padding-top:6px}
 .recipeSelectionIssue strong{font-size:12px}
 .recipeSelectionIssue small{color:var(--muted,#687386)}
 .recipeSelectionIssue.is-all_rejected,.recipeSelectionIssue.is-multiple_accepted{background:#fff7ed}
+
+.recipeSelectionIssue{grid-template-columns:1fr auto;align-items:center}
+.recipeSelectionIssue>div{display:grid;gap:2px}
+.recipeSelectionIssue>button{white-space:nowrap}
+@media(max-width:700px){.recipeSelectionIssue{grid-template-columns:1fr}.recipeSelectionIssue>button{width:max-content}}
