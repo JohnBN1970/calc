@@ -29,6 +29,10 @@ export type EvaluatedTakeoffComponent=TakeoffComponent&{
   effective_area_m2:number|null;
   effective_perimeter_m:number|null;
   geometry_status:"complete"|"incomplete"|"invalid";
+  parent_component_kind:ComponentKind|null;
+  width_delta_to_parent_mm:number|null;
+  height_delta_to_parent_mm:number|null;
+  relation_status:"root"|"ok"|"missing_parent"|"self_parent"|"cycle";
   warnings:string[];
 };
 
@@ -79,6 +83,34 @@ export function evaluateTakeoffComponents(components:TakeoffComponent[]):Evaluat
   return components.map(component=>{
     const warnings:string[]=[];
     const semantic=normalizeComponentKind(component);
+    const positionMap=byPosition.get(component.position_ref)??new Map<string,TakeoffComponent>();
+    let relation_status:EvaluatedTakeoffComponent["relation_status"]="root";
+    let parent:TakeoffComponent|null=null;
+    if(component.parent_component_ref){
+      if(component.parent_component_ref===component.component_ref){
+        relation_status="self_parent";
+        warnings.push("Component verwijst naar zichzelf als parent.");
+      }else{
+        parent=positionMap.get(component.parent_component_ref)??null;
+        if(!parent){
+          relation_status="missing_parent";
+          warnings.push("Bovenliggend component ontbreekt in dezelfde positie.");
+        }else{
+          const seen=new Set<string>([component.component_ref]);
+          let cursor:TakeoffComponent|null=parent;
+          let cycle=false;
+          while(cursor?.parent_component_ref){
+            if(seen.has(cursor.component_ref)||seen.has(cursor.parent_component_ref)){cycle=true;break;}
+            seen.add(cursor.component_ref);
+            cursor=positionMap.get(cursor.parent_component_ref)??null;
+          }
+          if(cycle){
+            relation_status="cycle";
+            warnings.push("Circulaire componentrelatie gedetecteerd.");
+          }else relation_status="ok";
+        }
+      }
+    }
     const quantity=positive(component.quantity);
     const width=positive(component.width_mm);
     const height=positive(component.height_mm);
@@ -92,9 +124,6 @@ export function evaluateTakeoffComponents(components:TakeoffComponent[]):Evaluat
     const calculated_area_m2=quantity&&width&&height?(width/1000)*(height/1000)*quantity:null;
     const calculated_perimeter_m=quantity&&width&&height?2*((width/1000)+(height/1000))*quantity:null;
 
-    const parent=component.parent_component_ref
-      ? byPosition.get(component.position_ref)?.get(component.parent_component_ref)??null
-      : null;
     if(parent&&width&&height){
       const parentWidth=positive(parent.width_mm),parentHeight=positive(parent.height_mm);
       if(parentWidth&&width>parentWidth+0.001)warnings.push("Component is breder dan het bovenliggende onderdeel.");
@@ -105,10 +134,20 @@ export function evaluateTakeoffComponents(components:TakeoffComponent[]):Evaluat
       warnings.push("Broncomponent wacht nog op review.");
     }
 
+    const parentSemantic=parent?normalizeComponentKind(parent):null;
+    const parentWidth=parent?positive(parent.width_mm):null;
+    const parentHeight=parent?positive(parent.height_mm):null;
+    const width_delta_to_parent_mm=parentWidth&&width?parentWidth-width:null;
+    const height_delta_to_parent_mm=parentHeight&&height?parentHeight-height:null;
+
     return{
       ...component,
       component_kind:semantic.kind,
       component_kind_source:semantic.source,
+      parent_component_kind:parentSemantic?.kind??null,
+      width_delta_to_parent_mm,
+      height_delta_to_parent_mm,
+      relation_status,
       calculated_area_m2,
       calculated_perimeter_m,
       effective_area_m2:positive(component.area_m2)??calculated_area_m2,
