@@ -569,3 +569,10 @@ main{padding-top:6px}
 .structureDescription{transition:padding-left .12s ease}
 
 .commandBuilder{color:#111820;font-weight:750}.commandBuilder .commandIcon{width:25px;height:25px}.commandBuilder:hover,.commandBuilder.commandActive{background:#e8edf1}
+
+.conceptBuilderActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.conceptBuilderActions>button:not(.conceptBuilderPrimary){min-height:38px;padding:0 14px;border:1px solid #c7d0d8;border-radius:7px;background:#fff;font-weight:700;cursor:pointer}.conceptBuilderActions>button:not(.conceptBuilderPrimary):hover{background:#f2f5f7}
+
+/* Builder needs room for source review, structure and recipe columns. */
+.dockWindow.is-floating:has(.recipeWorkspace){width:min(1240px,calc(100vw - 48px));max-height:calc(100vh - 72px)}
+.dockWindow.is-floating:has(.recipeWorkspace) .dockWindowContent{max-height:calc(100vh - 106px)}
+@media(max-width:900px){.dockWindow.is-floating:has(.recipeWorkspace){left:8px!important;right:8px;width:auto!important;max-height:calc(100vh - 24px)}}
