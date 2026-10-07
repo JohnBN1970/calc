@@ -1695,6 +1695,13 @@ app.put("/api/workbench/current", async (req, res) => {
       const equipment = numeric(line.equipmentUnitCost);
       const subcontracting = numeric(line.subcontractingUnitCost);
       const other = numeric(line.otherUnitCost);
+      const sourceDetailsText=line.sourceDetails==null?null:String(line.sourceDetails);
+      if(sourceDetailsText&&sourceDetailsText.length>250000){
+        throw new Error("Bronprovenance van een calculatieregel is te groot om veilig op te slaan.");
+      }
+      if(sourceDetailsText){
+        try{JSON.parse(sourceDetailsText);}catch{throw new Error("Bronprovenance van een calculatieregel bevat ongeldige JSON.");}
+      }
       const priceSourceType = line.priceSourceType ?? "manual";
       if (!["manual", "article", "recipe", "supplier_quote"].includes(priceSourceType)) {
         throw new Error("Unknown price source type.");
@@ -1733,7 +1740,7 @@ app.put("/api/workbench/current", async (req, res) => {
           line.sourceUnitPrice == null ? null : numeric(line.sourceUnitPrice),
           line.sourcePriceDate ? String(line.sourcePriceDate).slice(0, 10) : null,
           line.sourceDocumentId ? String(line.sourceDocumentId).slice(0, 128) : null,
-          line.sourceDetails ? String(line.sourceDetails).slice(0, 8000) : null,
+          sourceDetailsText,
           line.sourceVisualPage == null ? null : Math.max(1, Math.trunc(numeric(line.sourceVisualPage))),
           line.sourcePositionBounds ? JSON.stringify(line.sourcePositionBounds).slice(0, 500) : null,
           line.sourceVisualCrop ? JSON.stringify(line.sourceVisualCrop).slice(0, 500) : null,
