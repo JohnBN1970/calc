@@ -433,6 +433,8 @@ type CalcRecipe = {
     factor:number;
     wastePct:number;
     fixedQuantity:number|null;
+    roundingStep:number|null;
+    minimumQuantity:number|null;
     metadata:Record<string,unknown>|null;
   }>;
 };
@@ -1055,8 +1057,10 @@ function App() {
   const [recipeLineDraft, setRecipeLineDraft] = useState({
     lineRef:"", description:"", costKind:"material", unit:"st", takeoffBasis:"fixed",
     quantitySourceType:"", quantitySourceRef:"", costSourceType:"article", costSourceRef:"",
-    factor:1, wastePct:0, fixedQuantity:1, componentKind:"", componentRef:""
+    factor:1, wastePct:0, fixedQuantity:1, roundingStep:null as number|null, minimumQuantity:null as number|null,
+    componentKind:"", componentRef:""
   });
+  const [editingRecipeLineId,setEditingRecipeLineId]=useState<number|null>(null);
   const [subcalcDraft, setSubcalcDraft] = useState({ ref:"", description:"" });
   const [subcalcScopeDraft, setSubcalcScopeDraft] = useState({ subcalculationId:0, scopeType:"position", scopeRef:"" });
   const [managementStatus, setManagementStatus] = useState("");
@@ -1927,31 +1931,73 @@ function App() {
     }
   };
 
+  const resetRecipeLineDraft=()=>{
+    setRecipeLineDraft({
+      lineRef:"",description:"",costKind:"material",unit:"st",takeoffBasis:"fixed",
+      quantitySourceType:"",quantitySourceRef:"",costSourceType:"article",costSourceRef:"",
+      factor:1,wastePct:0,fixedQuantity:1,roundingStep:null,minimumQuantity:null,componentKind:"",componentRef:""
+    });
+    setEditingRecipeLineId(null);
+  };
+
+  const editRecipeLine=(line:CalcRecipe["lines"][number])=>{
+    setEditingRecipeLineId(line.id);
+    setRecipeLineDraft({
+      lineRef:line.lineRef,
+      description:line.description,
+      costKind:line.costKind,
+      unit:line.unit??"",
+      takeoffBasis:line.takeoffBasis,
+      quantitySourceType:line.quantitySourceType??"",
+      quantitySourceRef:line.quantitySourceRef??"",
+      costSourceType:line.costSourceType??"",
+      costSourceRef:line.costSourceRef??"",
+      factor:line.factor,
+      wastePct:line.wastePct,
+      fixedQuantity:line.fixedQuantity??1,
+      roundingStep:line.roundingStep,
+      minimumQuantity:line.minimumQuantity,
+      componentKind:String(line.metadata?.componentKind??""),
+      componentRef:String(line.metadata?.componentRef??"")
+    });
+    setManagementStatus("Receptregel "+line.lineRef+" bewerken.");
+  };
+
   const addRecipeLine = async () => {
     if(!selectedRecipeVersionId){setManagementStatus("Kies eerst een recept.");return;}
-    setManagementStatus("Receptregel toevoegen…");
+    const editingLine=editingRecipeLineId==null?null:(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines.find(line=>line.id===editingRecipeLineId)??null);
+    setManagementStatus(editingLine?"Receptregel bijwerken…":"Receptregel toevoegen…");
     try {
-      const response=await fetch(`/api/recipes/${selectedRecipeVersionId}/lines`,{
-        method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
-        body:JSON.stringify({
-          ...recipeLineDraft,
-          quantitySourceType:recipeLineDraft.quantitySourceType||null,
-          quantitySourceRef:recipeLineDraft.quantitySourceRef||null,
-          costSourceType:recipeLineDraft.costSourceType||null,
-          costSourceRef:recipeLineDraft.costSourceRef||null,
-          fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null,
-          metadata:(recipeLineDraft.componentKind||recipeLineDraft.componentRef)?{
-            componentKind:recipeLineDraft.componentKind||undefined,
-            componentRef:recipeLineDraft.componentRef||undefined
-          }:null
-        })
-      });
+      const metadata:Record<string,unknown>={...(editingLine?.metadata??{})};
+      if(recipeLineDraft.componentKind)metadata.componentKind=recipeLineDraft.componentKind;else delete metadata.componentKind;
+      if(recipeLineDraft.componentRef)metadata.componentRef=recipeLineDraft.componentRef;else delete metadata.componentRef;
+      const response=await fetch(
+        editingLine
+          ? `/api/recipes/${selectedRecipeVersionId}/lines/${editingLine.id}`
+          : `/api/recipes/${selectedRecipeVersionId}/lines`,
+        {
+          method:editingLine?"PUT":"POST",
+          headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({
+            ...recipeLineDraft,
+            sortOrder:editingLine?.sortOrder??0,
+            quantitySourceType:recipeLineDraft.quantitySourceType||null,
+            quantitySourceRef:recipeLineDraft.quantitySourceRef||null,
+            costSourceType:recipeLineDraft.costSourceType||null,
+            costSourceRef:recipeLineDraft.costSourceRef||null,
+            fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null,
+            roundingStep:recipeLineDraft.roundingStep,
+            minimumQuantity:recipeLineDraft.minimumQuantity,
+            metadata:Object.keys(metadata).length?metadata:null
+          })
+        }
+      );
       const payload=await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(String(payload.error??"Receptregel kon niet worden toegevoegd."));
-      setRecipeLineDraft(current=>({...current,lineRef:"",description:"",costSourceRef:"",quantitySourceRef:""}));
+      if(!response.ok) throw new Error(String(payload.error??(editingLine?"Receptregel kon niet worden bijgewerkt.":"Receptregel kon niet worden toegevoegd.")));
+      resetRecipeLineDraft();
       await loadRecipeLibrary();
-      setManagementStatus("Receptregel toegevoegd.");
-    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden toegevoegd."); }
+      setManagementStatus(editingLine?"Receptregel bijgewerkt.":"Receptregel toegevoegd.");
+    } catch(error) { setManagementStatus(error instanceof Error?error.message:"Receptregel kon niet worden opgeslagen."); }
   };
 
   const addSelectedLinesToSubcalculation = async (subcalculationId:number) => {
@@ -4178,13 +4224,15 @@ function App() {
                 <label><span>Factor</span><DecimalInput value={recipeLineDraft.factor} onChange={next=>setRecipeLineDraft(current=>({...current,factor:next??0}))} className="" /></label>
                 <label><span>Verlies %</span><DecimalInput value={recipeLineDraft.wastePct} onChange={next=>setRecipeLineDraft(current=>({...current,wastePct:next??0}))} className="" /></label>
                 {recipeLineDraft.takeoffBasis==="fixed" && <label><span>Vaste hoeveelheid</span><DecimalInput value={recipeLineDraft.fixedQuantity} onChange={next=>setRecipeLineDraft(current=>({...current,fixedQuantity:next??0}))} className="" /></label>}
+                <label><span>Afrondstap</span><DecimalInput value={recipeLineDraft.roundingStep} onChange={next=>setRecipeLineDraft(current=>({...current,roundingStep:next}))} className="" /></label>
+                <label><span>Minimumhoeveelheid</span><DecimalInput value={recipeLineDraft.minimumQuantity} onChange={next=>setRecipeLineDraft(current=>({...current,minimumQuantity:next}))} className="" /></label>
                 <label><span>Normbron type</span><input value={recipeLineDraft.quantitySourceType} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceType:event.target.value}))} placeholder="norm" /></label>
                 <label><span>Normbron ref</span><input value={recipeLineDraft.quantitySourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,quantitySourceRef:event.target.value}))} placeholder="montage:kozijn_per_m" /></label>
                 <label><span>Kostprijsbron type</span><select value={recipeLineDraft.costSourceType} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceType:event.target.value}))}><option value="">Geen</option><option value="article">Artikel</option><option value="project_labour">Projectarbeid</option><option value="norm">Normwaarde</option></select></label>
                 <label><span>Kostprijsbron ref</span><input value={recipeLineDraft.costSourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceRef:event.target.value}))} placeholder="artikelcode of default" /></label>
               </div>
-              <button type="button" disabled={!selectedRecipeVersionId} onClick={() => void addRecipeLine()}>Regel toevoegen</button>
-              {selectedRecipeVersionId && <div className="recipeLineList">{(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines??[]).map(line=><div key={line.id}><strong>{line.lineRef} · {line.description}</strong><span>{line.costKind} · {line.takeoffBasis}{line.metadata?.componentKind?" · vaktype "+String(line.metadata.componentKind):""}{line.metadata?.componentRef?" · vak "+String(line.metadata.componentRef):""} · factor {line.factor}{line.wastePct ? " · " + line.wastePct + "% verlies" : ""}</span><small>{line.quantitySourceRef ? "norm: " + line.quantitySourceType + ":" + line.quantitySourceRef : "geen normbron"} · {line.costSourceRef ? "prijs: " + line.costSourceType + ":" + line.costSourceRef : "geen kostprijsbron"}</small></div>)}</div>}
+              <div className="recipeLineEditorActions"><button type="button" disabled={!selectedRecipeVersionId} onClick={() => void addRecipeLine()}>{editingRecipeLineId==null?"Regel toevoegen":"Wijzigingen opslaan"}</button>{editingRecipeLineId!=null&&<button type="button" onClick={resetRecipeLineDraft}>Annuleren</button>}</div>
+              {selectedRecipeVersionId && <div className="recipeLineList">{(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines??[]).map(line=><div key={line.id} className={editingRecipeLineId===line.id?"is-editing":""}><strong>{line.lineRef} · {line.description}</strong><span>{line.costKind} · {line.takeoffBasis}{line.metadata?.componentKind?" · vaktype "+String(line.metadata.componentKind):""}{line.metadata?.componentRef?" · vak "+String(line.metadata.componentRef):""} · factor {line.factor}{line.wastePct ? " · " + line.wastePct + "% verlies" : ""}</span><small>{line.quantitySourceRef ? "norm: " + line.quantitySourceType + ":" + line.quantitySourceRef : "geen normbron"} · {line.costSourceRef ? "prijs: " + line.costSourceType + ":" + line.costSourceRef : "geen kostprijsbron"}</small><button type="button" onClick={()=>editRecipeLine(line)}>Bewerken</button></div>)}</div>}
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
