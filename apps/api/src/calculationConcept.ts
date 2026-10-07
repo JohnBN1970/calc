@@ -5,6 +5,7 @@ import { assessDocumentRevisions } from "./sourceRevision.js";
 import { evaluateSourceDecisions } from "./sourceDecisionEvaluation.js";
 import type { SourceDecision } from "./sourceDecision.js";
 import { fusePositionSources, type FusedSourceFact } from "./sourceFusion.js";
+import { evaluateTakeoffComponents, type EvaluatedTakeoffComponent } from "./componentTakeoff.js";
 
 export type CalculationConceptPosition = {
   positionRef: string;
@@ -16,6 +17,7 @@ export type CalculationConceptPosition = {
   sourceDocumentIds: number[];
   sourcePages: number[];
   sourceFacts: FusedSourceFact[];
+  sourceComponents: EvaluatedTakeoffComponent[];
   reviewStatus: "reviewed" | "proposed";
   scopes: Array<{
     type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";
@@ -82,6 +84,21 @@ export function buildConceptFromOfficeContext(
     push("dwelling_type",row.dwelling_type);
     push("building_part",row.building_part);
     scopesByPosition.set(ref,scopes);
+  }
+
+  const componentsByPosition=new Map<string,EvaluatedTakeoffComponent[]>();
+  const evaluatedComponents=evaluateTakeoffComponents(
+    (context.components??[]).filter(component=>
+      (component.document_id==null||acceptedDocumentIds.has(Number(component.document_id)))&&
+      (component.document_id==null||!supersededDocumentIds.has(Number(component.document_id)))
+    )
+  );
+  for(const component of evaluatedComponents){
+    const ref=String(component.position_ref??"").trim();
+    if(!ref)continue;
+    const rows=componentsByPosition.get(ref)??[];
+    rows.push(component);
+    componentsByPosition.set(ref,rows);
   }
 
   const takeoffsByPosition = new Map<string, typeof context.takeoff>();
@@ -152,6 +169,7 @@ export function buildConceptFromOfficeContext(
     const descriptions = fusedFacts.filter(f => f.factType === "description" && f.valueText?.trim());
     const prices = fusedFacts.filter(f => f.factType === "supplier_unit_price" && f.valueNumber !== null);
     const relevantFacts = facts.filter(f => ["quantity", "width_mm", "height_mm", "description", "supplier_unit_price"].includes(f.fact_type));
+    const sourceComponents=componentsByPosition.get(positionRef)??[];
     const warnings: string[] = [];
 
     warnings.push("Geometrie geïnterpreteerd als "+measurementKindLabel(measurementKind)+".");
@@ -166,7 +184,7 @@ export function buildConceptFromOfficeContext(
 
     const sourceDocumentIds = [...new Set(relevantFacts.map(f => f.document_id))].sort((a, b) => a - b);
     const sourcePages = [...new Set(relevantFacts.flatMap(f => f.source_page === null ? [] : [f.source_page]))].sort((a, b) => a - b);
-    const reviewStatus = factStatus(relevantFacts.map(f => f.review_status));
+    const reviewStatus = factStatus([...relevantFacts.map(f => f.review_status),...sourceComponents.map(component=>component.review_status)]);
 
     if (reviewStatus === "proposed") warnings.push("Bronfeiten wachten nog op menselijke review.");
 
@@ -180,6 +198,7 @@ export function buildConceptFromOfficeContext(
       sourceDocumentIds,
       sourcePages,
       sourceFacts:fusedFacts,
+      sourceComponents,
       reviewStatus,
       scopes:scopesByPosition.get(positionRef)??[],
       warnings

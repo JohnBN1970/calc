@@ -40,7 +40,15 @@ function sourceEvidenceText(position:CalculationConceptPosition):string{
     fact.factType==="description"?fact.valueText:null,
     fact.sourceFragment
   ]).filter((value):value is string=>Boolean(value?.trim()));
-  return normalize([position.description??"",...fragments].join(" "));
+  const componentFragments=position.sourceComponents.flatMap(component=>[
+    component.component_kind,
+    component.component_type,
+    component.description,
+    component.classification_ref,
+    component.component_ref,
+    component.source_fragment
+  ]).filter((value):value is string=>Boolean(value?.trim()));
+  return normalize([position.description??"",...fragments,...componentFragments].join(" "));
 }
 
 function matches(position: CalculationConceptPosition, rule: RecipeProposalRule): { ok: boolean; reasons: string[]; evidence:RecipeProposal["evidence"] } {
@@ -59,12 +67,16 @@ function matches(position: CalculationConceptPosition, rule: RecipeProposalRule)
       const fact=position.sourceFacts.find(item=>
         normalize(item.valueText).includes(normalizedTerm)||normalize(item.sourceFragment).includes(normalizedTerm)
       );
+      const component=!fact?position.sourceComponents.find(item=>
+        [item.component_kind,item.component_type,item.description,item.classification_ref,item.component_ref,item.source_fragment]
+          .some(value=>normalize(value).includes(normalizedTerm))
+      ):null;
       evidence.push({
         term,
-        documentId:fact?.documentId??null,
-        sourcePage:fact?.sourcePage??null,
-        sourceFragment:fact?.sourceFragment??null,
-        factType:fact?.factType??null
+        documentId:fact?.documentId??component?.document_id??null,
+        sourcePage:fact?.sourcePage??component?.source_page??null,
+        sourceFragment:fact?.sourceFragment??component?.source_fragment??component?.description??null,
+        factType:fact?.factType??(component?`component:${component.component_kind}`:null)
       });
     }
   }
