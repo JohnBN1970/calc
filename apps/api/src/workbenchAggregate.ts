@@ -1,4 +1,4 @@
-import { evaluateTakeoffComponents } from "./componentTakeoff.js";
+import { evaluateTakeoffComponents, summarizeTakeoffByPosition } from "./componentTakeoff.js";
 import { withDerivedTakeoff } from "./derivedTakeoff.js";
 import type { OfficeCalculationContextSnapshot, OfficeWorkspaceState } from "./officeClient.js";
 import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
@@ -205,6 +205,7 @@ export function buildWorkbenchAggregate(input:{
     documentTriage,
     takeoffs: effectiveContext.context.takeoff,
     components:evaluateTakeoffComponents(effectiveContext.context.components??[]),
+    componentTakeoffSummary:summarizeTakeoffByPosition(evaluateTakeoffComponents(effectiveContext.context.components??[])),
     derivedTakeoffPositionRefs:takeoffDerivation.derived.derivedPositionRefs,
     recipeProposals:proposals,
     recipeSelectionIssues,
