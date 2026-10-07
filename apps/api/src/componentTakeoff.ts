@@ -205,3 +205,63 @@ export function summarizeTakeoffByPosition(components:EvaluatedTakeoffComponent[
     };
   }).sort((a,b)=>a.position_ref.localeCompare(b.position_ref,"nl"));
 }
+
+
+export type PrintableComponentTakeoffRow={
+  position_ref:string;
+  component_ref:string;
+  parent_component_ref:string|null;
+  depth:number;
+  component_kind:ComponentKind;
+  description:string|null;
+  quantity:number;
+  width_mm:number|null;
+  height_mm:number|null;
+  area_m2:number|null;
+  perimeter_m:number|null;
+  source_page:number|null;
+  review_status:string;
+  ready:boolean;
+  warnings:string[];
+};
+
+export function buildPrintableComponentTakeoff(components:EvaluatedTakeoffComponent[]):PrintableComponentTakeoffRow[]{
+  const byPosition=new Map<string,Map<string,EvaluatedTakeoffComponent>>();
+  for(const component of components){
+    const map=byPosition.get(component.position_ref)??new Map<string,EvaluatedTakeoffComponent>();
+    map.set(component.component_ref,component);
+    byPosition.set(component.position_ref,map);
+  }
+  return components.map(component=>{
+    const map=byPosition.get(component.position_ref)!;
+    let depth=0;
+    let cursor=component.parent_component_ref;
+    const seen=new Set<string>([component.component_ref]);
+    while(cursor&&depth<12&&!seen.has(cursor)){
+      seen.add(cursor);
+      depth++;
+      cursor=map.get(cursor)?.parent_component_ref??null;
+    }
+    const ready=component.geometry_status==="complete"
+      &&["root","ok"].includes(component.relation_status)
+      &&["reviewed","accepted","confirmed"].includes(String(component.review_status).toLowerCase())
+      &&component.warnings.length===0;
+    return{
+      position_ref:component.position_ref,
+      component_ref:component.component_ref,
+      parent_component_ref:component.parent_component_ref,
+      depth,
+      component_kind:component.component_kind,
+      description:component.description,
+      quantity:component.quantity,
+      width_mm:component.width_mm,
+      height_mm:component.height_mm,
+      area_m2:component.effective_area_m2,
+      perimeter_m:component.effective_perimeter_m,
+      source_page:component.source_page,
+      review_status:component.review_status,
+      ready,
+      warnings:component.warnings
+    };
+  }).sort((a,b)=>a.position_ref.localeCompare(b.position_ref,"nl")||a.depth-b.depth||a.component_ref.localeCompare(b.component_ref,"nl"));
+}
