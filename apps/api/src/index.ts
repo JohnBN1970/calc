@@ -1173,15 +1173,22 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
   const session=requireSession(req,res); if(!session)return;
   try{
     const versionId=await currentCalcVersionId(session.calculationId);
-    const [components,partitions,vatRegimes,lineVatRows]=await Promise.all([
+    const [components,partitions,vatRegimes,lineVatRows,allocationRows]=await Promise.all([
       listTailCostComponents(versionId),
       evaluateCalculationPartitions(versionId),
       listVatRegimes(true),
       db.execute<RowDataPacket[]>(`
-        SELECT id,vat_regime_id,quantity,labour_total_hours,labour_unit_cost,
+        SELECT id,line_type,vat_regime_id,quantity,labour_total_hours,labour_unit_cost,
                material_unit_cost,equipment_unit_cost,subcontracting_unit_cost,other_unit_cost
           FROM calculation_lines
          WHERE version_id=?
+         ORDER BY id
+      `,[versionId]).then(([rows])=>rows),
+      db.execute<RowDataPacket[]>(`
+        SELECT source_line_id,target_line_id,amount
+          FROM calculation_line_allocations
+         WHERE version_id=?
+         ORDER BY id
       `,[versionId]).then(([rows])=>rows)
     ]);
     const hierarchy=evaluateTailCostHierarchy({
@@ -1190,20 +1197,29 @@ app.get("/api/workbench/current/subcalculations/evaluate", async (req,res)=>{
       subcalculations:partitions.subcalculations,
       components
     });
-    const lineVatById=new Map<number,VatSource>(lineVatRows.map(row=>[
+    const contributingVatRows=lineVatRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
+    const effectiveLineVat=effectiveAllocatedVatSources({
+      lines:contributingVatRows.map(row=>({
+        id:Number(row.id),
+        lineType:String(row.line_type),
+        quantity:row.quantity==null?null:Number(row.quantity),
+        labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+        labourUnitCost:Number(row.labour_unit_cost??0),
+        materialUnitCost:Number(row.material_unit_cost??0),
+        equipmentUnitCost:Number(row.equipment_unit_cost??0),
+        subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+        otherUnitCost:Number(row.other_unit_cost??0),
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id)
+      })),
+      allocations:allocationRows.map(row=>({
+        sourceLineId:Number(row.source_line_id),
+        targetLineId:Number(row.target_line_id),
+        amount:Number(row.amount??0)
+      }))
+    });
+    const lineVatById=new Map<number,VatSource>(contributingVatRows.map((row,index)=>[
       Number(row.id),
-      {
-        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
-        salesAmount:calculateLineAmount({
-          quantity:Number(row.quantity??0),
-          labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
-          labourUnitCost:Number(row.labour_unit_cost??0),
-          materialUnitCost:Number(row.material_unit_cost??0),
-          equipmentUnitCost:Number(row.equipment_unit_cost??0),
-          subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
-          otherUnitCost:Number(row.other_unit_cost??0)
-        })
-      }
+      effectiveLineVat[index]
     ]));
     const results=hierarchy.subcalculations.map(result=>{
       const vatBreakdown=aggregateVat({
