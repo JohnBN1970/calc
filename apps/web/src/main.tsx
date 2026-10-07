@@ -366,6 +366,10 @@ type WorkbenchAggregate = {
     effective_perimeter_m?:number|null;
     component_kind?:"frame"|"field"|"glass"|"operable"|"door"|"panel"|"mullion"|"transom"|"unknown";
     component_kind_source?:"explicit"|"inferred"|"unknown";
+    parent_component_kind?:"frame"|"field"|"glass"|"operable"|"door"|"panel"|"mullion"|"transom"|"unknown"|null;
+    width_delta_to_parent_mm?:number|null;
+    height_delta_to_parent_mm?:number|null;
+    relation_status?:"root"|"ok"|"missing_parent"|"self_parent"|"cycle";
     geometry_status?:"complete"|"incomplete"|"invalid";
     warnings?:string[];
     source_page:number|null;
@@ -4018,7 +4022,7 @@ function App() {
               <div className="takeoffWorkspaceHead"><div><span className="eyebrow">VAKKEN & COMPONENTEN</span><h3>Onderliggende uittrekstructuur</h3><p>Office levert de brongebonden vakken/componenten per positie; Calc toont ze als controleerbare onderbouwing van de uittrekstaat.</p></div><div className="componentTakeoffSummary"><small>{aggregate.components?.length??0} component(en)</small><strong>{(aggregate.components??[]).filter(item=>item.component_kind==="glass").reduce((sum,item)=>sum+(item.effective_area_m2??0),0).toFixed(3)} m² glas</strong></div></div>
               <div className="componentTakeoffList">{(aggregate.components??[]).map(component=>{const byRef=new Map((aggregate.components??[]).filter(item=>item.position_ref===component.position_ref).map(item=>[item.component_ref,item]));let depth=0;let parent=component.parent_component_ref;const seen=new Set<string>();while(parent&&byRef.has(parent)&&!seen.has(parent)&&depth<8){seen.add(parent);depth++;parent=byRef.get(parent)?.parent_component_ref??null;}return <div className={"componentTakeoffRow"+(["reviewed","accepted","confirmed"].includes(component.review_status)?"":" is-review")} style={{"--component-depth":depth} as React.CSSProperties} key={component.id}>
                 <div className="componentTakeoffIdentity"><strong>{component.position_ref} · {component.component_ref} <em className={"componentKind kind-"+(component.component_kind??"unknown")}>{({frame:"Kozijn",field:"Vak",glass:"Glas",operable:"Draaikiep",door:"Deur",panel:"Paneel",mullion:"Stijl",transom:"Kalf",unknown:"Onbekend"} as Record<string,string>)[component.component_kind??"unknown"]}</em></strong><span>{component.component_type||"component"}{component.parent_component_ref?" · onder "+component.parent_component_ref:""}{component.description?" · "+component.description:""}</span></div>
-                <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.effective_area_m2==null?"":component.effective_area_m2.toFixed(3)+" m²"}{component.effective_perimeter_m==null?"":" · "+component.effective_perimeter_m.toFixed(3)+" m omtrek"}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
+                <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.effective_area_m2==null?"":component.effective_area_m2.toFixed(3)+" m²"}{component.effective_perimeter_m==null?"":" · "+component.effective_perimeter_m.toFixed(3)+" m omtrek"}{component.width_delta_to_parent_mm==null||component.height_delta_to_parent_mm==null?"":` · verschil parent ${component.width_delta_to_parent_mm}×${component.height_delta_to_parent_mm} mm`}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
                 <div><span>{component.geometry_status==="complete"?component.review_status:"Maatcontrole"}</span><small>{component.warnings?.[0]??(Math.round(component.confidence*100)+"%")}</small></div>
               </div>})}</div>
             </section>}

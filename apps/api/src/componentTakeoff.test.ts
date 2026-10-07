@@ -58,3 +58,29 @@ test("unknown component type is not guessed silently",()=>{
   assert.equal(row.component_kind,"unknown");
   assert.equal(row.warnings.some(x=>x.includes("niet eenduidig")),true);
 });
+
+
+test("component relation exposes dimension deltas to parent",()=>{
+  const rows=evaluateTakeoffComponents([
+    {...base,id:20,component_ref:"vak-1",parent_component_ref:null,component_type:"field",description:null,quantity:1,width_mm:1000,height_mm:1200,area_m2:null,perimeter_m:null},
+    {...base,id:21,component_ref:"glas-1",parent_component_ref:"vak-1",component_type:"glass",description:null,quantity:1,width_mm:960,height_mm:1160,area_m2:null,perimeter_m:null}
+  ]);
+  assert.equal(rows[1].relation_status,"ok");
+  assert.equal(rows[1].parent_component_kind,"field");
+  assert.equal(rows[1].width_delta_to_parent_mm,40);
+  assert.equal(rows[1].height_delta_to_parent_mm,40);
+});
+
+test("missing and circular parent relations are reviewable",()=>{
+  const missing=evaluateTakeoffComponents([
+    {...base,id:22,component_ref:"glas-2",parent_component_ref:"vak-x",component_type:"glass",description:null,quantity:1,width_mm:500,height_mm:600,area_m2:null,perimeter_m:null}
+  ])[0];
+  assert.equal(missing.relation_status,"missing_parent");
+  assert.equal(missing.warnings.some(x=>x.includes("ontbreekt")),true);
+
+  const cycle=evaluateTakeoffComponents([
+    {...base,id:23,component_ref:"a",parent_component_ref:"b",component_type:"field",description:null,quantity:1,width_mm:500,height_mm:600,area_m2:null,perimeter_m:null},
+    {...base,id:24,component_ref:"b",parent_component_ref:"a",component_type:"field",description:null,quantity:1,width_mm:500,height_mm:600,area_m2:null,perimeter_m:null}
+  ]);
+  assert.equal(cycle.some(row=>row.relation_status==="cycle"),true);
+});
