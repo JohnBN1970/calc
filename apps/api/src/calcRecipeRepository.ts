@@ -143,3 +143,45 @@ export async function updateCalcRecipeApplicability(recipeVersionId:number,appli
   );
   if(result.affectedRows===0)throw new Error("Receptversie niet gevonden.");
 }
+
+
+export async function updateCalcRecipeLine(input:{
+  recipeVersionId:number;
+  lineId:number;
+  lineRef:string;
+  sortOrder:number;
+  costKind:CalcRecipeLine["costKind"];
+  description:string;
+  unit?:string|null;
+  quantitySourceType?:string|null;
+  quantitySourceRef?:string|null;
+  costSourceType?:string|null;
+  costSourceRef?:string|null;
+  takeoffBasis:CalcRecipeLine["takeoffBasis"];
+  factor?:number;
+  wastePct?:number;
+  fixedQuantity?:number|null;
+  roundingStep?:number|null;
+  minimumQuantity?:number|null;
+  metadata?:Record<string,unknown>|null;
+}):Promise<void>{
+  if(!Number.isInteger(input.recipeVersionId)||input.recipeVersionId<=0)throw new Error("Ongeldige receptversie.");
+  if(!Number.isInteger(input.lineId)||input.lineId<=0)throw new Error("Ongeldige receptregel.");
+  if(!input.lineRef.trim()||!input.description.trim())throw new Error("Receptregel mist identiteit of omschrijving.");
+  const [result]=await db.execute<ResultSetHeader>(
+    `UPDATE recipe_lines
+        SET line_ref=?,sort_order=?,cost_kind=?,description=?,unit=?,
+            quantity_source_type=?,quantity_source_ref=?,cost_source_type=?,cost_source_ref=?,
+            takeoff_basis=?,factor=?,waste_pct=?,fixed_quantity=?,rounding_step=?,minimum_quantity=?,metadata_json=?
+      WHERE id=? AND recipe_version_id=?`,
+    [
+      input.lineRef.trim(),input.sortOrder,input.costKind,input.description.trim(),input.unit??null,
+      input.quantitySourceType?.trim()||null,input.quantitySourceRef?.trim()||null,
+      input.costSourceType?.trim()||null,input.costSourceRef?.trim()||null,
+      input.takeoffBasis,input.factor??1,input.wastePct??0,input.fixedQuantity??null,
+      input.roundingStep??null,input.minimumQuantity??null,input.metadata?JSON.stringify(input.metadata):null,
+      input.lineId,input.recipeVersionId
+    ]
+  );
+  if(result.affectedRows===0)throw new Error("Receptregel niet gevonden.");
+}
