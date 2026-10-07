@@ -3919,16 +3919,16 @@ function App() {
           {labourRateStatus&&<div className="managementStatus" role="status">{labourRateStatus}</div>}
         </div></DockableWindow>}
 
-        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Recept toepassen" defaultFloating><div className="recipeWorkspace">
+        {recipeWorkspaceOpen && <DockableWindow id="recipe-workspace" label="Builder" defaultFloating><div className="recipeWorkspace">
           <div className="recipeWorkspaceHead">
-            <div><span className="eyebrow">OFFICE BRONDATA → CALC BEREKENING</span><h2>Concept & recepten</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · recepten beheerd door Calc` : "Office-context wordt nog niet geleverd."}</p></div>
+            <div><span className="eyebrow">OFFICE → CALC</span><h2>Builder</h2><p>{aggregate ? `Office-context ${aggregate.officeVersion} · Office blijft bronhouder` : "Office-context wordt nog niet geleverd."}</p></div>
             <button className="panelClose" type="button" onClick={() => setRecipeWorkspaceOpen(false)} aria-label="Sluiten">×</button>
           </div>
           {!aggregate ? <p className="muted">De bestaande calculatie blijft beschikbaar. De nieuwe Office-workbenchcontext is nog niet geladen.</p> : <>
             <section className="conceptBuilder">
               <div className="conceptBuilderIntro">
-                <div><span className="eyebrow">DIGITALE CALCULATOR</span><h3>Concept opbouwen uit projectdocumenten</h3><p>Calc selecteert bruikbare Office-bronnen, bouwt posities en receptvoorstellen op en laat twijfel eerst controleren.</p></div>
-                <button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button>
+                <div><span className="eyebrow">PROJECTBRONNEN UIT OFFICE</span><h3>Calculatie bouwen vanuit Office</h3><p>Builder begint met de documenten die Office al aan dit project heeft gekoppeld. Calc bewaart geen tweede documentwaarheid.</p></div>
+                <div className="conceptBuilderActions"><button type="button" onClick={()=>void refreshDocumentCandidates()}>Office-bronnen vernieuwen</button><button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button></div>
               </div>
               <div className="conceptBuilderSteps">
                 <div className={aggregate.documentTriage.some(item=>item.status==="primary")?"is-ready":"is-review"}><b>1</b><span>Bronnen<strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length} primair · {aggregate.documentTriage.filter(item=>item.status==="review").length} review</strong></span></div>
@@ -3964,9 +3964,9 @@ function App() {
               <div><span>Directe kost Calc</span><strong>{money.format(totals.direct)}</strong></div>
             </div>
             <div className="documentTriagePanel">
-              <div className="documentTriageHead"><div><strong>Calc-documenttriage</strong><span>Office levert kandidaatbronnen; Calc bepaalt welke documenten calculatief bruikbaar zijn.</span></div><div className="documentTriageHeadActions"><small>{aggregate.documentTriage.length} document(en)</small><button type="button" onClick={()=>void refreshDocumentCandidates()}>Bronnen verversen</button></div></div>
+              <div className="documentTriageHead"><div><strong>Projectdocumenten uit Office</strong><span>Office beheert documentidentiteit, revisies, projectkoppeling en broninformatie. Builder bepaalt alleen welke Office-bronnen voor deze calculatie bruikbaar zijn.</span></div><div className="documentTriageHeadActions"><small>{aggregate.documentTriage.length} document(en)</small><button type="button" onClick={()=>void refreshDocumentCandidates()}>Office-bronnen vernieuwen</button></div></div>
               <div className="documentTriageList">
-                {aggregate.documentTriage.length===0?<p className="muted">Nog geen documenten in de calculatiecontext.</p>:aggregate.documentTriage.map(item=>
+                {aggregate.documentTriage.length===0?<p className="muted">Office heeft nog geen projectdocumenten aan deze calculatiecontext geleverd. Voeg documenten eerst in Office toe of laat Office de projectbronnen opnieuw beoordelen.</p>:aggregate.documentTriage.map(item=>
                   <div className={"documentTriageItem status-"+item.status} key={item.documentId}>
                     <div><strong>{item.title}</strong><span>{item.documentFamily||item.documentType||"onbekend type"} · bron #{item.documentId}</span></div>
                     <div className="documentTriageScore"><b>{item.score}</b><small>{item.status==="primary"?"primair":item.status==="supporting"?"ondersteunend":item.status==="excluded"?"uitgesloten":"review"}</small></div>
