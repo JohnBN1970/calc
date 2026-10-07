@@ -1730,10 +1730,10 @@ app.put("/api/workbench/current", async (req, res) => {
       if(sourceDetailsText&&sourceDetailsText.length>250000){
         throw new Error("Bronprovenance van een calculatieregel is te groot om veilig op te slaan.");
       }
-      if(sourceDetailsText){
-        try{JSON.parse(sourceDetailsText);}catch{throw new Error("Bronprovenance van een calculatieregel bevat ongeldige JSON.");}
-      }
       const priceSourceType = line.priceSourceType ?? "manual";
+      if(sourceDetailsText&&priceSourceType==="recipe"){
+        try{JSON.parse(sourceDetailsText);}catch{throw new Error("Bronprovenance van een receptregel bevat ongeldige JSON.");}
+      }
       if (!["manual", "article", "recipe", "supplier_quote"].includes(priceSourceType)) {
         throw new Error("Unknown price source type.");
       }
