@@ -469,6 +469,7 @@ type EvaluatedTailCost=TailCostComponent & {baseAmount:number;amount:number;owne
 
 const money = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" });
 const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(line.lineType);
+const lineContributesToTotals = (line: Line) => ["item","allowance","adjustable"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
 
 function compactQuoteLineDescription(text:string,filename:string):string{
@@ -1087,7 +1088,7 @@ function App() {
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
-    const direct = lines.filter(line => isCostLine(line) && line.lineType !== "option").reduce((sum, line) => sum + lineDirect(line), 0);
+    const direct = lines.filter(line => lineContributesToTotals(line)).reduce((sum, line) => sum + lineDirect(line), 0);
     const tailCost = tailCostTotal;
     return { direct, markupAmount: tailCost, sales: direct + tailCost };
   }, [lines, tailCostTotal]);
@@ -1106,7 +1107,7 @@ function App() {
       byRegime.set(vatRegimeId,current);
     };
     for(const line of lines){
-      if(isCostLine(line)&&line.lineType!=="option")add(line.vatRegimeId,lineDirect(line));
+      if(lineContributesToTotals(line))add(line.vatRegimeId,lineDirect(line));
     }
     for(const tail of evaluatedTailCosts)add(tail.vatRegimeId,tail.amount);
     const breakdown=[...byRegime.values()]
@@ -1161,7 +1162,7 @@ function App() {
   },[aggregate,activeScopeType]);
 
   const scopeOverview=useMemo(()=>availableScopeValues.map(scopeRef=>{
-    const scopedCostLines=lines.filter(line=>isCostLine(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
+    const scopedCostLines=lines.filter(line=>lineContributesToTotals(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
     const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line),0);
     const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
     const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
@@ -1735,7 +1736,7 @@ function App() {
     const payload=await response.json() as {components:TailCostComponent[]};
     const components=Array.isArray(payload.components)?payload.components:[];
     setTailCosts(components);
-    const direct=directCost ?? lines.filter(line=>isCostLine(line)&&line.lineType!=="option").reduce((sum,line)=>sum+lineDirect(line),0);
+    const direct=directCost ?? lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>sum+lineDirect(line),0);
     const evalResponse=await fetch("/api/workbench/current/tail-costs/evaluate",{
       method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
     });
@@ -2917,8 +2918,8 @@ function App() {
   const outgoingAllocation = (lineId:number) => allocations.filter(item => item.sourceLineId === lineId).reduce((sum,item)=>sum+item.amount,0);
   const effectiveLineDirect = (line:Line) => lineDirect(line) - outgoingAllocation(line.id) + incomingAllocation(line.id);
   const allocateLine = (sourceLineId:number, method:"quantity"|"value") => {
-    const source=lines.find(line=>line.id===sourceLineId); if(!source)return;
-    const targets=lines.filter(line=>selectedLineIds.includes(line.id)&&line.id!==sourceLineId&&isCostLine(line)&&line.lineType!=="option");
+    const source=lines.find(line=>line.id===sourceLineId); if(!source||!lineContributesToTotals(source))return;
+    const targets=lines.filter(line=>selectedLineIds.includes(line.id)&&line.id!==sourceLineId&&lineContributesToTotals(line));
     if(!targets.length){setStatus("Selecteer eerst minimaal één doelregel voor de verdeling.");return;}
     const sourceAmount=lineDirect(source); if(sourceAmount<=0){setStatus("Deze kostenregel heeft geen bedrag om te verdelen.");return;}
     const weights=targets.map(line=>method==="quantity"?Math.max(0,line.quantity):Math.max(0,lineDirect(line)));
@@ -3104,7 +3105,7 @@ function App() {
           </select>
         </label>}
         {line.sourceDocumentId && <button type="button" onClick={() => { detachSource(line.id); setOpen(false); }}>Bron loskoppelen</button>}
-        {isCostLine(line) && <>
+        {lineContributesToTotals(line) && <>
           <button type="button" onClick={() => { allocateLine(line.id,"value"); setOpen(false); }}>Verdelen op inkoopwaarde</button>
           <button type="button" onClick={() => { allocateLine(line.id,"quantity"); setOpen(false); }}>Verdelen op aantal</button>
           {outgoingAllocation(line.id) > 0 && <button type="button" onClick={() => { clearAllocation(line.id); setOpen(false); }}>Verdeling opheffen</button>}
