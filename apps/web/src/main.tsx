@@ -1161,20 +1161,28 @@ function App() {
     return aggregate?.scopeCoverage.find(item=>item.scopeType===activeScopeType)??null;
   },[aggregate,activeScopeType]);
 
-  const scopeOverview=useMemo(()=>availableScopeValues.map(scopeRef=>{
-    const scopedCostLines=lines.filter(line=>lineContributesToTotals(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
-    const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line),0);
-    const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
-    const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
-    return{
-      scopeRef,
-      lineCount:scopedCostLines.length,
-      directCost,
-      subcalculationId:subcalculation?.id??null,
-      salesPrice:result?.salesPrice??null,
-      tailCost:result?.allocatedTailCost??null
-    };
-  }),[availableScopeValues,lines,activeScopeType,subcalculations,subcalculationResults]);
+  const scopeOverview=useMemo(()=>{
+    const incoming=new Map<number,number>();
+    const outgoing=new Map<number,number>();
+    for(const allocation of allocations){
+      incoming.set(allocation.targetLineId,(incoming.get(allocation.targetLineId)??0)+allocation.amount);
+      outgoing.set(allocation.sourceLineId,(outgoing.get(allocation.sourceLineId)??0)+allocation.amount);
+    }
+    return availableScopeValues.map(scopeRef=>{
+      const scopedCostLines=lines.filter(line=>lineContributesToTotals(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
+      const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line)-(outgoing.get(line.id)??0)+(incoming.get(line.id)??0),0);
+      const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
+      const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
+      return{
+        scopeRef,
+        lineCount:scopedCostLines.length,
+        directCost,
+        subcalculationId:subcalculation?.id??null,
+        salesPrice:result?.salesPrice??null,
+        tailCost:result?.allocatedTailCost??null
+      };
+    });
+  },[availableScopeValues,lines,allocations,activeScopeType,subcalculations,subcalculationResults]);
 
   const workbenchLines = useMemo(() => {
     let base=lines;
@@ -1239,12 +1247,9 @@ function App() {
     const children=new Map<number|null,Line[]>();
     const incomingByLine=new Map<number,number>();
     const outgoingByLine=new Map<number,number>();
-    const visibleLineIds=new Set(workbenchLines.map(line=>line.id));
     for(const allocation of allocations){
-      // Structure subtotals describe the current workbench scope. Only move cost
-      // between lines that are both part of that scope; cross-scope allocations
-      // must not import/export invisible cost into a filtered subtotal.
-      if(!visibleLineIds.has(allocation.sourceLineId)||!visibleLineIds.has(allocation.targetLineId))continue;
+      // Allocations move financial ownership between lines. A filtered view may
+      // therefore legitimately import/export cost from a line outside the filter.
       incomingByLine.set(allocation.targetLineId,(incomingByLine.get(allocation.targetLineId)??0)+allocation.amount);
       outgoingByLine.set(allocation.sourceLineId,(outgoingByLine.get(allocation.sourceLineId)??0)+allocation.amount);
     }
@@ -1486,26 +1491,16 @@ function App() {
   });
 
   const directCostMix = useMemo(() => {
-    const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
-    const sourceLines=lines.filter(line =>
-      isCostLine(line) &&
-      line.lineType!=="option" &&
-      (!activeLineIds||activeLineIds.has(line.id))
-    );
-    const amounts={
-      labour:0,
-      material:0,
-      equipment:0,
-      subcontracting:0,
-      other:0
-    };
-    for(const line of sourceLines){
-      amounts.labour+=(line.labourTotalHours??0)*line.labour;
-      amounts.material+=line.quantity*line.material;
-      amounts.equipment+=line.quantity*line.equipment;
-      amounts.subcontracting+=line.quantity*line.subcontracting;
-      amounts.other+=line.quantity*line.other;
-    }
+    const amounts=activeSubcalculationResult
+      ? {...activeSubcalculationResult.costs}
+      : lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>{
+          sum.labour+=(line.labourTotalHours??0)*line.labour;
+          sum.material+=line.quantity*line.material;
+          sum.equipment+=line.quantity*line.equipment;
+          sum.subcontracting+=line.quantity*line.subcontracting;
+          sum.other+=line.quantity*line.other;
+          return sum;
+        },{labour:0,material:0,equipment:0,subcontracting:0,other:0});
     const total=Object.values(amounts).reduce((sum,value)=>sum+value,0);
     const rows=[
       {key:"labour",label:"Arbeid",amount:amounts.labour},

@@ -4,6 +4,7 @@ import { db } from "./db.js";
 import { listCalcSubcalculations } from "./calcSubcalculationRepository.js";
 import { calculateLineCostBreakdown } from "./calculationLineAmount.js";
 import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
+import { applyCostAllocations, totalCost, type CostBreakdown } from "./costAllocation.js";
 
 export type SubcalculationResult={
   id:number;ref:string;description:string;
@@ -33,6 +34,22 @@ export async function evaluateSubcalculations(versionId:number, executor:Pick<Po
   `,[versionId]);
   const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
   const lineById=new Map(lines.map(row=>[Number(row.id),row]));
+  const baseCostsByLine=new Map<number,CostBreakdown>(lines.map(row=>[Number(row.id),lineAmounts(row)]));
+  const [allocationRows]=await executor.execute<RowDataPacket[]>(
+    `SELECT source_line_id,target_line_id,amount
+       FROM calculation_line_allocations
+      WHERE version_id=?
+      ORDER BY id`,
+    [versionId]
+  );
+  const effectiveCostsByLine=applyCostAllocations({
+    costsByLine:baseCostsByLine,
+    allocations:allocationRows.map(row=>({
+      sourceLineId:Number(row.source_line_id),
+      targetLineId:Number(row.target_line_id),
+      amount:Number(row.amount??0)
+    }))
+  });
 
   const [tags]=await executor.execute<RowDataPacket[]>(`
     SELECT t.line_id,t.scope_type,t.scope_ref
@@ -83,8 +100,7 @@ export async function evaluateSubcalculations(versionId:number, executor:Pick<Po
 
     const costs={labour:0,material:0,equipment:0,subcontracting:0,other:0};
     for(const id of included){
-      const row=lineById.get(id); if(!row)continue;
-      const amounts=lineAmounts(row);
+      const amounts=effectiveCostsByLine.get(id); if(!amounts)continue;
       costs.labour+=amounts.labour;
       costs.material+=amounts.material;
       costs.equipment+=amounts.equipment;
@@ -118,12 +134,29 @@ export async function evaluateCalculationPartitions(
      WHERE version_id=?
   `,[versionId]);
   const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
+  const baseCostsByLine=new Map<number,CostBreakdown>(lines.map(row=>[Number(row.id),lineAmounts(row)]));
+  const [allocationRows]=await executor.execute<RowDataPacket[]>(
+    `SELECT source_line_id,target_line_id,amount
+       FROM calculation_line_allocations
+      WHERE version_id=?
+      ORDER BY id`,
+    [versionId]
+  );
+  const effectiveCostsByLine=applyCostAllocations({
+    costsByLine:baseCostsByLine,
+    allocations:allocationRows.map(row=>({
+      sourceLineId:Number(row.source_line_id),
+      targetLineId:Number(row.target_line_id),
+      amount:Number(row.amount??0)
+    }))
+  });
 
   let totalDirectCost=0;
   let mainDirectCost=0;
   for(const row of lines){
-    const amounts=lineAmounts(row);
-    const lineTotal=amounts.labour+amounts.material+amounts.equipment+amounts.subcontracting+amounts.other;
+    const amounts=effectiveCostsByLine.get(Number(row.id));
+    if(!amounts)continue;
+    const lineTotal=totalCost(amounts);
     totalDirectCost+=lineTotal;
     if(!assigned.has(Number(row.id))) mainDirectCost+=lineTotal;
   }
