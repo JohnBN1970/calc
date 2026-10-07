@@ -576,3 +576,5 @@ main{padding-top:6px}
 .dockWindow.is-floating:has(.recipeWorkspace){width:min(1240px,calc(100vw - 48px));max-height:calc(100vh - 72px)}
 .dockWindow.is-floating:has(.recipeWorkspace) .dockWindowContent{max-height:calc(100vh - 106px)}
 @media(max-width:900px){.dockWindow.is-floating:has(.recipeWorkspace){left:8px!important;right:8px;width:auto!important;max-height:calc(100vh - 24px)}}
+
+.dockWindow.is-floating{min-width:420px;min-height:280px}.dockWindow.is-floating:has(.dockResizeHandle){display:flex;flex-direction:column}.dockWindow.is-floating:has(.dockResizeHandle) .dockWindowContent{flex:1;min-height:0}.dockResizeHandle{position:absolute;right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;z-index:5;touch-action:none}.dockResizeHandle::after{content:"";position:absolute;right:5px;bottom:5px;width:9px;height:9px;border-right:2px solid #7a858e;border-bottom:2px solid #7a858e}@media(max-width:900px){.dockWindow.is-floating{min-width:0;min-height:0}.dockResizeHandle{display:none}}
