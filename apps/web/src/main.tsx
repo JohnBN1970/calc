@@ -1161,20 +1161,28 @@ function App() {
     return aggregate?.scopeCoverage.find(item=>item.scopeType===activeScopeType)??null;
   },[aggregate,activeScopeType]);
 
-  const scopeOverview=useMemo(()=>availableScopeValues.map(scopeRef=>{
-    const scopedCostLines=lines.filter(line=>lineContributesToTotals(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
-    const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line),0);
-    const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
-    const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
-    return{
-      scopeRef,
-      lineCount:scopedCostLines.length,
-      directCost,
-      subcalculationId:subcalculation?.id??null,
-      salesPrice:result?.salesPrice??null,
-      tailCost:result?.allocatedTailCost??null
-    };
-  }),[availableScopeValues,lines,activeScopeType,subcalculations,subcalculationResults]);
+  const scopeOverview=useMemo(()=>{
+    const incoming=new Map<number,number>();
+    const outgoing=new Map<number,number>();
+    for(const allocation of allocations){
+      incoming.set(allocation.targetLineId,(incoming.get(allocation.targetLineId)??0)+allocation.amount);
+      outgoing.set(allocation.sourceLineId,(outgoing.get(allocation.sourceLineId)??0)+allocation.amount);
+    }
+    return availableScopeValues.map(scopeRef=>{
+      const scopedCostLines=lines.filter(line=>lineContributesToTotals(line)&&(lineTrace(line).scopes[activeScopeType]??[]).includes(scopeRef));
+      const directCost=scopedCostLines.reduce((sum,line)=>sum+lineDirect(line)-(outgoing.get(line.id)??0)+(incoming.get(line.id)??0),0);
+      const subcalculation=subcalculations.find(item=>item.scopes.some(scope=>scope.scopeType===activeScopeType&&scope.scopeRef===scopeRef))??null;
+      const result=subcalculation?subcalculationResults.find(item=>item.id===subcalculation.id)??null:null;
+      return{
+        scopeRef,
+        lineCount:scopedCostLines.length,
+        directCost,
+        subcalculationId:subcalculation?.id??null,
+        salesPrice:result?.salesPrice??null,
+        tailCost:result?.allocatedTailCost??null
+      };
+    });
+  },[availableScopeValues,lines,allocations,activeScopeType,subcalculations,subcalculationResults]);
 
   const workbenchLines = useMemo(() => {
     let base=lines;
