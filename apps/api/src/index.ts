@@ -26,6 +26,7 @@ import { getUserPreference, setUserPreference } from "./userPreferenceRepository
 import { createVatRegime, listVatRegimes, updateVatRegime, type VatTreatment } from "./vatSettingsRepository.js";
 import { createLabourRate, listLabourRates, updateLabourRate } from "./labourRateRepository.js";
 import { aggregateVat, type VatSource } from "./lineVatAggregation.js";
+import { effectiveAllocatedVatSources } from "./allocatedVatSources.js";
 import { calculatePublicationReadiness } from "./publicationReadiness.js";
 import { lineContributesToCalculationTotals } from "./calculationLineTotals.js";
 import { calculateLineAmount } from "./calculationLineAmount.js";
@@ -979,7 +980,7 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       return;
     }
     const [lineRows]=await db.execute<RowDataPacket[]>(
-      `SELECT line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
+      `SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
               equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id,
               price_source_type,source_details
          FROM calculation_lines
@@ -994,18 +995,32 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       code:row.code==null?null:String(row.code),
       description:row.description==null?null:String(row.description)
     })));
-    const lineSales:VatSource[]=costRows.map(row=>({
-      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
-      salesAmount:calculateLineAmount({
-        quantity:Number(row.quantity??0),
+    const [vatAllocationRows]=await db.execute<RowDataPacket[]>(
+      `SELECT source_line_id,target_line_id,amount
+         FROM calculation_line_allocations
+        WHERE version_id=?
+        ORDER BY id`,
+      [version.id]
+    );
+    const lineSales:VatSource[]=effectiveAllocatedVatSources({
+      lines:costRows.map(row=>({
+        id:Number(row.id),
+        lineType:String(row.line_type),
+        quantity:row.quantity==null?null:Number(row.quantity),
         labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
         labourUnitCost:Number(row.labour_unit_cost??0),
         materialUnitCost:Number(row.material_unit_cost??0),
         equipmentUnitCost:Number(row.equipment_unit_cost??0),
         subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
-        otherUnitCost:Number(row.other_unit_cost??0)
-      })
-    }));
+        otherUnitCost:Number(row.other_unit_cost??0),
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id)
+      })),
+      allocations:vatAllocationRows.map(row=>({
+        sourceLineId:Number(row.source_line_id),
+        targetLineId:Number(row.target_line_id),
+        amount:Number(row.amount??0)
+      }))
+    });
     const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
     const [components,partitions,vatRegimes]=await Promise.all([
       listTailCostComponents(Number(version.id)),
@@ -1641,7 +1656,6 @@ app.put("/api/workbench/current", async (req, res) => {
     await connection.execute("DELETE FROM calculation_lines WHERE version_id = ?", [version.id]);
 
     let directCost = 0;
-    const lineVatSources:VatSource[] = [];
     const temporaryIds = new Map<number, number>();
     const explicitManualScopeLineIds=new Set<number>();
     for (const line of lines) {
@@ -1672,10 +1686,7 @@ app.put("/api/workbench/current", async (req, res) => {
           otherUnitCost:other
         });
         directCost += lineSalesAmount;
-        lineVatSources.push({
-          vatRegimeId: line.vatRegimeId == null ? null : Number(line.vatRegimeId),
-          salesAmount: lineSalesAmount
-        });
+
       }
       const parentId = line.parentId != null ? (temporaryIds.get(line.parentId) ?? null) : null;
       const [insert] = await connection.execute<ResultSetHeader>(
@@ -1755,6 +1766,40 @@ app.put("/api/workbench/current", async (req, res) => {
         [version.id, sourceId, targetId, allocation.method, numeric(allocation.share), numeric(allocation.amount)]
       );
     }
+
+    const [storedVatLineRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
+              equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id
+         FROM calculation_lines
+        WHERE version_id=?`,
+      [version.id]
+    );
+    const [storedAllocationRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT source_line_id,target_line_id,amount
+         FROM calculation_line_allocations
+        WHERE version_id=?
+        ORDER BY id`,
+      [version.id]
+    );
+    const lineVatSources=effectiveAllocatedVatSources({
+      lines:storedVatLineRows.map(row=>({
+        id:Number(row.id),
+        lineType:String(row.line_type),
+        quantity:row.quantity==null?null:Number(row.quantity),
+        labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
+        labourUnitCost:Number(row.labour_unit_cost??0),
+        materialUnitCost:Number(row.material_unit_cost??0),
+        equipmentUnitCost:Number(row.equipment_unit_cost??0),
+        subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
+        otherUnitCost:Number(row.other_unit_cost??0),
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id)
+      })),
+      allocations:storedAllocationRows.map(row=>({
+        sourceLineId:Number(row.source_line_id),
+        targetLineId:Number(row.target_line_id),
+        amount:Number(row.amount??0)
+      }))
+    });
 
     const tailComponents = await listTailCostComponents(Number(version.id));
     const partitions = await evaluateCalculationPartitions(Number(version.id), connection);
@@ -1910,18 +1955,32 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       }
     }
 
-    const lineSales:VatSource[]=costRows.map(row=>({
-      vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id),
-      salesAmount:calculateLineAmount({
-        quantity:Number(row.quantity??0),
+    const [vatAllocationRows]=await connection.execute<RowDataPacket[]>(
+      `SELECT source_line_id,target_line_id,amount
+         FROM calculation_line_allocations
+        WHERE version_id=?
+        ORDER BY id`,
+      [version.id]
+    );
+    const lineSales:VatSource[]=effectiveAllocatedVatSources({
+      lines:costRows.map(row=>({
+        id:Number(row.id),
+        lineType:String(row.line_type),
+        quantity:row.quantity==null?null:Number(row.quantity),
         labourTotalHours:row.labour_total_hours==null?null:Number(row.labour_total_hours),
         labourUnitCost:Number(row.labour_unit_cost??0),
         materialUnitCost:Number(row.material_unit_cost??0),
         equipmentUnitCost:Number(row.equipment_unit_cost??0),
         subcontractingUnitCost:Number(row.subcontracting_unit_cost??0),
-        otherUnitCost:Number(row.other_unit_cost??0)
-      })
-    }));
+        otherUnitCost:Number(row.other_unit_cost??0),
+        vatRegimeId:row.vat_regime_id==null?null:Number(row.vat_regime_id)
+      })),
+      allocations:vatAllocationRows.map(row=>({
+        sourceLineId:Number(row.source_line_id),
+        targetLineId:Number(row.target_line_id),
+        amount:Number(row.amount??0)
+      }))
+    });
     const directCost=lineSales.reduce((sum,row)=>sum+row.salesAmount,0);
 
     const [tailRows]=await connection.execute<RowDataPacket[]>(
