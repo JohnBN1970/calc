@@ -4003,11 +4003,11 @@ function App() {
             </section>
             {(aggregate.components?.length??0)>0&&<section className="componentTakeoffWorkspace">
               <div className="takeoffWorkspaceHead"><div><span className="eyebrow">VAKKEN & COMPONENTEN</span><h3>Onderliggende uittrekstructuur</h3><p>Office levert de brongebonden vakken/componenten per positie; Calc toont ze als controleerbare onderbouwing van de uittrekstaat.</p></div><small>{aggregate.components?.length??0} component(en)</small></div>
-              <div className="componentTakeoffList">{(aggregate.components??[]).map(component=><div className={"componentTakeoffRow"+(["reviewed","accepted","confirmed"].includes(component.review_status)?"":" is-review")} key={component.id}>
-                <div><strong>{component.position_ref} · {component.component_ref}</strong><span>{component.component_type||"component"}{component.parent_component_ref?" · onder "+component.parent_component_ref:""}{component.description?" · "+component.description:""}</span></div>
+              <div className="componentTakeoffList">{(aggregate.components??[]).map(component=>{const byRef=new Map((aggregate.components??[]).filter(item=>item.position_ref===component.position_ref).map(item=>[item.component_ref,item]));let depth=0;let parent=component.parent_component_ref;const seen=new Set<string>();while(parent&&byRef.has(parent)&&!seen.has(parent)&&depth<8){seen.add(parent);depth++;parent=byRef.get(parent)?.parent_component_ref??null;}return <div className={"componentTakeoffRow"+(["reviewed","accepted","confirmed"].includes(component.review_status)?"":" is-review")} style={{"--component-depth":depth} as React.CSSProperties} key={component.id}>
+                <div className="componentTakeoffIdentity"><strong>{component.position_ref} · {component.component_ref}</strong><span>{component.component_type||"component"}{component.parent_component_ref?" · onder "+component.parent_component_ref:""}{component.description?" · "+component.description:""}</span></div>
                 <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.area_m2==null?"":component.area_m2.toFixed(3)+" m²"}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
                 <div><span>{component.review_status}</span><small>{Math.round(component.confidence*100)}%</small></div>
-              </div>)}</div>
+              </div>})}</div>
             </section>}
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
