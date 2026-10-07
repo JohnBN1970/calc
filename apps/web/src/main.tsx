@@ -542,6 +542,29 @@ const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(li
 const lineContributesToTotals = (line: Line) => ["item","allowance","adjustable"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
 
+function orderLinesByHierarchy(lines:Line[]):Line[]{
+  const byId=new Map(lines.map(line=>[line.id,line]));
+  const children=new Map<number|null,Line[]>();
+  for(const line of lines){
+    const parentId=line.parentId!=null&&byId.has(line.parentId)?line.parentId:null;
+    const list=children.get(parentId)??[];
+    list.push(line);
+    children.set(parentId,list);
+  }
+  const ordered:Line[]=[];
+  const visited=new Set<number>();
+  const visit=(line:Line)=>{
+    if(visited.has(line.id))return;
+    visited.add(line.id);
+    ordered.push(line);
+    for(const child of children.get(line.id)??[])visit(child);
+  };
+  for(const root of children.get(null)??[])visit(root);
+  // Keep malformed/cyclic rows visible instead of dropping them.
+  for(const line of lines)if(!visited.has(line.id))visit(line);
+  return ordered;
+}
+
 function compactQuoteLineDescription(text:string,filename:string):string{
   let value=String(text??"").replace(/\s+/g," ").trim();
   value=value.replace(/^(?:voorstel|kandidaat\s*\d*)\s*[·:\-–—]*\s*/i,"").trim();
@@ -1324,8 +1347,9 @@ function App() {
   }, [lines, activeSubcalculationResult,activeScopeType,activeScopeRef]);
 
   const visibleWorkbenchLines=useMemo(()=>{
+    const ordered=orderLinesByHierarchy(workbenchLines);
     const byId=new Map(workbenchLines.map(line=>[line.id,line]));
-    return workbenchLines.filter(line=>{
+    return ordered.filter(line=>{
       let parentId=line.parentId;
       const seen=new Set<number>();
       while(parentId!=null&&!seen.has(parentId)){
