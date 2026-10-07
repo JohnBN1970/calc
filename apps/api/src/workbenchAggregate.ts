@@ -203,6 +203,7 @@ export function buildWorkbenchAggregate(input:{
     concept,
     documentTriage,
     takeoffs: effectiveContext.context.takeoff,
+    components:effectiveContext.context.components??[],
     derivedTakeoffPositionRefs:takeoffDerivation.derived.derivedPositionRefs,
     recipeProposals:proposals,
     recipeSelectionIssues,
