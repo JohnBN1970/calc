@@ -1300,6 +1300,21 @@ function App() {
     return result;
   },[workbenchLines,allocations]);
 
+  const maxStructureDepth=useMemo(
+    ()=>Math.max(1,...[...structureMetrics.values()].map(metric=>metric.depth)),
+    [structureMetrics]
+  );
+  const showStructureThroughLevel=(level:number)=>{
+    const collapseIds=workbenchLines
+      .filter(line=>{
+        if(line.lineType!=="chapter"&&line.lineType!=="paragraph")return false;
+        const depth=structureMetrics.get(line.id)?.depth??1;
+        return depth>=level;
+      })
+      .map(line=>line.id);
+    setCollapsedStructureIds(new Set(collapseIds));
+  };
+
   const displayedTotals = activeSubcalculationResult
     ? {
         direct: activeSubcalculationResult.directCost,
@@ -3587,16 +3602,14 @@ function App() {
       <div className="commandbar commandbarTop" role="toolbar" aria-label="Calculatie acties">
         <button className="command" type="button" onClick={() => window.history.back()} title="Terug naar BREBO Office"><Icon name="office" /><span>Office</span></button>
         <details className="columnChooser structureChooser">
-          <summary className="command" title="Structuuracties"><Icon name="chapter" /><span>Structuur</span></summary>
+          <summary className="command" title="Structuurniveaus tonen"><Icon name="paragraph" /><span>Niveaus</span></summary>
           <div className="columnChooserMenu structureChooserMenu" onClick={event=>event.stopPropagation()}>
-            <div className="columnChooserHead"><strong>Structuur</strong><small>{classificationLabel[classificationScheme]}</small></div>
+            <div className="columnChooserHead"><strong>Niveaus</strong><small>{classificationLabel[classificationScheme]}</small></div>
             <div className="structureChooserList">
-              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={event=>{addLine("chapter");event.currentTarget.closest("details")?.removeAttribute("open");}}>Nieuw hoofdstuk</button>
-              <button type="button" disabled={versionStatus==="established"||classificationScheme!=="custom"} onClick={event=>{addLine("paragraph");event.currentTarget.closest("details")?.removeAttribute("open");}}>Nieuwe paragraaf</button>
-              {classificationScheme!=="custom"&&<small>Hoofdgroepen en paragrafen komen uit de {classificationLabel[classificationScheme]}-zoekboom.</small>}
-              <hr />
               <button type="button" onClick={event=>{collapseAllStructure();event.currentTarget.closest("details")?.removeAttribute("open");}}>Alles inklappen</button>
+              {Array.from({length:maxStructureDepth},(_,index)=>index+1).map(level=><button type="button" key={level} onClick={event=>{showStructureThroughLevel(level);event.currentTarget.closest("details")?.removeAttribute("open");}}>T/m niveau {level}</button>)}
               <button type="button" onClick={event=>{expandAllStructure();event.currentTarget.closest("details")?.removeAttribute("open");}}>Alles uitklappen</button>
+              <small>Open of sluit één tak altijd op de structuurregel zelf.</small>
             </div>
           </div>
         </details>
@@ -3746,8 +3759,8 @@ function App() {
           <div className="helpSearch"><Icon name="help"/><input autoFocus value={helpQuery} onChange={event=>setHelpQuery(event.target.value)} placeholder="Zoeken in Calc-help…" /></div>
           <div className="helpContents">
             {[
-              {title:"Starten met een calculatie",keywords:"start project office calculatie structuur nlsfb stabu vrij",body:"Open Calc vanuit Office. Bij NL-SfB of STABU bouw je de calculatiestructuur vanuit de zoekboom; dubbelklik op een classificatiemap om de ontbrekende structuur toe te voegen. Bij Vrij maak je hoofdstukken en paragrafen zelf via Structuur. Gewone calculatieregels voeg je altijd vrij toe."},
-              {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur nlsfb stabu zoekboom",body:"De calculatie gebruikt één stelsel: NL-SfB, STABU of Vrij. Bij NL-SfB/STABU komen hoofdgroepen, paragrafen, codes en omschrijvingen uit de zoekboom en zijn ze niet vrij wijzigbaar. Alleen bij Vrij beheer je de structuur handmatig. Iedere structuurregel toont zijn niveau en eigen subtotaal."},
+              {title:"Starten met een calculatie",keywords:"start project office calculatie structuur nlsfb stabu vrij",body:"Open Calc vanuit Office. Bij NL-SfB of STABU bouw je de calculatiestructuur vanuit de zoekboom; dubbelklik op een classificatiemap om de ontbrekende structuur toe te voegen. Bij Vrij maak je hoofdgroepen en paragrafen direct in het rekenblad. Gewone calculatieregels voeg je altijd vrij toe."},
+              {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur nlsfb stabu zoekboom",body:"De calculatie gebruikt één stelsel: NL-SfB, STABU of Vrij. Bij NL-SfB/STABU komen hoofdgroepen, paragrafen, codes en omschrijvingen uit de zoekboom en zijn ze niet vrij wijzigbaar. De echte calculatiehiërarchie staat in het rekenblad tussen de calculatieregels. Gebruik Niveaus voor de globale weergave; open of sluit één tak met het pijltje op die structuurregel. Alleen bij Vrij beheer je hoofdgroepen en paragrafen handmatig in het rekenblad. Iedere structuurregel toont zijn niveau en eigen subtotaal."},
               {title:"Calculatieregels",keywords:"regel aantal norm uren uurprijs materiaal materieel onderaanneming btw",body:"Vul hoeveelheid, norm of totaaluren en de kostendragers in. Arbeid rekent met totaaluren × uurprijs; materiaal, materieel, onderaanneming en overig rekenen per hoeveelheid."},
               {title:"BTW",keywords:"btw hoog laag verlegd vrijgesteld",body:"Kies per verkoopregel de BTW-keuze Hoog, Laag, Verlegd of Vrijgesteld. De KPI-zone totaliseert de grondslag en het BTW-bedrag en toont totaal excl. en incl. BTW."},
               {title:"Recepten",keywords:"recept boom slepen toepassen",body:"Gebruik de receptenboom links. Sleep een recept naar een paragraaf of regel binnen die paragraaf. Bij een eenduidige bron wordt het recept direct toegepast; anders opent Recept toepassen voor controle."},
@@ -4328,10 +4341,10 @@ function App() {
             if (line.lineType === "chapter" || line.lineType === "paragraph") {
               const metric=structureMetrics.get(line.id)??{depth:line.lineType==="chapter"?1:2,subtotal:0};
               const collapsed=collapsedStructureIds.has(line.id);
-              return <div className={line.lineType} key={line.id}>
+              return <div className={line.lineType} key={line.id} data-structure-depth={metric.depth}>
                 <div className="bulkCodeCell" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLineIds.includes(line.id)} onChange={event => toggleBulkLine(line.id, event.target.checked)} />{classificationScheme==="custom"?<input value={line.code} onChange={e => patchLine(line.id, { code: e.target.value })} aria-label="Vrije structuurcode" />:<span className="structureCodeLocked">{line.code}</span>}</div>
                 <button type="button" className="structureCollapseToggle" aria-label={collapsed?"Uitklappen":"Inklappen"} title={collapsed?"Uitklappen":"Inklappen"} onClick={()=>setCollapsedStructureIds(current=>{const next=new Set(current);if(next.has(line.id))next.delete(line.id);else next.add(line.id);return next;})}>{collapsed?"▸":"▾"}</button>
-                <div className="structureDescription">{classificationScheme==="custom"?<input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />:<strong className="structureDescriptionLocked">{line.description}</strong>}<small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}{classificationScheme!=="custom"?" · "+classificationLabel[classificationScheme]:""}</small></div>
+                <div className="structureDescription" style={{paddingLeft:Math.max(0,metric.depth-1)*14}}>{classificationScheme==="custom"?<input value={line.description} onChange={e => patchLine(line.id, { description: e.target.value })} />:<strong className="structureDescriptionLocked">{line.description}</strong>}<small>{line.lineType==="chapter"?"Hoofdgroep":"Paragraaf"} · niveau {metric.depth}{classificationScheme!=="custom"?" · "+classificationLabel[classificationScheme]:""}</small></div>
                 <div className="structureSubtotal"><small>Subtotaal</small><strong>{money.format(metric.subtotal)}</strong></div>
                 <LineActions line={line} />
               </div>;
@@ -4401,6 +4414,10 @@ function App() {
               {visibleColumns.map(column => <React.Fragment key={column.key}>{cells[column.key]}</React.Fragment>)}
             </div>;
           })}
+          {classificationScheme==="custom"&&activeSubcalculationId==null&&versionStatus!=="established"&&<div className="structureInlineActions">
+            <button type="button" onClick={()=>addLine("chapter")}>+ Hoofdgroep</button>
+            <button type="button" onClick={()=>addLine("paragraph")}>+ Paragraaf</button>
+          </div>}
           {activeScopeRef
             ? <button className="newrow" onClick={() => addLine("item",{scopeType:activeScopeType,scopeRef:activeScopeRef})}>+ Nieuwe regel in {scopeLabels[activeScopeType]} {activeScopeRef}</button>
             : activeSubcalculationId==null
