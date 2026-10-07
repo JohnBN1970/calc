@@ -10,7 +10,7 @@ import { buildConceptFromOfficeContext } from "./calculationConcept.js";
 import { proposalRulesFromCalcRecipes, proposeRecipesForConcept } from "./recipeProposal.js";
 import { buildWorkbenchAggregate, calcWorkbenchStructureFromLines } from "./workbenchAggregate.js";
 import { calcRecipeSourceRequests, generateCalcOwnedRecipeLines } from "./calcOwnedRecipeGenerator.js";
-import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes, updateCalcRecipeApplicability } from "./calcRecipeRepository.js";
+import { addCalcRecipeLine, createCalcRecipe, listCalcRecipes, updateCalcRecipeApplicability, updateCalcRecipeLine } from "./calcRecipeRepository.js";
 import { addCalcSubcalculationScope, createCalcSubcalculation, createScopedCalcSubcalculation, listCalcSubcalculations, setManualLineMembership } from "./calcSubcalculationRepository.js";
 import { evaluateCalculationPartitions, evaluateSubcalculations } from "./subcalculationEvaluation.js";
 import { generatedScopeTags, manualScopeTags, storeLineScopeTags, type LineScopeTag } from "./lineScopeRepository.js";
@@ -1437,6 +1437,36 @@ app.post("/api/recipes/:versionId/lines", async (req, res) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Receptregel kon niet worden toegevoegd.";
     res.status(400).json({ error: detail });
+  }
+});
+
+app.put("/api/recipes/:versionId/lines/:lineId", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  try{
+    await updateCalcRecipeLine({
+      recipeVersionId:Number(req.params.versionId),
+      lineId:Number(req.params.lineId),
+      lineRef:String(req.body?.lineRef??""),
+      sortOrder:Number(req.body?.sortOrder??0),
+      costKind:String(req.body?.costKind??"") as any,
+      description:String(req.body?.description??""),
+      unit:req.body?.unit==null?null:String(req.body.unit),
+      quantitySourceType:req.body?.quantitySourceType==null?null:String(req.body.quantitySourceType),
+      quantitySourceRef:req.body?.quantitySourceRef==null?null:String(req.body.quantitySourceRef),
+      costSourceType:req.body?.costSourceType==null?null:String(req.body.costSourceType),
+      costSourceRef:req.body?.costSourceRef==null?null:String(req.body.costSourceRef),
+      takeoffBasis:String(req.body?.takeoffBasis??"fixed") as any,
+      factor:req.body?.factor==null?1:Number(req.body.factor),
+      wastePct:req.body?.wastePct==null?0:Number(req.body.wastePct),
+      fixedQuantity:req.body?.fixedQuantity==null?null:Number(req.body.fixedQuantity),
+      roundingStep:req.body?.roundingStep==null?null:Number(req.body.roundingStep),
+      minimumQuantity:req.body?.minimumQuantity==null?null:Number(req.body.minimumQuantity),
+      metadata:req.body?.metadata&&typeof req.body.metadata==="object"?req.body.metadata:null
+    });
+    res.json({ok:true});
+  }catch(error){
+    res.status(400).json({error:error instanceof Error?error.message:"Receptregel kon niet worden bijgewerkt."});
   }
 });
 
