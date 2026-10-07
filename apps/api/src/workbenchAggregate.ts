@@ -1,3 +1,4 @@
+import { withDerivedTakeoff } from "./derivedTakeoff.js";
 import type { OfficeCalculationContextSnapshot, OfficeWorkspaceState } from "./officeClient.js";
 import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
@@ -175,7 +176,10 @@ export function buildWorkbenchAggregate(input:{
   recipeProposalDecisions?:StoredRecipeProposalDecision[];
 }) {
   const documentTriage=input.documentTriage;
-  const concept=buildConceptFromOfficeContext(input.context,documentTriage);
+  const takeoffDerivation=withDerivedTakeoff(input.context);
+  const effectiveContext=takeoffDerivation.snapshot;
+  const concept=buildConceptFromOfficeContext(effectiveContext,documentTriage);
+  concept.unresolved=[...new Set([...concept.unresolved,...takeoffDerivation.derived.unresolved])];
   const rawProposals=proposeRecipesForConcept(concept,proposalRulesFromCalcRecipes(input.recipes));
   const proposals=applyRecipeProposalDecisions({
     proposals:rawProposals,
@@ -198,7 +202,8 @@ export function buildWorkbenchAggregate(input:{
     editable:input.workspace.editable,
     concept,
     documentTriage,
-    takeoffs: input.context.context.takeoff,
+    takeoffs: effectiveContext.context.takeoff,
+    derivedTakeoffPositionRefs:takeoffDerivation.derived.derivedPositionRefs,
     recipeProposals:proposals,
     recipeSelectionIssues,
     autoBuildEligibility,
