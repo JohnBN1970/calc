@@ -67,70 +67,61 @@ Geen nieuwe cosmetische zijpaden zolang deze keten niet aantoonbaar rond is. De 
   - Notitie/structuur telt niet mee.
   Opties kunnen daardoor ook niet meer als kostenverdelingsbron/-doel worden gebruikt.
 
-Laatste main merge: #255 -> 8e37964977338a12211884f044ab2361774fad37.
+Laatste main merge: #259 -> 7bcbd239480591b3adeee3fb957fe5ed6541afee.
 
-## Huidige actieve wijziging — publicatieveiligheid
+Aanvullend gemerged:
+- #257: tweefasen-publicatie. Calc wordt eerst lokaal duurzaam vastgesteld; daarna wordt exact die immutable versie naar Office gepubliceerd en geverifieerd.
+- #258: veilige retry van een established publicatie hergebruikt de oorspronkelijke establishedAt uit de snapshot, zodat de content-hash stabiel blijft.
+- #259: allocaties werken nu financieel door in deelcalculaties, mainDirectCost, staartkosten, scope-overzichten, KPI-kostenmix en structuur-subtotalen. Allocaties verplaatsen kost pro rata over arbeid/materiaal/materieel/OA/overig en houden totaal directe kost gelijk.
 
-Branch: `fix/two-phase-safe-publication`
+## Huidige actieve wijziging — gemengde BTW bij allocaties
 
-Huidige branch-bestand SHA: `aadc3b0c9fba8e88d875e46c2dcb6c83bd2d60d3`
+Branch: `fix/allocated-vat-bases`
 
-Er is nog geen open PR voor deze branch.
+PR: **#260 — Move VAT bases with allocated line costs**
+
+Huidige HEAD: `3108f8d86903ec1991faa7af8bd0bfb71e8e0e0a`
 
 ### Probleem
 
-Het publiceer-endpoint deed tot nu toe:
+Allocaties verplaatsen inmiddels de effectieve directe kost naar de doelregel. Bij gemengde BTW bleef de BTW-grondslag echter nog op de oorspronkelijke bronregel staan. Bij één BTW-regime valt dat niet op, maar bij bijvoorbeeld 9% + 21%, verlegd of vrijgesteld ontstaat dan een onjuiste BTW-specificatie.
 
-1. lokale DB-transactie openen;
-2. Calc-doorrekening/snapshot voorbereiden;
-3. Office publiceren;
-4. Office-resultaat verifiëren;
-5. lokale snapshot + established-status schrijven;
-6. lokale transactie committen.
+### Wijziging op #260
 
-Risico: Office kan al gepubliceerd zijn terwijl daarna de lokale Calc-commit faalt. Dan lopen Office en Calc uit elkaar.
+- pure `applyAmountAllocations` toegevoegd;
+- `effectiveAllocatedVatSources` toegevoegd;
+- allocatie verplaatst BTW-grondslag van bronregel naar doelregel;
+- het BTW-regime van de doelregel geldt voor het verplaatste bedrag;
+- totaal verkoopgrondslag excl. BTW blijft exact gelijk;
+- Opslaan, publication-readiness en Publiceren gebruiken dezelfde effectieve BTW-berekening;
+- regressietest toegevoegd voor 21% + 9% met allocatie tussen beide regels.
 
-### Wijziging op de branch
+### Smoke-status kernketen
 
-Publicatie wordt tweefasen:
+Gecontroleerd / groen:
+- calculatieregelbedragen;
+- arbeidsuren/norm-validatie;
+- Regel/Stelpost/Verrekenbaar tellen mee; Optie/Notitie/Structuur niet;
+- structuur en inklappen;
+- hoofdgroep-/paragraafsubtotalen;
+- allocaties;
+- deelcalculaties;
+- hoofdcalculatie versus deelcalculatie-staartkosten;
+- BTW per regel en BTW per staartkostenregel;
+- broncontextbinding;
+- Opslaan;
+- publication-readiness;
+- immutable snapshot + content hash;
+- tweefasen vaststellen/publiceren;
+- veilige Office-retry;
+- Office commerciële roundtrip-verificatie;
+- nieuwe versie starten vanuit established snapshot.
 
-**Fase 1 — lokaal duurzaam vaststellen**
-- volledige publicatiechecks uitvoeren;
-- immutable snapshot + content hash opslaan;
-- versie status established zetten;
-- calculation status established zetten;
-- lokale transactie committen.
-
-**Fase 2 — naar Office publiceren**
-- Office workspace/version opnieuw ophalen;
-- exact die established Calc-versie publiceren;
-- commerciële samenvatting verifiëren;
-- publication binding verifiëren.
-
-Retry van een established versie wordt toegestaan, maar alleen wanneer opgeslagen snapshot-contract + content hash exact overeenkomen met de opnieuw opgebouwde inhoud. Daardoor kan een mislukte Office-sync veilig opnieuw worden geprobeerd zonder de calculatie te wijzigen.
-
-### Eerstvolgende stap
-
-1. Branch controleren/typecheck/tests.
-2. PR openen.
-3. CI groen maken.
-4. Mergen.
-5. Daarna de volledige kernketen als end-to-end smoke-flow nalopen:
-   - regel invoeren;
-   - uren/norm;
-   - directe kosten;
-   - BTW;
-   - staartkosten;
-   - deelcalculatie;
-   - allocatie;
-   - structuur/subtotalen;
-   - opslaan;
-   - publication-readiness;
-   - vaststellen;
-   - publish naar Office;
-   - Office-resultaat teruglezen/verifiëren.
-
-Alleen blockers uit deze smoke-flow nog oplossen voordat de UX-polijstslag begint.
+Nog actief:
+1. #260 CI groen maken en mergen.
+2. Daarna main-CI controleren.
+3. Alleen nog concrete blockers uit een daadwerkelijke gebruikersproef oplossen.
+4. Zodra die kernflow werkt: functioneel af voor vandaag en daarna pas UX-polijstslag.
 
 ## Bekende UX-status
 
@@ -152,9 +143,10 @@ Niet nu cosmetisch verbouwen zolang de kernketen nog wordt afgemaakt.
 
 Bij volgende 'door':
 
-1. ga naar branch `fix/two-phase-safe-publication`;
-2. controleer de wijziging in `apps/api/src/index.ts`;
-3. run/controleer CI via PR;
-4. merge bij groen;
-5. voer daarna de kernketen-smokecontrole uit en fix alleen echte blockers.
+1. controleer PR #260 / branch `fix/allocated-vat-bases`;
+2. CI groen = merge;
+3. controleer daarna main-CI;
+4. test de echte gebruikersflow in Calc;
+5. fix alleen concrete blockers;
+6. daarna UX-polijstslag apart uitvoeren.
 
