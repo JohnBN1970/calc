@@ -433,6 +433,7 @@ type CalcRecipe = {
     factor:number;
     wastePct:number;
     fixedQuantity:number|null;
+    metadata:Record<string,unknown>|null;
   }>;
 };
 
@@ -1054,7 +1055,7 @@ function App() {
   const [recipeLineDraft, setRecipeLineDraft] = useState({
     lineRef:"", description:"", costKind:"material", unit:"st", takeoffBasis:"fixed",
     quantitySourceType:"", quantitySourceRef:"", costSourceType:"article", costSourceRef:"",
-    factor:1, wastePct:0, fixedQuantity:1
+    factor:1, wastePct:0, fixedQuantity:1, componentKind:"", componentRef:""
   });
   const [subcalcDraft, setSubcalcDraft] = useState({ ref:"", description:"" });
   const [subcalcScopeDraft, setSubcalcScopeDraft] = useState({ subcalculationId:0, scopeType:"position", scopeRef:"" });
@@ -1938,7 +1939,11 @@ function App() {
           quantitySourceRef:recipeLineDraft.quantitySourceRef||null,
           costSourceType:recipeLineDraft.costSourceType||null,
           costSourceRef:recipeLineDraft.costSourceRef||null,
-          fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null
+          fixedQuantity:recipeLineDraft.takeoffBasis==="fixed"?Number(recipeLineDraft.fixedQuantity):null,
+          metadata:(recipeLineDraft.componentKind||recipeLineDraft.componentRef)?{
+            componentKind:recipeLineDraft.componentKind||undefined,
+            componentRef:recipeLineDraft.componentRef||undefined
+          }:null
         })
       });
       const payload=await response.json().catch(()=>({}));
@@ -4168,7 +4173,8 @@ function App() {
                 <label><span>Omschrijving</span><input value={recipeLineDraft.description} onChange={event=>setRecipeLineDraft(current=>({...current,description:event.target.value}))} /></label>
                 <label><span>Kostensoort</span><select value={recipeLineDraft.costKind} onChange={event=>setRecipeLineDraft(current=>({...current,costKind:event.target.value}))}><option value="material">Materiaal</option><option value="labour">Arbeid</option><option value="equipment">Materieel</option><option value="subcontracting">OA</option><option value="other">Overig</option></select></label>
                 <label><span>Eenheid</span><input value={recipeLineDraft.unit} onChange={event=>setRecipeLineDraft(current=>({...current,unit:event.target.value}))} /></label>
-                <label><span>Uittrekbasis</span><select value={recipeLineDraft.takeoffBasis} onChange={event=>setRecipeLineDraft(current=>({...current,takeoffBasis:event.target.value}))}><option value="fixed">Vast</option><option value="area">Oppervlak</option><option value="perimeter">Omtrek</option><option value="two_sides_plus_head">2 zijden + bovendorpel</option><option value="width">Breedte</option><option value="height">Hoogte</option><option value="part_area">Vakoppervlak</option><option value="internal_joint">Interne koppeling</option></select></label>
+                <label><span>Uittrekbasis</span><select value={recipeLineDraft.takeoffBasis} onChange={event=>setRecipeLineDraft(current=>({...current,takeoffBasis:event.target.value}))}><option value="fixed">Vast</option><option value="area">Oppervlak</option><option value="perimeter">Omtrek</option><option value="two_sides_plus_head">2 zijden + bovendorpel</option><option value="width">Breedte</option><option value="height">Hoogte</option><option value="part_area">Vakoppervlak</option><option value="internal_joint">Interne koppeling</option></select></label>                <label><span>Vaktype</span><select value={recipeLineDraft.componentKind} onChange={event=>setRecipeLineDraft(current=>({...current,componentKind:event.target.value}))}><option value="">Hele positie</option><option value="glass">Glas</option><option value="operable">Draai/kiep</option><option value="door">Deur</option><option value="panel">Paneel</option><option value="field">Vak</option><option value="mullion">Stijl</option><option value="transom">Kalf</option><option value="frame">Kozijn</option></select></label>
+                <label><span>Vakreferentie (optioneel)</span><input value={recipeLineDraft.componentRef} onChange={event=>setRecipeLineDraft(current=>({...current,componentRef:event.target.value}))} placeholder="bijv. V1" /></label>
                 <label><span>Factor</span><DecimalInput value={recipeLineDraft.factor} onChange={next=>setRecipeLineDraft(current=>({...current,factor:next??0}))} className="" /></label>
                 <label><span>Verlies %</span><DecimalInput value={recipeLineDraft.wastePct} onChange={next=>setRecipeLineDraft(current=>({...current,wastePct:next??0}))} className="" /></label>
                 {recipeLineDraft.takeoffBasis==="fixed" && <label><span>Vaste hoeveelheid</span><DecimalInput value={recipeLineDraft.fixedQuantity} onChange={next=>setRecipeLineDraft(current=>({...current,fixedQuantity:next??0}))} className="" /></label>}
@@ -4178,7 +4184,7 @@ function App() {
                 <label><span>Kostprijsbron ref</span><input value={recipeLineDraft.costSourceRef} onChange={event=>setRecipeLineDraft(current=>({...current,costSourceRef:event.target.value}))} placeholder="artikelcode of default" /></label>
               </div>
               <button type="button" disabled={!selectedRecipeVersionId} onClick={() => void addRecipeLine()}>Regel toevoegen</button>
-              {selectedRecipeVersionId && <div className="recipeLineList">{(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines??[]).map(line=><div key={line.id}><strong>{line.lineRef} · {line.description}</strong><span>{line.costKind} · {line.takeoffBasis} · factor {line.factor}{line.wastePct ? " · " + line.wastePct + "% verlies" : ""}</span><small>{line.quantitySourceRef ? "norm: " + line.quantitySourceType + ":" + line.quantitySourceRef : "geen normbron"} · {line.costSourceRef ? "prijs: " + line.costSourceType + ":" + line.costSourceRef : "geen kostprijsbron"}</small></div>)}</div>}
+              {selectedRecipeVersionId && <div className="recipeLineList">{(recipes.find(recipe=>recipe.id===selectedRecipeVersionId)?.lines??[]).map(line=><div key={line.id}><strong>{line.lineRef} · {line.description}</strong><span>{line.costKind} · {line.takeoffBasis}{line.metadata?.componentKind?" · vaktype "+String(line.metadata.componentKind):""}{line.metadata?.componentRef?" · vak "+String(line.metadata.componentRef):""} · factor {line.factor}{line.wastePct ? " · " + line.wastePct + "% verlies" : ""}</span><small>{line.quantitySourceRef ? "norm: " + line.quantitySourceType + ":" + line.quantitySourceRef : "geen normbron"} · {line.costSourceRef ? "prijs: " + line.costSourceType + ":" + line.costSourceRef : "geen kostprijsbron"}</small></div>)}</div>}
             </section>
           </div>
           {managementStatus && <div className="managementStatus" role="status">{managementStatus}</div>}
