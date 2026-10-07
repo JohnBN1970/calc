@@ -3518,13 +3518,13 @@ function App() {
   };
 
   const publish = async () => {
-    if(versionStatus!=="draft"){
-      setStatus("Deze calculatieversie is al vastgesteld.");
-      return;
-    }
     try{
-      await persistWorkbenchDraft(lines);
-      setStatus("Vaststellen en publiceren naar Office…");
+      if(versionStatus==="draft"){
+        await persistWorkbenchDraft(lines);
+        setStatus("Vaststellen en publiceren naar Office…");
+      }else{
+        setStatus("Vastgestelde versie opnieuw publiceren naar Office…");
+      }
       const response=await fetch("/api/workbench/current/publish",{
         method:"POST",
         headers:{Accept:"application/json"}
@@ -3532,10 +3532,12 @@ function App() {
       const payload=await response.json().catch(()=>({})) as {status?:string;contentHash?:string;error?:string};
       if(!response.ok)throw new Error(String(payload.error??"Publiceren mislukt"));
       setVersionStatus("established");
-      setStatus("Vastgesteld · gepubliceerd naar Office");
       await loadWorkbench();
+      setStatus("Vastgesteld · gepubliceerd naar Office");
     }catch(error){
-      setStatus(error instanceof Error?error.message:"Publiceren mislukt");
+      const message=error instanceof Error?error.message:"Publiceren mislukt";
+      try{await loadWorkbench();}catch{}
+      setStatus(message);
     }
   };
 
@@ -3623,7 +3625,10 @@ function App() {
         <button className="command commandUtility" type="button" onClick={()=>setHelpOpen(true)} title="Help" aria-label="Help"><Icon name="help" /></button>
         <div className="commandDivider" />
         {versionStatus==="established"
-          ? <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
+          ? <>
+              {publicationFreshness&&publicationFreshness.status!=="current"&&publicationFreshness.status!=="office_changed"&&<button className="command commandSave" type="button" onClick={()=>void publish()} title="De vastgestelde Calc-versie opnieuw naar Office publiceren"><Icon name="office" /><span>Publiceren</span></button>}
+              <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
+            </>
           : <>
               <button className="command commandSave" type="button" onClick={save} disabled={!calculationReady} title={calculationReady ? "Concept opslaan in Calc" : "Los eerst de onvolledige calculatieregels op"}><Icon name="save" /><span>Opslaan</span></button>
               <button className="command commandSave" type="button" onClick={publish} disabled={!calculationReady} title={calculationReady?"Vaststellen en commerciële samenvatting naar Office publiceren":"Los eerst de onvolledige calculatieregels op"}><Icon name="office" /><span>Publiceren</span></button>
@@ -3673,10 +3678,10 @@ function App() {
 
 
       {versionStatus==="established" && <div className="readinessBanner establishedBanner" role="status"><div><strong>Versie vastgesteld</strong><span>Deze Calc-versie is immutable. Start een nieuwe versie om wijzigingen aan te brengen.</span></div></div>}
-      {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>}</div>}
+      {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&(publicationFreshness.status==="version_mismatch"?<button type="button" onClick={()=>void publish()}>Vastgestelde versie opnieuw publiceren</button>:<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>)}</div>}
       {publicationFreshness?.status==="draft_pending"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nieuw Calc-concept in bewerking</strong><span>{publicationFreshness.message}</span></div></div>}
       {publicationFreshness?.status==="publish_recovery"&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Publicatie kan veilig worden hersteld</strong><span>{publicationFreshness.message}</span></div><button type="button" onClick={()=>void publish()}>Publicatie afronden</button></div>}
-      {publicationFreshness?.status==="never_published"&&versionStatus==="draft"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div></div>}
+      {publicationFreshness?.status==="never_published"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void publish()}>Naar Office publiceren</button>}</div>}
       {versionStatus==="draft"&&versionDiff?.baselineVersionNo!=null&&<details className="versionDiffPanel">
         <summary>
           <strong>Wijzigingen sinds v{versionDiff.baselineVersionNo}</strong>
