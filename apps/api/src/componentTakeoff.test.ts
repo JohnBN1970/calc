@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateTakeoffComponents, summarizeTakeoffByPosition } from "./componentTakeoff.js";
+import { evaluateTakeoffComponents, summarizeTakeoffByPosition, buildPrintableComponentTakeoff } from "./componentTakeoff.js";
 
 const base={
   document_id:1,position_ref:"K1",classification_ref:null,description:null,
@@ -106,4 +106,17 @@ test("glass without valid parent is not ready for glass takeoff",()=>{
   ]);
   const [summary]=summarizeTakeoffByPosition(evaluated);
   assert.equal(summary.ready_for_glass_takeoff,false);
+});
+
+
+test("printable takeoff preserves position hierarchy and review readiness",()=>{
+  const evaluated=evaluateTakeoffComponents([
+    {...base,id:40,component_ref:"kozijn",parent_component_ref:null,component_type:"frame",description:"Kozijn",quantity:1,width_mm:1200,height_mm:1500,area_m2:null,perimeter_m:null},
+    {...base,id:41,component_ref:"vak-1",parent_component_ref:"kozijn",component_type:"field",description:"Vak 1",quantity:1,width_mm:1000,height_mm:1300,area_m2:null,perimeter_m:null},
+    {...base,id:42,component_ref:"glas-1",parent_component_ref:"vak-1",component_type:"glass",description:"HR++",quantity:1,width_mm:960,height_mm:1260,area_m2:null,perimeter_m:null,source_page:8}
+  ]);
+  const rows=buildPrintableComponentTakeoff(evaluated);
+  assert.deepEqual(rows.map(row=>[row.component_ref,row.depth]),[["kozijn",0],["vak-1",1],["glas-1",2]]);
+  assert.equal(rows[2].source_page,8);
+  assert.equal(rows[2].ready,true);
 });
