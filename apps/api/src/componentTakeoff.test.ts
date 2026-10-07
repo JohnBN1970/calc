@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateTakeoffComponents } from "./componentTakeoff.js";
+import { evaluateTakeoffComponents, summarizeTakeoffByPosition } from "./componentTakeoff.js";
 
 const base={
   document_id:1,position_ref:"K1",classification_ref:null,description:null,
@@ -83,4 +83,27 @@ test("missing and circular parent relations are reviewable",()=>{
     {...base,id:24,component_ref:"b",parent_component_ref:"a",component_type:"field",description:null,quantity:1,width_mm:500,height_mm:600,area_m2:null,perimeter_m:null}
   ]);
   assert.equal(cycle.some(row=>row.relation_status==="cycle"),true);
+});
+
+
+test("position summary rolls up glass and vak readiness",()=>{
+  const evaluated=evaluateTakeoffComponents([
+    {...base,id:30,component_ref:"vak-1",parent_component_ref:null,component_type:"field",description:null,quantity:1,width_mm:1000,height_mm:1200,area_m2:null,perimeter_m:null},
+    {...base,id:31,component_ref:"glas-1",parent_component_ref:"vak-1",component_type:"glass",description:null,quantity:2,width_mm:960,height_mm:1160,area_m2:null,perimeter_m:null},
+    {...base,id:32,component_ref:"dk-1",parent_component_ref:"vak-1",component_type:"draaikiep",description:null,quantity:1,width_mm:500,height_mm:1000,area_m2:null,perimeter_m:null}
+  ]);
+  const [summary]=summarizeTakeoffByPosition(evaluated);
+  assert.equal(summary.position_ref,"K1");
+  assert.equal(summary.glass_count,2);
+  assert.equal(summary.operable_count,1);
+  assert.equal(summary.glass_area_m2,2.2272);
+  assert.equal(summary.ready_for_glass_takeoff,true);
+});
+
+test("glass without valid parent is not ready for glass takeoff",()=>{
+  const evaluated=evaluateTakeoffComponents([
+    {...base,id:33,component_ref:"glas-x",parent_component_ref:null,component_type:"glass",description:null,quantity:1,width_mm:500,height_mm:600,area_m2:null,perimeter_m:null}
+  ]);
+  const [summary]=summarizeTakeoffByPosition(evaluated);
+  assert.equal(summary.ready_for_glass_takeoff,false);
 });
