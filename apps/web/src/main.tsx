@@ -346,6 +346,23 @@ type WorkbenchAggregate = {
     reviewRequired: boolean;
   }>;
   derivedTakeoffPositionRefs?: string[];
+  printableComponentTakeoff?: Array<{
+    position_ref:string;
+    component_ref:string;
+    parent_component_ref:string|null;
+    depth:number;
+    component_kind:"frame"|"field"|"glass"|"operable"|"door"|"panel"|"mullion"|"transom"|"unknown";
+    description:string|null;
+    quantity:number;
+    width_mm:number|null;
+    height_mm:number|null;
+    area_m2:number|null;
+    perimeter_m:number|null;
+    source_page:number|null;
+    review_status:string;
+    ready:boolean;
+    warnings:string[];
+  }>;
   componentTakeoffSummary?: Array<{
     position_ref:string;
     component_count:number;
@@ -4076,7 +4093,17 @@ function App() {
               </div>}
             </section>
             <section className="takeoffWorkspace">
-              <div className="takeoffWorkspaceHead"><div><span className="eyebrow">UITTREKSTAAT</span><h3>Uitgetrokken uit Office-bronnen</h3><p>Deze maatstaat is de controlelaag tussen broninformatie en recepten. Bronconflicten blijven zichtbaar en worden niet stil overschreven.</p></div><button type="button" onClick={()=>window.print()} disabled={aggregate.takeoffs.length===0}>Uittrekstaat printen</button></div>
+              <div className="takeoffWorkspaceHead"><div><span className="eyebrow">UITTREKSTAAT</span><h3>Uitgetrokken uit Office-bronnen</h3><p>Deze maatstaat is de controlelaag tussen broninformatie en recepten. Bronconflicten blijven zichtbaar en worden niet stil overschreven.</p></div><button type="button" onClick={()=>window.print()} disabled={aggregate.takeoffs.length===0&&(aggregate.printableComponentTakeoff?.length??0)===0}>Uittrekstaat printen</button></div>
+              {(aggregate.printableComponentTakeoff?.length??0)>0&&<div className="printableComponentTakeoff" aria-label="Printbare vak- en glasuittrekstaat">
+                <div className="printTakeoffTitle"><strong>BREBO uittrekstaat</strong><span>Office-context {aggregate.officeVersion}</span></div>
+                <table><thead><tr><th>Positie / onderdeel</th><th>Type</th><th>Aantal</th><th>Breedte</th><th>Hoogte</th><th>Oppervlak</th><th>Omtrek</th><th>Bron</th><th>Status</th></tr></thead><tbody>{aggregate.printableComponentTakeoff?.map((row,index)=><tr key={row.position_ref+"-"+row.component_ref+"-"+index} className={row.ready?"is-ready":"is-review"}>
+                  <td style={{"--takeoff-depth":row.depth} as React.CSSProperties}><strong>{row.position_ref} · {row.component_ref}</strong>{row.description&&<small>{row.description}</small>}</td>
+                  <td>{({frame:"Kozijn",field:"Vak",glass:"Glas",operable:"Draaiend",door:"Deur",panel:"Paneel",mullion:"Stijl",transom:"Kalf",unknown:"Onbekend"} as Record<string,string>)[row.component_kind]}</td>
+                  <td>{row.quantity}</td><td>{row.width_mm==null?"—":row.width_mm+" mm"}</td><td>{row.height_mm==null?"—":row.height_mm+" mm"}</td>
+                  <td>{row.area_m2==null?"—":row.area_m2.toFixed(3)+" m²"}</td><td>{row.perimeter_m==null?"—":row.perimeter_m.toFixed(3)+" m"}</td>
+                  <td>{row.source_page==null?"—":"p. "+row.source_page}</td><td>{row.ready?"Gecontroleerd":row.warnings[0]??row.review_status}</td>
+                </tr>)}</tbody></table>
+              </div>}
               {aggregate.takeoffs.length===0?<p className="muted">Nog geen uitgetrokken posities beschikbaar. Office moet eerst bruikbare maat- en positiegegevens uit de projectbronnen leveren.</p>:<div className="takeoffTableWrap"><table className="takeoffTable"><thead><tr><th>Positie</th><th>Aantal</th><th>Maatsoort</th><th>Breedte</th><th>Hoogte</th><th>Oppervlak</th><th>Omtrek</th><th>Broncontrole</th></tr></thead><tbody>{aggregate.takeoffs.map(row=>{const decisions=aggregate.concept.sourceDecisions.filter(item=>item.positionRef===row.position_ref);const conflict=decisions.some(item=>item.status==="conflict");return <tr key={row.id} className={conflict?"has-conflict":""}><td><strong>{row.position_ref}</strong></td><td>{row.quantity}</td><td>{row.measurement_kind||"—"}</td><td>{row.width_mm==null?"—":row.width_mm+" mm"}</td><td>{row.height_mm==null?"—":row.height_mm+" mm"}</td><td>{row.area_m2==null?"—":row.area_m2.toFixed(3)+" m²"}</td><td>{row.perimeter_m==null?"—":row.perimeter_m.toFixed(3)+" m"}</td><td>{conflict?<span className="takeoffConflict">Conflict</span>:aggregate.derivedTakeoffPositionRefs?.includes(row.position_ref)?"Zelf uitgetrokken":decisions.some(item=>item.status==="superseded")?"Revisie verwerkt":"OK"}</td></tr>})}</tbody></table></div>}
             </section>
             {(aggregate.components?.length??0)>0&&<section className="componentTakeoffWorkspace">
