@@ -54,7 +54,18 @@ export function generateCalcOwnedRecipeLines(input:{
     height_mm:number|null;
   };
   resolution:OfficeCalcSourceResolution;
-  evidence?:{documentIds:number[];pages:number[]};
+  evidence?:{
+    documentIds:number[];
+    pages:number[];
+    components?:Array<{
+      componentRef:string;
+      componentKind:string;
+      componentType:string|null;
+      documentId:number|null;
+      sourcePage:number|null;
+      sourceFragment:string|null;
+    }>;
+  };
   scopes?:Array<{type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";ref:string}>;
   contextBinding?:{officeVersion:string;selectionVersion:string|null};
 }):CalcOwnedGeneratedLine[] {
@@ -143,7 +154,8 @@ export function generateCalcOwnedRecipeLines(input:{
         position_ref:input.takeoff.position_ref,
         evidence:{
           document_ids:input.evidence?.documentIds??[],
-          pages:input.evidence?.pages??[]
+          pages:input.evidence?.pages??[],
+          components:input.evidence?.components??[]
         },
         context_scopes:input.scopes??[],
         context_binding:input.contextBinding??null,
