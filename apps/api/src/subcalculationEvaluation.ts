@@ -181,12 +181,29 @@ export async function evaluateCalculationPartitions(
      WHERE version_id=?
   `,[versionId]);
   const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
+  const baseCostsByLine=new Map<number,CostBreakdown>(lines.map(row=>[Number(row.id),lineAmounts(row)]));
+  const [allocationRows]=await executor.execute<RowDataPacket[]>(
+    `SELECT source_line_id,target_line_id,amount
+       FROM calculation_line_allocations
+      WHERE version_id=?
+      ORDER BY id`,
+    [versionId]
+  );
+  const effectiveCostsByLine=applyCostAllocations({
+    costsByLine:baseCostsByLine,
+    allocations:allocationRows.map(row=>({
+      sourceLineId:Number(row.source_line_id),
+      targetLineId:Number(row.target_line_id),
+      amount:Number(row.amount??0)
+    }))
+  });
 
   let totalDirectCost=0;
   let mainDirectCost=0;
   for(const row of lines){
-    const amounts=lineAmounts(row);
-    const lineTotal=amounts.labour+amounts.material+amounts.equipment+amounts.subcontracting+amounts.other;
+    const amounts=effectiveCostsByLine.get(Number(row.id));
+    if(!amounts)continue;
+    const lineTotal=totalCost(amounts);
     totalDirectCost+=lineTotal;
     if(!assigned.has(Number(row.id))) mainDirectCost+=lineTotal;
   }
