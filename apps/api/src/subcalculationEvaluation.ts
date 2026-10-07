@@ -24,6 +24,54 @@ function lineAmounts(row:RowDataPacket){
   });
 }
 
+type CostBreakdown={labour:number;material:number;equipment:number;subcontracting:number;other:number};
+
+function totalCost(costs:CostBreakdown):number{
+  return costs.labour+costs.material+costs.equipment+costs.subcontracting+costs.other;
+}
+
+export function applyCostAllocations(input:{
+  costsByLine:Map<number,CostBreakdown>;
+  allocations:Array<{sourceLineId:number;targetLineId:number;amount:number}>;
+}):Map<number,CostBreakdown>{
+  const result=new Map<number,CostBreakdown>(
+    [...input.costsByLine].map(([id,costs])=>[id,{...costs}])
+  );
+  const base=new Map<number,CostBreakdown>(
+    [...input.costsByLine].map(([id,costs])=>[id,{...costs}])
+  );
+  const outgoingBySource=new Map<number,number>();
+
+  for(const allocation of input.allocations){
+    if(!Number.isFinite(allocation.amount)||allocation.amount<0)throw new Error("Kostenverdeling bevat een ongeldig bedrag.");
+    if(allocation.sourceLineId===allocation.targetLineId)throw new Error("Kostenverdeling kan niet naar dezelfde regel verwijzen.");
+    const sourceBase=base.get(allocation.sourceLineId);
+    const sourceCurrent=result.get(allocation.sourceLineId);
+    const targetCurrent=result.get(allocation.targetLineId);
+    if(!sourceBase||!sourceCurrent||!targetCurrent)throw new Error("Kostenverdeling verwijst naar een niet-meetellende of ontbrekende calculatieregel.");
+    const sourceTotal=totalCost(sourceBase);
+    const nextOutgoing=(outgoingBySource.get(allocation.sourceLineId)??0)+allocation.amount;
+    if(nextOutgoing-sourceTotal>0.01)throw new Error("Kostenverdeling overschrijdt de directe kost van de bronregel.");
+    outgoingBySource.set(allocation.sourceLineId,nextOutgoing);
+    if(allocation.amount===0)continue;
+    if(sourceTotal<=0)throw new Error("Kostenverdeling heeft een bedrag op een bronregel zonder directe kost.");
+
+    const factor=allocation.amount/sourceTotal;
+    const moved:CostBreakdown={
+      labour:sourceBase.labour*factor,
+      material:sourceBase.material*factor,
+      equipment:sourceBase.equipment*factor,
+      subcontracting:sourceBase.subcontracting*factor,
+      other:sourceBase.other*factor
+    };
+    for(const key of ["labour","material","equipment","subcontracting","other"] as const){
+      sourceCurrent[key]-=moved[key];
+      targetCurrent[key]+=moved[key];
+    }
+  }
+  return result;
+}
+
 export async function evaluateSubcalculations(versionId:number, executor:Pick<Pool|PoolConnection,"execute"> = db):Promise<SubcalculationResult[]>{
   const [lineRows]=await executor.execute<RowDataPacket[]>(`
     SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
@@ -33,6 +81,22 @@ export async function evaluateSubcalculations(versionId:number, executor:Pick<Po
   `,[versionId]);
   const lines=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
   const lineById=new Map(lines.map(row=>[Number(row.id),row]));
+  const baseCostsByLine=new Map<number,CostBreakdown>(lines.map(row=>[Number(row.id),lineAmounts(row)]));
+  const [allocationRows]=await executor.execute<RowDataPacket[]>(
+    `SELECT source_line_id,target_line_id,amount
+       FROM calculation_line_allocations
+      WHERE version_id=?
+      ORDER BY id`,
+    [versionId]
+  );
+  const effectiveCostsByLine=applyCostAllocations({
+    costsByLine:baseCostsByLine,
+    allocations:allocationRows.map(row=>({
+      sourceLineId:Number(row.source_line_id),
+      targetLineId:Number(row.target_line_id),
+      amount:Number(row.amount??0)
+    }))
+  });
 
   const [tags]=await executor.execute<RowDataPacket[]>(`
     SELECT t.line_id,t.scope_type,t.scope_ref
@@ -83,8 +147,7 @@ export async function evaluateSubcalculations(versionId:number, executor:Pick<Po
 
     const costs={labour:0,material:0,equipment:0,subcontracting:0,other:0};
     for(const id of included){
-      const row=lineById.get(id); if(!row)continue;
-      const amounts=lineAmounts(row);
+      const amounts=effectiveCostsByLine.get(id); if(!amounts)continue;
       costs.labour+=amounts.labour;
       costs.material+=amounts.material;
       costs.equipment+=amounts.equipment;
