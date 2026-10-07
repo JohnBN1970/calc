@@ -1106,8 +1106,17 @@ function App() {
         : 0;
       byRegime.set(vatRegimeId,current);
     };
+    const incoming=new Map<number,number>();
+    const outgoing=new Map<number,number>();
+    for(const allocation of allocations){
+      incoming.set(allocation.targetLineId,(incoming.get(allocation.targetLineId)??0)+allocation.amount);
+      outgoing.set(allocation.sourceLineId,(outgoing.get(allocation.sourceLineId)??0)+allocation.amount);
+    }
     for(const line of lines){
-      if(lineContributesToTotals(line))add(line.vatRegimeId,lineDirect(line));
+      if(lineContributesToTotals(line)){
+        const effective=lineDirect(line)-(outgoing.get(line.id)??0)+(incoming.get(line.id)??0);
+        add(line.vatRegimeId,effective);
+      }
     }
     for(const tail of evaluatedTailCosts)add(tail.vatRegimeId,tail.amount);
     const breakdown=[...byRegime.values()]
@@ -1122,7 +1131,7 @@ function App() {
       .sort((a,b)=>a.label.localeCompare(b.label,"nl"));
     const vat=breakdown.reduce((sum,item)=>sum+item.vatAmount,0);
     return{breakdown,vat,totalInclVat:totals.sales+vat};
-  },[lines,evaluatedTailCosts,vatRegimes,totals.sales]);
+  },[lines,allocations,evaluatedTailCosts,vatRegimes,totals.sales]);
 
   const unresolvedLines = useMemo(
     () => lines.filter(line => line.resolutionStatus === "unresolved"),
