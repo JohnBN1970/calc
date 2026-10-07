@@ -820,7 +820,7 @@ function mapServerLine(raw: Record<string, unknown>): Line {
 
 type DockWindowId="recipe-tree"|"recipe-workspace"|"recipe-library"|"subcalculations"|"tail-costs"|"prices"|"hour-rates"|"kpis";
 type DockZone="left"|"right"|"top"|"bottom";
-type DockWindowState={pinned:boolean;x:number;y:number;collapsed?:boolean;dockZone?:DockZone|null};
+type DockWindowState={pinned:boolean;x:number;y:number;width?:number;height?:number;collapsed?:boolean;dockZone?:DockZone|null};
 
 function PinIcon({pinned}:{pinned:boolean}){
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -839,6 +839,8 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
         pinned:saved?.pinned!=null?Boolean(saved.pinned):!defaultFloating,
         x:Number(saved?.x??Math.max(80,window.innerWidth*0.22)),
         y:Number(saved?.y??120),
+        width:Number.isFinite(Number(saved?.width))?Number(saved?.width):undefined,
+        height:Number.isFinite(Number(saved?.height))?Number(saved?.height):undefined,
         collapsed:Boolean(saved?.collapsed),
         dockZone
       };
@@ -853,7 +855,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
 
   useEffect(()=>{localStorage.setItem(storageKey,JSON.stringify(state));},[state,storageKey]);
   useEffect(()=>{
-    const reset=()=>setState({pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:Math.max(commandbarBottom+8,120),collapsed:false,dockZone:null});
+    const reset=()=>setState({pinned:!defaultFloating,x:Math.max(80,window.innerWidth*0.22),y:Math.max(commandbarBottom+8,120),width:undefined,height:undefined,collapsed:false,dockZone:null});
     window.addEventListener("brebo-calc-reset-windows",reset);
     return()=>window.removeEventListener("brebo-calc-reset-windows",reset);
   },[defaultFloating,commandbarBottom]);
@@ -898,7 +900,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
     : undefined;
   const shell=<div
     className={"dockWindow "+(state.pinned?"is-pinned":isScreenDocked?`is-screen-docked dock-${state.dockZone}`:"is-floating")}
-    style={state.pinned?undefined:isScreenDocked?dockStyle:{left:state.x,top:Math.max(commandbarBottom+8,state.y),zIndex}}
+    style={state.pinned?undefined:isScreenDocked?dockStyle:{left:state.x,top:Math.max(commandbarBottom+8,state.y),zIndex,width:state.width,height:state.height}}
     onPointerDown={()=>{if(!state.pinned)setZIndex(Date.now()%100000+100);}}
   >
     <div className="dockWindowBar"
@@ -952,6 +954,32 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
       </div>
     </div>
     {!state.collapsed&&<div className="dockWindowContent">{children}</div>}
+    {!state.pinned&&!isScreenDocked&&!state.collapsed&&<div className="dockResizeHandle" title="Venster groter of kleiner maken" onPointerDown={event=>{
+      if(event.button!==0)return;
+      event.preventDefault();
+      event.stopPropagation();
+      const host=event.currentTarget.parentElement;
+      if(!host)return;
+      const rect=host.getBoundingClientRect();
+      const pointerId=event.pointerId;
+      const startX=event.clientX,startY=event.clientY,startWidth=rect.width,startHeight=rect.height;
+      event.currentTarget.setPointerCapture(pointerId);
+      const move=(moveEvent:PointerEvent)=>{
+        if(moveEvent.pointerId!==pointerId)return;
+        const maxWidth=Math.max(360,window.innerWidth-state.x-8);
+        const maxHeight=Math.max(260,window.innerHeight-Math.max(commandbarBottom+8,state.y)-8);
+        setState(current=>({...current,width:Math.min(maxWidth,Math.max(420,startWidth+moveEvent.clientX-startX)),height:Math.min(maxHeight,Math.max(280,startHeight+moveEvent.clientY-startY))}));
+      };
+      const finish=(upEvent:PointerEvent)=>{
+        if(upEvent.pointerId!==pointerId)return;
+        window.removeEventListener("pointermove",move);
+        window.removeEventListener("pointerup",finish);
+        window.removeEventListener("pointercancel",finish);
+      };
+      window.addEventListener("pointermove",move);
+      window.addEventListener("pointerup",finish);
+      window.addEventListener("pointercancel",finish);
+    }} aria-hidden="true" />}
   </div>;
   return <>
     <div className="dockWindowSlot" data-window-slot={id}>{state.pinned?shell:null}</div>
