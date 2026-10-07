@@ -39,6 +39,7 @@ import { detectSourceFactConflicts } from "./sourceFactConflict.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
 import { listRecipeProposalDecisions, setRecipeProposalDecision, type RecipeProposalDecision } from "./recipeProposalDecisionRepository.js";
+import { normalizeNlSfbParents } from "./classificationHierarchy.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
@@ -1630,8 +1631,15 @@ app.put("/api/workbench/current", async (req, res) => {
     res.status(400).json({ error: "Calculatieregels ontbreken of hebben een ongeldig formaat." });
     return;
   }
-  const lines = req.body.lines as LineInput[];
+  let lines = req.body.lines as LineInput[];
   const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations as AllocationInput[] : [];
+  const [classificationRows]=await db.execute<RowDataPacket[]>(
+    "SELECT classification_scheme FROM calculations WHERE id=? AND office_project_id=? AND office_calculation_id=? LIMIT 1",
+    [session.calculationId,session.officeProjectId,session.officeCalculationId]
+  );
+  if(String(classificationRows[0]?.classification_scheme??"nl_sfb")==="nl_sfb"){
+    lines=normalizeNlSfbParents(lines);
+  }
   if (lines.length > 5000 || allocations.length > 20000) {
     res.status(400).json({ error: "Ongeldige calculatie-invoer." });
     return;
