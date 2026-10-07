@@ -360,6 +360,12 @@ type WorkbenchAggregate = {
     height_mm:number|null;
     area_m2:number|null;
     perimeter_m:number|null;
+    calculated_area_m2?:number|null;
+    calculated_perimeter_m?:number|null;
+    effective_area_m2?:number|null;
+    effective_perimeter_m?:number|null;
+    geometry_status?:"complete"|"incomplete"|"invalid";
+    warnings?:string[];
     source_page:number|null;
     source_fragment:string|null;
     extraction_method:string|null;
@@ -4005,8 +4011,8 @@ function App() {
               <div className="takeoffWorkspaceHead"><div><span className="eyebrow">VAKKEN & COMPONENTEN</span><h3>Onderliggende uittrekstructuur</h3><p>Office levert de brongebonden vakken/componenten per positie; Calc toont ze als controleerbare onderbouwing van de uittrekstaat.</p></div><small>{aggregate.components?.length??0} component(en)</small></div>
               <div className="componentTakeoffList">{(aggregate.components??[]).map(component=>{const byRef=new Map((aggregate.components??[]).filter(item=>item.position_ref===component.position_ref).map(item=>[item.component_ref,item]));let depth=0;let parent=component.parent_component_ref;const seen=new Set<string>();while(parent&&byRef.has(parent)&&!seen.has(parent)&&depth<8){seen.add(parent);depth++;parent=byRef.get(parent)?.parent_component_ref??null;}return <div className={"componentTakeoffRow"+(["reviewed","accepted","confirmed"].includes(component.review_status)?"":" is-review")} style={{"--component-depth":depth} as React.CSSProperties} key={component.id}>
                 <div className="componentTakeoffIdentity"><strong>{component.position_ref} · {component.component_ref}</strong><span>{component.component_type||"component"}{component.parent_component_ref?" · onder "+component.parent_component_ref:""}{component.description?" · "+component.description:""}</span></div>
-                <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.area_m2==null?"":component.area_m2.toFixed(3)+" m²"}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
-                <div><span>{component.review_status}</span><small>{Math.round(component.confidence*100)}%</small></div>
+                <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.effective_area_m2==null?"":component.effective_area_m2.toFixed(3)+" m²"}{component.effective_perimeter_m==null?"":" · "+component.effective_perimeter_m.toFixed(3)+" m omtrek"}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
+                <div><span>{component.geometry_status==="complete"?component.review_status:"Maatcontrole"}</span><small>{component.warnings?.[0]??(Math.round(component.confidence*100)+"%")}</small></div>
               </div>})}</div>
             </section>}
             <div className="recipeControls">
