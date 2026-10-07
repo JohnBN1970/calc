@@ -35,3 +35,26 @@ test("unreviewed or incomplete component stays visible as review issue",()=>{
   assert.equal(row.warnings.some(x=>x.includes("Breedte")),true);
   assert.equal(row.warnings.some(x=>x.includes("review")),true);
 });
+
+
+test("component type semantics distinguish glass, operable, door, panel and transom",()=>{
+  const rows=evaluateTakeoffComponents([
+    {...base,id:10,component_ref:"g1",parent_component_ref:null,component_type:"glass",description:null,quantity:1,width_mm:500,height_mm:700,area_m2:null,perimeter_m:null},
+    {...base,id:11,component_ref:"v2",parent_component_ref:null,component_type:null,description:"draaikiep vak",quantity:1,width_mm:600,height_mm:800,area_m2:null,perimeter_m:null},
+    {...base,id:12,component_ref:"d1",parent_component_ref:null,component_type:"deur",description:null,quantity:1,width_mm:900,height_mm:2100,area_m2:null,perimeter_m:null},
+    {...base,id:13,component_ref:"p1",parent_component_ref:null,component_type:null,description:"sandwich paneel",quantity:1,width_mm:400,height_mm:500,area_m2:null,perimeter_m:null},
+    {...base,id:14,component_ref:"kalf-1",parent_component_ref:null,component_type:null,description:"tussenkalf",quantity:1,width_mm:1000,height_mm:50,area_m2:null,perimeter_m:null}
+  ]);
+  assert.deepEqual(rows.map(row=>row.component_kind),["glass","operable","door","panel","transom"]);
+  assert.equal(rows[0].component_kind_source,"explicit");
+  assert.equal(rows[1].component_kind_source,"inferred");
+});
+
+test("unknown component type is not guessed silently",()=>{
+  const [row]=evaluateTakeoffComponents([{
+    ...base,id:15,component_ref:"x1",parent_component_ref:null,component_type:null,description:"bijzonder onderdeel",
+    quantity:1,width_mm:100,height_mm:100,area_m2:null,perimeter_m:null
+  }]);
+  assert.equal(row.component_kind,"unknown");
+  assert.equal(row.warnings.some(x=>x.includes("niet eenduidig")),true);
+});
