@@ -81,3 +81,67 @@ test("positiecontext blijft in sourceDetails van receptregel behouden",()=>{
     {type:"facade",ref:"Noord"},{type:"dwelling_type",ref:"Type A"}
   ]);
 });
+
+
+test("component-scoped area rekent alleen geselecteerde glasvakken",()=>{
+  const componentRecipe:CalcRecipeVersion={
+    ...recipe,
+    id:11,
+    lines:[{
+      ...recipe.lines[0],
+      id:2,
+      lineRef:"G1",
+      description:"Glas",
+      takeoffBasis:"area",
+      metadata:{componentKind:"glass"}
+    }]
+  };
+  const resolution:OfficeCalcSourceResolution={
+    contract:"brebo-office-calc-source-resolution-v1",project_id:1,
+    results:[{request_index:0,type:"article",ref:"A-1",status:"resolved",value:10,unit:"m2",description:"Glas",source:{price_id:8}}]
+  };
+  const components:any[]=[
+    {
+      id:1,document_id:1,position_ref:"K1",component_ref:"V1",parent_component_ref:"K1",
+      component_type:"glas",classification_ref:null,description:"Glasvak 1",quantity:1,width_mm:500,height_mm:1000,
+      area_m2:null,perimeter_m:null,source_page:1,source_fragment:null,extraction_method:"managed",confidence:1,review_status:"reviewed",
+      component_kind:"glass",component_kind_source:"explicit",calculated_area_m2:.5,calculated_perimeter_m:3,
+      effective_area_m2:.5,effective_perimeter_m:3,geometry_status:"complete",warnings:[]
+    },
+    {
+      id:2,document_id:1,position_ref:"K1",component_ref:"V2",parent_component_ref:"K1",
+      component_type:"glas",classification_ref:null,description:"Glasvak 2",quantity:2,width_mm:400,height_mm:1000,
+      area_m2:null,perimeter_m:null,source_page:1,source_fragment:null,extraction_method:"managed",confidence:1,review_status:"reviewed",
+      component_kind:"glass",component_kind_source:"explicit",calculated_area_m2:.8,calculated_perimeter_m:5.6,
+      effective_area_m2:.8,effective_perimeter_m:5.6,geometry_status:"complete",warnings:[]
+    }
+  ];
+  const [line]=generateCalcOwnedRecipeLines({recipe:componentRecipe,takeoff,resolution,components});
+  assert.equal(line.quantity,1.3);
+  assert.equal(line.material,10);
+  const details=JSON.parse(line.sourceDetails);
+  assert.equal(details.quantity_rule.component_kind,"glass");
+});
+
+test("component-scoped receptregel valt nooit stil terug op hele positie",()=>{
+  const componentRecipe:CalcRecipeVersion={
+    ...recipe,
+    id:12,
+    lines:[{
+      ...recipe.lines[0],
+      id:3,
+      lineRef:"P1",
+      description:"Paneel",
+      takeoffBasis:"area",
+      metadata:{componentKind:"panel"}
+    }]
+  };
+  const resolution:OfficeCalcSourceResolution={
+    contract:"brebo-office-calc-source-resolution-v1",project_id:1,
+    results:[{request_index:0,type:"article",ref:"A-1",status:"resolved",value:10,unit:"m2",description:"Paneel",source:{price_id:9}}]
+  };
+  assert.throws(
+    ()=>generateCalcOwnedRecipeLines({recipe:componentRecipe,takeoff,resolution,components:[]}),
+    /Geen vak\/component/
+  );
+});

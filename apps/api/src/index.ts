@@ -678,6 +678,7 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
         }))
       }:undefined,
       scopes:conceptPosition?.scopes,
+      components:conceptPosition?.sourceComponents,
       contextBinding:{
         officeVersion:String(officeState.version.version),
         selectionVersion:snapshot.context.document_set?.selection_version??null

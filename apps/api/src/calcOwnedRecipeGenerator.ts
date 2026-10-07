@@ -1,5 +1,6 @@
 import type { CalcRecipeVersion } from "./calcRecipeRepository.js";
 import type { OfficeCalcSourceResolution } from "./officeClient.js";
+import type { EvaluatedTakeoffComponent } from "./componentTakeoff.js";
 import { calculateAssemblyTakeoff } from "./takeoff.js";
 import { calculateRecipeQuantityDetails } from "./recipeTakeoff.js";
 
@@ -44,6 +45,42 @@ function resolvedMap(resolution:OfficeCalcSourceResolution):Map<string,OfficeCal
   return map;
 }
 
+function selectedComponents(line:CalcRecipeVersion["lines"][number],components:EvaluatedTakeoffComponent[]):EvaluatedTakeoffComponent[]{
+  const kind=String(line.metadata?.componentKind??"").trim().toLocaleLowerCase("nl-NL");
+  const ref=String(line.metadata?.componentRef??"").trim();
+  if(!kind&&!ref)return[];
+  return components.filter(component=>
+    (!kind||component.component_kind===kind)&&
+    (!ref||component.component_ref===ref)
+  );
+}
+
+function componentBasisQuantity(
+  line:CalcRecipeVersion["lines"][number],
+  components:EvaluatedTakeoffComponent[]
+):number|null{
+  const selected=selectedComponents(line,components);
+  const requested=String(line.metadata?.componentKind??"").trim()||String(line.metadata?.componentRef??"").trim();
+  if(!requested)return null;
+  if(!selected.length)throw new Error(`Geen vak/component gevonden voor receptregel ${line.description}.`);
+  if(line.takeoffBasis==="fixed")return null;
+  if(line.takeoffBasis==="internal_joint")throw new Error(`Interne koppeling ondersteunt geen vakselectie voor receptregel ${line.description}.`);
+  const sum=(selector:(component:EvaluatedTakeoffComponent)=>number|null)=>selected.reduce((total,component)=>{
+    const value=selector(component);
+    if(value==null||!Number.isFinite(value)||value<0)throw new Error(`Onvolledige vakgeometrie voor receptregel ${line.description} (${component.component_ref}).`);
+    return total+value;
+  },0);
+  if(line.takeoffBasis==="area"||line.takeoffBasis==="part_area")return sum(component=>component.effective_area_m2);
+  if(line.takeoffBasis==="perimeter")return sum(component=>component.effective_perimeter_m);
+  if(line.takeoffBasis==="width")return sum(component=>component.width_mm==null?null:(component.width_mm/1000)*component.quantity);
+  if(line.takeoffBasis==="height")return sum(component=>component.height_mm==null?null:(component.height_mm/1000)*component.quantity);
+  if(line.takeoffBasis==="two_sides_plus_head")return sum(component=>
+    component.width_mm==null||component.height_mm==null?null:
+      ((component.width_mm+2*component.height_mm)/1000)*component.quantity
+  );
+  return null;
+}
+
 export function generateCalcOwnedRecipeLines(input:{
   recipe:CalcRecipeVersion;
   takeoff:{
@@ -68,6 +105,7 @@ export function generateCalcOwnedRecipeLines(input:{
   };
   scopes?:Array<{type:"building"|"facade"|"dwelling"|"dwelling_type"|"building_part";ref:string}>;
   contextBinding?:{officeVersion:string;selectionVersion:string|null};
+  components?:EvaluatedTakeoffComponent[];
 }):CalcOwnedGeneratedLine[] {
   const widthMm=Number(input.takeoff.width_mm??0);
   const heightMm=Number(input.takeoff.height_mm??0);
@@ -103,13 +141,21 @@ export function generateCalcOwnedRecipeLines(input:{
     } else {
       const normFactor=quantitySource?.status==="resolved"?Number(quantitySource.value):1;
       if(!Number.isFinite(normFactor)||normFactor<0) throw new Error(`Ongeldige normbron voor receptregel ${line.description}.`);
-      grossQuantity=calculateRecipeQuantityDetails(geometry,{
-        basis:line.takeoffBasis,
-        factor:line.factor*normFactor,
-        wastePct:line.wastePct,
-        roundingStep:line.roundingStep,
-        minimumQuantity:line.minimumQuantity
-      }).grossQuantity;
+      const componentBase=componentBasisQuantity(line,input.components??[]);
+      if(componentBase!==null){
+        grossQuantity=componentBase*line.factor*normFactor;
+        if(line.wastePct)grossQuantity*=1+(line.wastePct/100);
+        if(line.roundingStep)grossQuantity=Math.ceil(grossQuantity/line.roundingStep)*line.roundingStep;
+        if(line.minimumQuantity!=null)grossQuantity=Math.max(grossQuantity,line.minimumQuantity);
+      }else{
+        grossQuantity=calculateRecipeQuantityDetails(geometry,{
+          basis:line.takeoffBasis,
+          factor:line.factor*normFactor,
+          wastePct:line.wastePct,
+          roundingStep:line.roundingStep,
+          minimumQuantity:line.minimumQuantity
+        }).grossQuantity;
+      }
     }
 
     const unitCost=costSource?.status==="resolved"?Number(costSource.value):0;
@@ -161,6 +207,8 @@ export function generateCalcOwnedRecipeLines(input:{
         context_binding:input.contextBinding??null,
         quantity_rule:{
           basis:line.takeoffBasis,
+          component_kind:line.metadata?.componentKind??null,
+          component_ref:line.metadata?.componentRef??null,
           factor:line.factor,
           waste_pct:line.wastePct,
           fixed_quantity:line.fixedQuantity,
