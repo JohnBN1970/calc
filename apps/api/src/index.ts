@@ -1849,9 +1849,10 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       res.status(404).json({error:"Calculatieversie niet gevonden."});
       return;
     }
-    if(String(version.status)!=="draft"){
+    const versionStatus=String(version.status);
+    if(!["draft","established"].includes(versionStatus)){
       await connection.rollback();
-      res.status(409).json({error:"Alleen een conceptversie kan worden vastgesteld en gepubliceerd."});
+      res.status(409).json({error:"Deze calculatieversie kan niet worden gepubliceerd."});
       return;
     }
 
@@ -2114,7 +2115,6 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     });
     const contentHash=fingerprintWorkbenchSnapshot(snapshot);
 
-    const officeState=await fetchOfficeWorkspaceState(session.officeCalculationId);
     const commercialSummary={
       purchase:summary.purchase,
       sales:summary.sales,
@@ -2128,6 +2128,42 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         vat_amount:item.vatAmount,reverse_charged:item.reverseCharged
       }))
     };
+
+    // Phase 1: durably establish Calc before any external Office side effect.
+    // If Office publication fails afterwards, the exact established version can
+    // safely be retried without changing the calculation.
+    if(versionStatus==="draft"){
+      await connection.execute(
+        `INSERT INTO calculation_version_snapshots(version_id,snapshot_contract,snapshot_json,content_hash)
+         VALUES(?,?,?,?)`,
+        [version.id,snapshot.contract,JSON.stringify(snapshot),contentHash]
+      );
+      await connection.execute(
+        `UPDATE calculation_versions
+            SET status='established',content_hash=?,established_at=?
+          WHERE id=?`,
+        [contentHash,establishedAt.slice(0,23).replace("T"," "),version.id]
+      );
+      await connection.execute(
+        "UPDATE calculations SET status='established',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",
+        [session.calculationId]
+      );
+    }else{
+      const [storedSnapshots]=await connection.execute<RowDataPacket[]>(
+        "SELECT snapshot_contract,content_hash FROM calculation_version_snapshots WHERE version_id=? LIMIT 1",
+        [version.id]
+      );
+      const stored=storedSnapshots[0];
+      if(!stored||
+         String(stored.snapshot_contract)!==snapshot.contract||
+         String(stored.content_hash)!==contentHash){
+        throw new Error("De vastgestelde Calc-versie wijkt af van de opgeslagen snapshot en kan niet veilig opnieuw worden gepubliceerd.");
+      }
+    }
+    await connection.commit();
+
+    // Phase 2: publish the immutable established result to Office.
+    const officeState=await fetchOfficeWorkspaceState(session.officeCalculationId);
     const published=await publishCalcResult({
       calculationId:session.officeCalculationId,
       officeVersion:String(officeState.version.version),
@@ -2142,20 +2178,6 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       officeVersion:String(officeState.version.version),
       calcVersion:String(version.id)
     });
-
-    await connection.execute(
-      `INSERT INTO calculation_version_snapshots(version_id,snapshot_contract,snapshot_json,content_hash)
-       VALUES(?,?,?,?)`,
-      [version.id,snapshot.contract,JSON.stringify(snapshot),contentHash]
-    );
-    await connection.execute(
-      `UPDATE calculation_versions
-          SET status='established',content_hash=?,established_at=?
-        WHERE id=?`,
-      [contentHash,establishedAt.slice(0,23).replace("T"," "),version.id]
-    );
-    await connection.execute("UPDATE calculations SET status='established',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",[session.calculationId]);
-    await connection.commit();
 
     res.json({
       status:"established",
