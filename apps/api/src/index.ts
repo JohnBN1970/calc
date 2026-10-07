@@ -2080,7 +2080,18 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         return mix;
       },{labour:0,material:0,equipment:0,subcontracting:0,other:0});
 
-    const establishedAt=new Date().toISOString();
+    let establishedAt=new Date().toISOString();
+    if(versionStatus==="established"){
+      const [storedSnapshotRows]=await connection.execute<RowDataPacket[]>(
+        "SELECT snapshot_json FROM calculation_version_snapshots WHERE version_id=? LIMIT 1",
+        [version.id]
+      );
+      const storedRaw=storedSnapshotRows[0]?.snapshot_json;
+      const storedSnapshot=typeof storedRaw==="string"?JSON.parse(storedRaw):storedRaw;
+      const storedEstablishedAt=String(storedSnapshot?.establishedAt??"").trim();
+      if(!storedEstablishedAt)throw new Error("De vastgestelde Calc-versie mist de oorspronkelijke vaststeldatum.");
+      establishedAt=storedEstablishedAt;
+    }
     const snapshot=createWorkbenchEstablishedSnapshot({
       calculationId:session.calculationId,
       versionId:Number(version.id),
