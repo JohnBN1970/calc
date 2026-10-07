@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyCostAllocations } from "./subcalculationEvaluation.js";
+import { applyCostAllocations } from "./costAllocation.js";
 
 test("allocation moves direct cost proportionally without changing total",()=>{
   const result=applyCostAllocations({
