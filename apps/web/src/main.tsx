@@ -1494,26 +1494,16 @@ function App() {
   });
 
   const directCostMix = useMemo(() => {
-    const activeLineIds=activeSubcalculationResult?new Set(activeSubcalculationResult.lineIds):null;
-    const sourceLines=lines.filter(line =>
-      isCostLine(line) &&
-      line.lineType!=="option" &&
-      (!activeLineIds||activeLineIds.has(line.id))
-    );
-    const amounts={
-      labour:0,
-      material:0,
-      equipment:0,
-      subcontracting:0,
-      other:0
-    };
-    for(const line of sourceLines){
-      amounts.labour+=(line.labourTotalHours??0)*line.labour;
-      amounts.material+=line.quantity*line.material;
-      amounts.equipment+=line.quantity*line.equipment;
-      amounts.subcontracting+=line.quantity*line.subcontracting;
-      amounts.other+=line.quantity*line.other;
-    }
+    const amounts=activeSubcalculationResult
+      ? {...activeSubcalculationResult.costs}
+      : lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>{
+          sum.labour+=(line.labourTotalHours??0)*line.labour;
+          sum.material+=line.quantity*line.material;
+          sum.equipment+=line.quantity*line.equipment;
+          sum.subcontracting+=line.quantity*line.subcontracting;
+          sum.other+=line.quantity*line.other;
+          return sum;
+        },{labour:0,material:0,equipment:0,subcontracting:0,other:0});
     const total=Object.values(amounts).reduce((sum,value)=>sum+value,0);
     const rows=[
       {key:"labour",label:"Arbeid",amount:amounts.labour},
