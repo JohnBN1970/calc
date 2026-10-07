@@ -667,7 +667,15 @@ app.post("/api/workbench/current/concept/recipe-proposals/accept", async (req, r
       resolution,
       evidence:conceptPosition?{
         documentIds:conceptPosition.sourceDocumentIds,
-        pages:conceptPosition.sourcePages
+        pages:conceptPosition.sourcePages,
+        components:conceptPosition.sourceComponents.map(component=>({
+          componentRef:component.component_ref,
+          componentKind:component.component_kind,
+          componentType:component.component_type,
+          documentId:component.document_id,
+          sourcePage:component.source_page,
+          sourceFragment:component.source_fragment
+        }))
       }:undefined,
       scopes:conceptPosition?.scopes,
       contextBinding:{
