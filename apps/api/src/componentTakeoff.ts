@@ -157,3 +157,51 @@ export function evaluateTakeoffComponents(components:TakeoffComponent[]):Evaluat
     };
   });
 }
+
+
+export type PositionTakeoffSummary={
+  position_ref:string;
+  component_count:number;
+  glass_count:number;
+  glass_area_m2:number;
+  operable_count:number;
+  door_count:number;
+  panel_count:number;
+  mullion_count:number;
+  transom_count:number;
+  review_count:number;
+  relation_issue_count:number;
+  geometry_issue_count:number;
+  ready_for_glass_takeoff:boolean;
+};
+
+export function summarizeTakeoffByPosition(components:EvaluatedTakeoffComponent[]):PositionTakeoffSummary[]{
+  const grouped=new Map<string,EvaluatedTakeoffComponent[]>();
+  for(const component of components){
+    const rows=grouped.get(component.position_ref)??[];
+    rows.push(component);
+    grouped.set(component.position_ref,rows);
+  }
+  return [...grouped.entries()].map(([position_ref,rows])=>{
+    const review_count=rows.filter(row=>row.warnings.length>0||!["reviewed","accepted","confirmed"].includes(String(row.review_status).toLowerCase())).length;
+    const relation_issue_count=rows.filter(row=>!["root","ok"].includes(row.relation_status)).length;
+    const geometry_issue_count=rows.filter(row=>row.geometry_status!=="complete").length;
+    const glassRows=rows.filter(row=>row.component_kind==="glass");
+    const glassParentsValid=glassRows.every(row=>row.parent_component_kind!==null&&["field","operable","door"].includes(row.parent_component_kind));
+    return{
+      position_ref,
+      component_count:rows.length,
+      glass_count:glassRows.reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      glass_area_m2:glassRows.reduce((sum,row)=>sum+Number(row.effective_area_m2||0),0),
+      operable_count:rows.filter(row=>row.component_kind==="operable").reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      door_count:rows.filter(row=>row.component_kind==="door").reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      panel_count:rows.filter(row=>row.component_kind==="panel").reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      mullion_count:rows.filter(row=>row.component_kind==="mullion").reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      transom_count:rows.filter(row=>row.component_kind==="transom").reduce((sum,row)=>sum+Number(row.quantity||0),0),
+      review_count,
+      relation_issue_count,
+      geometry_issue_count,
+      ready_for_glass_takeoff:glassRows.length>0&&glassParentsValid&&review_count===0&&relation_issue_count===0&&geometry_issue_count===0
+    };
+  }).sort((a,b)=>a.position_ref.localeCompare(b.position_ref,"nl"));
+}
