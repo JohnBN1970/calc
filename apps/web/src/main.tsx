@@ -1247,12 +1247,9 @@ function App() {
     const children=new Map<number|null,Line[]>();
     const incomingByLine=new Map<number,number>();
     const outgoingByLine=new Map<number,number>();
-    const visibleLineIds=new Set(workbenchLines.map(line=>line.id));
     for(const allocation of allocations){
-      // Structure subtotals describe the current workbench scope. Only move cost
-      // between lines that are both part of that scope; cross-scope allocations
-      // must not import/export invisible cost into a filtered subtotal.
-      if(!visibleLineIds.has(allocation.sourceLineId)||!visibleLineIds.has(allocation.targetLineId))continue;
+      // Allocations move financial ownership between lines. A filtered view may
+      // therefore legitimately import/export cost from a line outside the filter.
       incomingByLine.set(allocation.targetLineId,(incomingByLine.get(allocation.targetLineId)??0)+allocation.amount);
       outgoingByLine.set(allocation.sourceLineId,(outgoingByLine.get(allocation.sourceLineId)??0)+allocation.amount);
     }
