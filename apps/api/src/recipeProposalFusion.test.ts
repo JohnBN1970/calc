@@ -44,8 +44,9 @@ test("recipe applicability can match reviewed vak component evidence",()=>{
     component_type:"draaikiep",classification_ref:null,description:"Draaikiep vak met HR++ glas",
     quantity:1,width_mm:600,height_mm:1200,area_m2:null,perimeter_m:null,source_page:7,
     source_fragment:"V1 draaikiep HR++",extraction_method:"managed",confidence:.98,review_status:"reviewed",
-    component_kind:"operable",component_kind_source:"explicit",calculated_area_m2:.72,
-    calculated_perimeter_m:3.6,effective_area_m2:.72,effective_perimeter_m:3.6,
+    component_kind:"operable",component_kind_source:"explicit",parent_component_kind:null,
+    width_delta_to_parent_mm:null,height_delta_to_parent_mm:null,relation_status:"missing_parent",
+    calculated_area_m2:.72,calculated_perimeter_m:3.6,effective_area_m2:.72,effective_perimeter_m:3.6,
     geometry_status:"complete",warnings:[]
   }];
   const proposals=proposeRecipesForConcept(componentConcept,[{
