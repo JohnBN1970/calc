@@ -47,13 +47,24 @@ test("conceptbron en pagina blijven traceerbaar in receptregel",()=>{
     recipe,
     takeoff,
     resolution,
-    evidence:{documentIds:[12,18],pages:[3,4]}
+    evidence:{
+      documentIds:[12,18],
+      pages:[3,4],
+      components:[{
+        componentRef:"V1",componentKind:"operable",componentType:"draaikiep",
+        documentId:12,sourcePage:3,sourceFragment:"V1 draaikiep HR++"
+      }]
+    }
   });
   const details=JSON.parse(line.sourceDetails);
   assert.equal(details.position_ref,"K1");
   assert.equal(details.recipe.key,"test");
   assert.deepEqual(details.evidence.document_ids,[12,18]);
   assert.deepEqual(details.evidence.pages,[3,4]);
+  assert.deepEqual(details.evidence.components,[{
+    componentRef:"V1",componentKind:"operable",componentType:"draaikiep",
+    documentId:12,sourcePage:3,sourceFragment:"V1 draaikiep HR++"
+  }]);
 });
 
 
