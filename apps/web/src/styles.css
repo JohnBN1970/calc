@@ -567,3 +567,5 @@ main{padding-top:6px}
 .structureInlineActions button{background:#fff;color:#3a4650;border:1px solid #cfd7dd;padding:6px 9px;font-size:10px}
 .structureInlineActions button:hover{background:#f2f5f7}
 .structureDescription{transition:padding-left .12s ease}
+
+.commandBuilder{color:#111820;font-weight:750}.commandBuilder .commandIcon{width:25px;height:25px}.commandBuilder:hover,.commandBuilder.commandActive{background:#e8edf1}

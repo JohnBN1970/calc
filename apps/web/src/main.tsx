@@ -520,7 +520,7 @@ function mapClassification(classification: QuoteClassification | null, scheme: C
 }
 
 
-type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "prices" | "quote" | "settings" | "help" | "subcalc" | "tail" | "rates";
+type IconName = "office" | "save" | "chapter" | "paragraph" | "line" | "recipe" | "builder" | "prices" | "quote" | "settings" | "help" | "subcalc" | "tail" | "rates";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -530,6 +530,7 @@ function Icon({ name }: { name: IconName }) {
     paragraph: <><path d="M5 5h14"/><path d="M8 10h11"/><path d="M8 15h11"/><path d="M8 20h7"/><path d="M4 9v7"/></>,
     line: <><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/><path d="M18 16v6"/><path d="M15 19h6"/></>,
     recipe: <><path d="M6 3h12v18H6z"/><path d="M9 7h6"/><path d="M9 11h6"/><path d="M9 15h4"/></>,
+    builder: <><path d="M4 20h16"/><path d="M6 17V9l6-5 6 5v8"/><path d="M9 17v-5h6v5"/><path d="m18.5 3 .7 1.6L21 5.3l-1.8.7-.7 1.7-.7-1.7-1.8-.7 1.8-.7.7-1.6Z"/></>,
     prices: <><circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.8-.8-1.8-1.2-3-1.2-1.7 0-3 1-3 2.3 0 3.2 6 1.8 6 5 0 1.4-1.3 2.4-3 2.4-1.3 0-2.5-.4-3.4-1.3"/><path d="M12 5v14"/></>,
     quote: <><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v5h5"/><path d="M8 12h8"/><path d="M8 16h5"/><path d="M8 8h3"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20.3h-3v-.09a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7.02 15a1.7 1.7 0 0 0-1.55-1.03H5.4v-3h.09a1.7 1.7 0 0 0 1.55-1.03 1.7 1.7 0 0 0-.34-1.88L6.64 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.73 4.7V4.6h3v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.82 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.03h.09v3h-.09A1.7 1.7 0 0 0 19.4 15Z"/></>,
@@ -3620,6 +3621,8 @@ function App() {
           <Icon name="line" /><span>Regel</span>
         </button>
         <div className="commandDivider" />
+        <button className={"command commandBuilder" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Builder: projectbronnen controleren en calculatieconcept opbouwen" onClick={()=>setRecipeWorkspaceOpen(true)}><Icon name="builder" /><span>Builder</span></button>
+        <div className="commandDivider" />
         <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><Icon name="subcalc" /><span>Deelcalc</span></button>
         <button className={"command commandSecondary" + (tailCostOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om staartkosten te wijzigen":"Staartkosten beheren in Calc"} onClick={() => setTailCostOpen(open=>!open)}><Icon name="tail" /><span>Staartkosten</span></button>
         <button className={"command commandSecondary" + (priceWorkspaceOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om prijsbronnen te wijzigen":"Artikelen, prijzen en prijsbronnen"} onClick={() => setPriceWorkspaceOpen(open => !open)}><Icon name="prices" /><span>Prijzen</span></button>
@@ -3759,7 +3762,7 @@ function App() {
           <div className="helpSearch"><Icon name="help"/><input autoFocus value={helpQuery} onChange={event=>setHelpQuery(event.target.value)} placeholder="Zoeken in Calc-help…" /></div>
           <div className="helpContents">
             {[
-              {title:"Starten met een calculatie",keywords:"start project office calculatie structuur nlsfb stabu vrij",body:"Open Calc vanuit Office. Bij NL-SfB of STABU bouw je de calculatiestructuur vanuit de zoekboom; dubbelklik op een classificatiemap om de ontbrekende structuur toe te voegen. Bij Vrij maak je hoofdgroepen en paragrafen direct in het rekenblad. Gewone calculatieregels voeg je altijd vrij toe."},
+              {title:"Starten met een calculatie",keywords:"start project office calculatie builder bronnen documenten structuur nlsfb stabu vrij",body:"Open Builder bovenin om projectbronnen te controleren en een calculatieconcept op te bouwen. Bij NL-SfB of STABU bouw je de calculatiestructuur vanuit de zoekboom; dubbelklik op een classificatiemap om de ontbrekende structuur toe te voegen. Bij Vrij maak je hoofdgroepen en paragrafen direct in het rekenblad. Gewone calculatieregels voeg je altijd vrij toe."},
               {title:"Hoofdstukken en paragrafen",keywords:"hoofdstuk paragraaf niveau structuur nlsfb stabu zoekboom",body:"De calculatie gebruikt één stelsel: NL-SfB, STABU of Vrij. Bij NL-SfB/STABU komen hoofdgroepen, paragrafen, codes en omschrijvingen uit de zoekboom en zijn ze niet vrij wijzigbaar. De echte calculatiehiërarchie staat in het rekenblad tussen de calculatieregels. Gebruik Niveaus voor de globale weergave; open of sluit één tak met het pijltje op die structuurregel. Alleen bij Vrij beheer je hoofdgroepen en paragrafen handmatig in het rekenblad. Iedere structuurregel toont zijn niveau en eigen subtotaal."},
               {title:"Calculatieregels",keywords:"regel aantal norm uren uurprijs materiaal materieel onderaanneming btw",body:"Vul hoeveelheid, norm of totaaluren en de kostendragers in. Arbeid rekent met totaaluren × uurprijs; materiaal, materieel, onderaanneming en overig rekenen per hoeveelheid."},
               {title:"BTW",keywords:"btw hoog laag verlegd vrijgesteld",body:"Kies per verkoopregel de BTW-keuze Hoog, Laag, Verlegd of Vrijgesteld. De KPI-zone totaliseert de grondslag en het BTW-bedrag en toont totaal excl. en incl. BTW."},
