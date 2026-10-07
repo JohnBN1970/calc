@@ -357,6 +357,8 @@ type WorkbenchAggregate = {
     bottom_m: number | null;
     left_m: number | null;
     right_m: number | null;
+    measurement_kind?: string | null;
+    measurement_reference?: string | null;
   }>;
   structure: Array<{
     node_key: string;
@@ -3960,8 +3962,9 @@ function App() {
               </div>
               <div className="conceptBuilderSteps">
                 <div className={aggregate.documentTriage.some(item=>item.status==="primary")?"is-ready":"is-review"}><b>1</b><span>Bronnen<strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length} primair · {aggregate.documentTriage.filter(item=>item.status==="review").length} review</strong></span></div>
-                <div className={aggregate.structureProposal.ready?"is-ready":"is-review"}><b>2</b><span>Voorstel<strong>{aggregate.concept.positions.length} posities · {aggregate.recipeProposals.length} recepten</strong></span></div>
-                <div className={aggregate.automationReadiness.canAutoSaveConcept?"is-ready":"is-review"}><b>3</b><span>Review<strong>{aggregate.automationReadiness.canAutoSaveConcept?"eenduidig op te bouwen":(aggregate.automationReadiness.reasons[0]??"controle nodig")}</strong></span></div>
+                <div className={aggregate.takeoffs.length>0?"is-ready":"is-review"}><b>2</b><span>Uittrekken<strong>{aggregate.takeoffs.length} uitgetrokken positie{aggregate.takeoffs.length===1?"":"s"}</strong></span></div>
+                <div className={aggregate.structureProposal.ready?"is-ready":"is-review"}><b>3</b><span>Voorstel<strong>{aggregate.concept.positions.length} posities · {aggregate.recipeProposals.length} recepten</strong></span></div>
+                <div className={aggregate.automationReadiness.canAutoSaveConcept?"is-ready":"is-review"}><b>4</b><span>Review<strong>{aggregate.automationReadiness.canAutoSaveConcept?"eenduidig op te bouwen":(aggregate.automationReadiness.reasons[0]??"controle nodig")}</strong></span></div>
               </div>
               {aggregate.concept.sourceDecisions.length>0&&<div className="sourceDecisionPanel">
                 <div className="sourceDecisionHead"><strong>Broncontrole</strong><span>{aggregate.concept.sourceDecisions.filter(item=>item.status==="conflict").length} blokkade(s) · {aggregate.concept.sourceDecisions.filter(item=>item.status==="superseded").length} vervangen revisie(s)</span></div>
@@ -3972,6 +3975,10 @@ function App() {
                   </div>)}
                 </div>
               </div>}
+            </section>
+            <section className="takeoffWorkspace">
+              <div className="takeoffWorkspaceHead"><div><span className="eyebrow">UITTREKSTAAT</span><h3>Uitgetrokken uit Office-bronnen</h3><p>Deze maatstaat is de controlelaag tussen broninformatie en recepten. Bronconflicten blijven zichtbaar en worden niet stil overschreven.</p></div><button type="button" onClick={()=>window.print()} disabled={aggregate.takeoffs.length===0}>Uittrekstaat printen</button></div>
+              {aggregate.takeoffs.length===0?<p className="muted">Nog geen uitgetrokken posities beschikbaar. Office moet eerst bruikbare maat- en positiegegevens uit de projectbronnen leveren.</p>:<div className="takeoffTableWrap"><table className="takeoffTable"><thead><tr><th>Positie</th><th>Aantal</th><th>Maatsoort</th><th>Breedte</th><th>Hoogte</th><th>Oppervlak</th><th>Omtrek</th><th>Broncontrole</th></tr></thead><tbody>{aggregate.takeoffs.map(row=>{const decisions=aggregate.concept.sourceDecisions.filter(item=>item.positionRef===row.position_ref);const conflict=decisions.some(item=>item.status==="conflict");return <tr key={row.id} className={conflict?"has-conflict":""}><td><strong>{row.position_ref}</strong></td><td>{row.quantity}</td><td>{row.measurement_kind||"—"}</td><td>{row.width_mm==null?"—":row.width_mm+" mm"}</td><td>{row.height_mm==null?"—":row.height_mm+" mm"}</td><td>{row.area_m2==null?"—":row.area_m2.toFixed(3)+" m²"}</td><td>{row.perimeter_m==null?"—":row.perimeter_m.toFixed(3)+" m"}</td><td>{conflict?<span className="takeoffConflict">Conflict</span>:decisions.some(item=>item.status==="superseded")?"Revisie verwerkt":"OK"}</td></tr>})}</tbody></table></div>}
             </section>
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
