@@ -346,6 +346,26 @@ type WorkbenchAggregate = {
     reviewRequired: boolean;
   }>;
   derivedTakeoffPositionRefs?: string[];
+  components?: Array<{
+    id:number;
+    document_id:number|null;
+    position_ref:string;
+    component_ref:string;
+    parent_component_ref:string|null;
+    component_type:string|null;
+    classification_ref:string|null;
+    description:string|null;
+    quantity:number;
+    width_mm:number|null;
+    height_mm:number|null;
+    area_m2:number|null;
+    perimeter_m:number|null;
+    source_page:number|null;
+    source_fragment:string|null;
+    extraction_method:string|null;
+    confidence:number;
+    review_status:string;
+  }>;
   takeoffs: Array<{
     id: number;
     position_ref: string;
@@ -3981,6 +4001,14 @@ function App() {
               <div className="takeoffWorkspaceHead"><div><span className="eyebrow">UITTREKSTAAT</span><h3>Uitgetrokken uit Office-bronnen</h3><p>Deze maatstaat is de controlelaag tussen broninformatie en recepten. Bronconflicten blijven zichtbaar en worden niet stil overschreven.</p></div><button type="button" onClick={()=>window.print()} disabled={aggregate.takeoffs.length===0}>Uittrekstaat printen</button></div>
               {aggregate.takeoffs.length===0?<p className="muted">Nog geen uitgetrokken posities beschikbaar. Office moet eerst bruikbare maat- en positiegegevens uit de projectbronnen leveren.</p>:<div className="takeoffTableWrap"><table className="takeoffTable"><thead><tr><th>Positie</th><th>Aantal</th><th>Maatsoort</th><th>Breedte</th><th>Hoogte</th><th>Oppervlak</th><th>Omtrek</th><th>Broncontrole</th></tr></thead><tbody>{aggregate.takeoffs.map(row=>{const decisions=aggregate.concept.sourceDecisions.filter(item=>item.positionRef===row.position_ref);const conflict=decisions.some(item=>item.status==="conflict");return <tr key={row.id} className={conflict?"has-conflict":""}><td><strong>{row.position_ref}</strong></td><td>{row.quantity}</td><td>{row.measurement_kind||"—"}</td><td>{row.width_mm==null?"—":row.width_mm+" mm"}</td><td>{row.height_mm==null?"—":row.height_mm+" mm"}</td><td>{row.area_m2==null?"—":row.area_m2.toFixed(3)+" m²"}</td><td>{row.perimeter_m==null?"—":row.perimeter_m.toFixed(3)+" m"}</td><td>{conflict?<span className="takeoffConflict">Conflict</span>:aggregate.derivedTakeoffPositionRefs?.includes(row.position_ref)?"Zelf uitgetrokken":decisions.some(item=>item.status==="superseded")?"Revisie verwerkt":"OK"}</td></tr>})}</tbody></table></div>}
             </section>
+            {(aggregate.components?.length??0)>0&&<section className="componentTakeoffWorkspace">
+              <div className="takeoffWorkspaceHead"><div><span className="eyebrow">VAKKEN & COMPONENTEN</span><h3>Onderliggende uittrekstructuur</h3><p>Office levert de brongebonden vakken/componenten per positie; Calc toont ze als controleerbare onderbouwing van de uittrekstaat.</p></div><small>{aggregate.components?.length??0} component(en)</small></div>
+              <div className="componentTakeoffList">{(aggregate.components??[]).map(component=><div className={"componentTakeoffRow"+(["reviewed","accepted","confirmed"].includes(component.review_status)?"":" is-review")} key={component.id}>
+                <div><strong>{component.position_ref} · {component.component_ref}</strong><span>{component.component_type||"component"}{component.parent_component_ref?" · onder "+component.parent_component_ref:""}{component.description?" · "+component.description:""}</span></div>
+                <div><b>{component.quantity}×</b><span>{component.width_mm==null?"—":component.width_mm+" mm"} × {component.height_mm==null?"—":component.height_mm+" mm"}</span><small>{component.area_m2==null?"":component.area_m2.toFixed(3)+" m²"}{component.source_page==null?"":" · p. "+component.source_page}</small></div>
+                <div><span>{component.review_status}</span><small>{Math.round(component.confidence*100)}%</small></div>
+              </div>)}</div>
+            </section>}
             <div className="recipeControls">
               <label><span>Recepten plaatsen in</span><select value={recipeParagraphKey} onChange={event => setRecipeParagraphKey(event.target.value)}>
                 {aggregate.structureProposal.ready&&<option value="__auto__">Automatisch volgens structuurvoorstel</option>}
