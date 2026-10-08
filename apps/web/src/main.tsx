@@ -542,6 +542,23 @@ const isCostLine = (line: Line) => !["chapter", "paragraph", "note"].includes(li
 const lineContributesToTotals = (line: Line) => ["item","allowance","adjustable"].includes(line.lineType);
 const lineDirect = (line: Line) => (line.labourTotalHours ?? 0) * line.labour + line.quantity * (line.material + line.equipment + line.subcontracting + line.other);
 
+function normalizeLoadedClassificationParents(lines:Line[],scheme:ClassificationScheme):Line[]{
+  if(scheme!=="nl_sfb")return lines;
+  const chapterByDigit=new Map<string,Line>();
+  for(const line of lines){
+    if(line.lineType!=="chapter")continue;
+    const match=line.code.trim().replace(/\s+/g,"").match(/^([1-9])[-.]?$/);
+    if(match)chapterByDigit.set(match[1],line);
+  }
+  return lines.map(line=>{
+    if(line.lineType!=="paragraph")return line;
+    const match=line.code.trim().replace(/\s+/g,"").match(/^([1-9])\d$/);
+    if(!match)return line;
+    const chapter=chapterByDigit.get(match[1]);
+    return chapter&&line.parentId!==chapter.id?{...line,parentId:chapter.id}:line;
+  });
+}
+
 function orderLinesByHierarchy(lines:Line[]):Line[]{
   const byId=new Map(lines.map(line=>[line.id,line]));
   const children=new Map<number|null,Line[]>();
@@ -2295,15 +2312,17 @@ function App() {
       setVersionDiff(diffPayload);
     }else setVersionDiff(null);
 
-    setLines(Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : []);
+    const loadedClassification=String(data.calculation?.classification_scheme??"nl_sfb");
+    const loadedScheme:ClassificationScheme=loadedClassification==="stabu"?"stabu":loadedClassification==="custom"?"custom":"nl_sfb";
+    const loadedLines=Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : [];
+    setLines(normalizeLoadedClassificationParents(loadedLines,loadedScheme));
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
       sourceLineId:Number(row.source_line_id), targetLineId:Number(row.target_line_id), method:String(row.allocation_method) as LineAllocation["method"], share:Number(row.share ?? 0), amount:Number(row.amount ?? 0)
     })) : []);
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
-    const loadedClassification=String(data.calculation?.classification_scheme??"nl_sfb");
-    setClassificationScheme(loadedClassification==="stabu"?"stabu":loadedClassification==="custom"?"custom":"nl_sfb");
+    setClassificationScheme(loadedScheme);
     const loadedVersionStatus=String(data.version?.status??"draft")==="established"?"established":"draft";
     setVersionStatus(loadedVersionStatus);
     setVersionNo(Number(data.version?.version_no??1));
