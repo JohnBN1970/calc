@@ -1229,20 +1229,12 @@ function App() {
   const quoteFileRef = useRef<HTMLInputElement>(null);
 
   const totals = useMemo(() => {
-    const contributingIds=new Set(lines.filter(line=>lineContributesToTotals(line)).map(line=>line.id));
-    let direct=lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>sum+lineDirect(line),0);
-    // Allocation can move cost to or from the current calculation view. Mirror
-    // the API's effective financial ownership so KPI's never disagree with the
-    // saved Calc doorrekening while the user is editing.
-    for(const allocation of allocations){
-      const sourceIn=contributingIds.has(allocation.sourceLineId);
-      const targetIn=contributingIds.has(allocation.targetLineId);
-      if(sourceIn&&!targetIn)direct-=allocation.amount;
-      else if(!sourceIn&&targetIn)direct+=allocation.amount;
-    }
-    const tailCost = tailCostTotal;
-    return { direct, markupAmount: tailCost, sales: direct + tailCost };
-  }, [lines, allocations, tailCostTotal]);
+    // All valid allocations are between contributing lines and conserve the
+    // calculation-wide direct cost. They redistribute VAT/cost carriers only.
+    const direct=lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>sum+lineDirect(line),0);
+    const tailCost=tailCostTotal;
+    return {direct,markupAmount:tailCost,sales:direct+tailCost};
+  },[lines,tailCostTotal]);
 
   const liveVatTotals = useMemo(() => {
     const byRegime=new Map<number,{regime:VatRegime;taxableBase:number;vatAmount:number}>();
