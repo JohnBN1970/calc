@@ -3728,7 +3728,13 @@ function App() {
     }
   };
 
+  const [publicationFeedback,setPublicationFeedback]=useState<{kind:"pending"|"success"|"error";message:string}|null>(null);
+  const [publishing,setPublishing]=useState(false);
+
   const publish = async () => {
+    if(publishing)return;
+    setPublishing(true);
+    setPublicationFeedback({kind:"pending",message:"Publicatie naar Office wordt uitgevoerd…"});
     try{
       if(versionStatus==="draft"){
         await persistWorkbenchDraft(lines);
@@ -3745,10 +3751,14 @@ function App() {
       setVersionStatus("established");
       await loadWorkbench();
       setStatus("Vastgesteld · gepubliceerd naar Office");
+      setPublicationFeedback({kind:"success",message:"Publicatie naar Office bevestigd."});
     }catch(error){
       const message=error instanceof Error?error.message:"Publiceren mislukt";
       try{await loadWorkbench();}catch{}
       setStatus(message);
+      setPublicationFeedback({kind:"error",message});
+    }finally{
+      setPublishing(false);
     }
   };
 
@@ -3892,7 +3902,8 @@ function App() {
       {publicationFreshness&&["office_changed","version_mismatch"].includes(publicationFreshness.status)&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Office-publicatie niet meer actueel</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&(publicationFreshness.status==="version_mismatch"?<button type="button" onClick={()=>void publish()}>Vastgestelde versie opnieuw publiceren</button>:<button type="button" onClick={()=>void startNewVersion()}>Nieuwe Calc-versie starten</button>)}</div>}
       {publicationFreshness?.status==="draft_pending"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nieuw Calc-concept in bewerking</strong><span>{publicationFreshness.message}</span></div></div>}
       {publicationFreshness?.status==="publish_recovery"&&<div className="readinessBanner publicationFreshnessWarning" role="alert"><div><strong>Publicatie kan veilig worden hersteld</strong><span>{publicationFreshness.message}</span></div><button type="button" onClick={()=>void publish()}>Publicatie afronden</button></div>}
-      {publicationFreshness?.status==="never_published"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void publish()}>Naar Office publiceren</button>}</div>}
+      {publicationFeedback&&<div className={"readinessBanner "+(publicationFeedback.kind==="error"?"publicationFreshnessWarning":"publicationFreshnessInfo")} role="status"><div><strong>{publicationFeedback.kind==="error"?"Publicatie mislukt":publicationFeedback.kind==="pending"?"Publicatie bezig":"Publicatie geslaagd"}</strong><span>{publicationFeedback.message}</span></div></div>}
+      {publicationFreshness?.status==="never_published"&&<div className="readinessBanner publicationFreshnessInfo" role="status"><div><strong>Nog niet gepubliceerd</strong><span>{publicationFreshness.message}</span></div>{versionStatus==="established"&&<button type="button" onClick={()=>void publish()} disabled={publishing}>{publishing?"Publiceren…":"Naar Office publiceren"}</button>}</div>}
       {versionStatus==="draft"&&versionDiff?.baselineVersionNo!=null&&<details className="versionDiffPanel">
         <summary>
           <strong>Wijzigingen sinds v{versionDiff.baselineVersionNo}</strong>
