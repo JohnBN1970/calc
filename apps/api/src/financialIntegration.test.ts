@@ -28,7 +28,7 @@ test("mixed VAT, allocation and independent subcalculation tail costs reconcile"
       {id:1,code:"high",label:"21%",treatment:"normal",rate:21,active:true,sortOrder:1},
       {id:2,code:"low",label:"9%",treatment:"normal",rate:9,active:true,sortOrder:2}
     ],
-    lineSales,tailCosts:hierarchy.rows
+    lineSales,tailCosts:[...hierarchy.calculationTailCosts,...hierarchy.subcalculations.flatMap(row=>row.tailCosts)]
   });
   assert.equal(breakdown.reduce((sum,row)=>sum+row.taxableBase,0),1090);
   assert.equal(breakdown.find(row=>row.code==="high")?.taxableBase,780);
