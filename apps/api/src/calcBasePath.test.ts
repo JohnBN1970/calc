@@ -32,8 +32,8 @@ test("Office /calc-werkbank prefix preserves API, assets and launch routes", () 
   const base = normalizeCalcBasePath("/calc-werkbank/");
   assert.equal(base, "/calc-werkbank");
   for (const route of ["/api/health", "/api/launch/consume", "/assets/index.js", "/"]) {
-    const external = base + (route === "/" ? "/" : route);
-    assert.equal(stripCalcBasePath(external, base), route);
+    const externalPath: string = base + (route === "/" ? "/" : route);
+    assert.equal(stripCalcBasePath(externalPath, base), route);
   }
   assert.equal(stripCalcBasePath("/calc-werkbank/api/launch/consume?source=office", base), "/api/launch/consume?source=office");
   assert.equal(calcSessionCookiePath(base), "/calc-werkbank");
