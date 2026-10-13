@@ -216,6 +216,29 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
+// An optional Office reverse-proxy prefix. The default remains root so
+// existing Hostinger deployments and API contracts are unchanged.
+const calcBasePath = (() => {
+  const raw = (process.env.CALC_BASE_PATH ?? "/").trim();
+  if (raw === "/" || raw === "") return "";
+  if (!/^\/[a-zA-Z0-9/_-]+$/.test(raw) || raw.includes("//") || raw.includes("..")) {
+    throw new Error("CALC_BASE_PATH must be a safe absolute URL path.");
+  }
+  return raw.replace(/\/$/, "");
+})();
+if (calcBasePath) {
+  app.use((req, res, next) => {
+    const pathname = req.path;
+    if (pathname !== calcBasePath && !pathname.startsWith(calcBasePath + "/")) {
+      res.status(404).json({ error: "Unknown Calc route." });
+      return;
+    }
+    // Express routing operates on the unprefixed URL internally.
+    req.url = req.url.slice(calcBasePath.length) || "/";
+    next();
+  });
+}
+
 app.get("/api/health", async (_req, res) => {
   try {
     await db.query("SELECT 1");
