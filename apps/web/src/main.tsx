@@ -5,6 +5,17 @@ import { createPortal } from "react-dom";
 import "./styles.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
+// Vite's base URL is set at build time. Office must proxy the matching path
+// and configure CALC_BASE_PATH on the Node server to the same value.
+const calcBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+function calcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (typeof input === "string" && input.startsWith("/api/")) {
+    return fetch(calcBasePath + input, init);
+  }
+  return fetch(input, init);
+}
+
+
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
 type PriceSourceType = "manual" | "article" | "recipe" | "supplier_quote";
 type Line = {
@@ -843,7 +854,7 @@ function SourceVisual({ fileId, page, label, crop, searchRegion, textRegions, an
       try {
         const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        const response = await fetch("/api/quotes/" + fileId + "/preview");
+        const response = await calcFetch("/api/quotes/" + fileId + "/preview");
         if (!response.ok) throw new Error("PDF source unavailable");
         const bytes = new Uint8Array(await response.arrayBuffer());
         const pdf = await pdfjs.getDocument({ data: bytes }).promise;
@@ -1695,7 +1706,7 @@ function App() {
     localStorage.setItem(columnPrefsKey, JSON.stringify(columnSettings));
     if(!columnPreferencesLoaded)return;
     const timer=window.setTimeout(()=>{
-      void fetch("/api/settings/user/columns",{
+      void calcFetch("/api/settings/user/columns",{
         method:"PUT",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({columns:columnSettings.map(({key,width,visible})=>({key,width,visible}))})
@@ -1709,7 +1720,7 @@ function App() {
     let cancelled=false;
     void (async()=>{
       try{
-        const response=await fetch("/api/settings/user/columns",{headers:{Accept:"application/json"}});
+        const response=await calcFetch("/api/settings/user/columns",{headers:{Accept:"application/json"}});
         const payload=await response.json().catch(()=>({})) as {columns?:Array<{key:ColumnKey;width:number;visible:boolean}>};
         if(!response.ok)throw new Error("Kolomvoorkeuren konden niet worden geladen.");
         if(cancelled)return;
@@ -1739,7 +1750,7 @@ function App() {
     let cancelled=false;
     void (async()=>{
       try{
-        const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+        const response=await calcFetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
         const payload=await response.json().catch(()=>({})) as {regimes?:VatRegime[]};
         if(!response.ok)throw new Error("BTW-keuzes konden niet worden geladen.");
         if(!cancelled)setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
@@ -1787,7 +1798,7 @@ function App() {
   const loadVatRegimes=async()=>{
     setVatSettingsStatus("BTW-instellingen laden…");
     try{
-      const response=await fetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
+      const response=await calcFetch("/api/settings/vat-regimes",{headers:{Accept:"application/json"}});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"BTW-instellingen konden niet worden geladen."));
       setVatRegimes(Array.isArray(payload.regimes)?payload.regimes:[]);
@@ -1805,7 +1816,7 @@ function App() {
   const loadLabourRates=async()=>{
     setLabourRateStatus("Uurtarieven laden…");
     try{
-      const response=await fetch("/api/settings/labour-rates",{headers:{Accept:"application/json"}});
+      const response=await calcFetch("/api/settings/labour-rates",{headers:{Accept:"application/json"}});
       const payload=await response.json().catch(()=>({})) as {rates?:LabourRateRecord[];error?:string};
       if(!response.ok)throw new Error(String(payload.error??"Uurtarieven konden niet worden geladen."));
       setLabourRates(Array.isArray(payload.rates)?payload.rates:[]);
@@ -1823,7 +1834,7 @@ function App() {
   const createLabourRateSetting=async()=>{
     setLabourRateStatus("Uurtarief opslaan…");
     try{
-      const response=await fetch("/api/settings/labour-rates",{
+      const response=await calcFetch("/api/settings/labour-rates",{
         method:"POST",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({
@@ -1845,7 +1856,7 @@ function App() {
   const patchLabourRate=async(id:number,patch:Partial<LabourRateRecord>)=>{
     setLabourRateStatus("Uurtarief bijwerken…");
     try{
-      const response=await fetch(`/api/settings/labour-rates/${id}`,{
+      const response=await calcFetch(`/api/settings/labour-rates/${id}`,{
         method:"PUT",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(patch)
@@ -1862,7 +1873,7 @@ function App() {
   const createVatSetting=async()=>{
     setVatSettingsStatus("Btw-regime opslaan…");
     try{
-      const response=await fetch("/api/settings/vat-regimes",{
+      const response=await calcFetch("/api/settings/vat-regimes",{
         method:"POST",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(vatRegimeDraft)
@@ -1879,7 +1890,7 @@ function App() {
   const patchVatSetting=async(id:number,patch:Partial<VatRegime>)=>{
     setVatSettingsStatus("Btw-regime bijwerken…");
     try{
-      const response=await fetch(`/api/settings/vat-regimes/${id}`,{
+      const response=await calcFetch(`/api/settings/vat-regimes/${id}`,{
         method:"PUT",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(patch)
@@ -1894,13 +1905,13 @@ function App() {
   };
 
   const loadTailCosts=async(directCost?:number)=>{
-    const response=await fetch("/api/workbench/current/tail-costs",{headers:{Accept:"application/json"}});
+    const response=await calcFetch("/api/workbench/current/tail-costs",{headers:{Accept:"application/json"}});
     if(!response.ok)throw new Error("Staartkosten konden niet worden geladen.");
     const payload=await response.json() as {components:TailCostComponent[]};
     const components=Array.isArray(payload.components)?payload.components:[];
     setTailCosts(components);
     const direct=directCost ?? lines.filter(line=>lineContributesToTotals(line)).reduce((sum,line)=>sum+lineDirect(line),0);
-    const evalResponse=await fetch("/api/workbench/current/tail-costs/evaluate",{
+    const evalResponse=await calcFetch("/api/workbench/current/tail-costs/evaluate",{
       method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({directCost:direct})
     });
     if(evalResponse.ok){
@@ -1923,7 +1934,7 @@ function App() {
   const createTailCost=async()=>{
     setTailCostStatus("Staartkostencomponent toevoegen…");
     try{
-      const response=await fetch("/api/workbench/current/tail-costs",{
+      const response=await calcFetch("/api/workbench/current/tail-costs",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({...tailCostDraft,baseRef:tailCostDraft.baseRef||null})
       });
@@ -1936,7 +1947,7 @@ function App() {
   };
 
   const loadRecipeLibrary = async () => {
-    const response = await fetch("/api/recipes", { headers:{Accept:"application/json"} });
+    const response = await calcFetch("/api/recipes", { headers:{Accept:"application/json"} });
     if(!response.ok) throw new Error("Receptbibliotheek kon niet worden geladen.");
     const payload = await response.json() as {recipes:CalcRecipe[]};
     setRecipes(Array.isArray(payload.recipes)?payload.recipes:[]);
@@ -1944,14 +1955,14 @@ function App() {
   };
 
   const loadSubcalculations = async () => {
-    const response = await fetch("/api/workbench/current/subcalculations", { headers:{Accept:"application/json"} });
+    const response = await calcFetch("/api/workbench/current/subcalculations", { headers:{Accept:"application/json"} });
     if(!response.ok) throw new Error("Deelcalculaties konden niet worden geladen.");
     const payload = await response.json() as {subcalculations:CalcSubcalculation[]};
     setSubcalculations(Array.isArray(payload.subcalculations)?payload.subcalculations:[]);
   };
 
   const loadSubcalculationResults=async()=>{
-    const response=await fetch("/api/workbench/current/subcalculations/evaluate",{headers:{Accept:"application/json"}});
+    const response=await calcFetch("/api/workbench/current/subcalculations/evaluate",{headers:{Accept:"application/json"}});
     if(!response.ok){
       const payload=await response.json().catch(()=>({})) as {error?:string};
       const message=String(payload.error??"Deelcalculaties konden niet veilig worden berekend.");
@@ -1968,7 +1979,7 @@ function App() {
   const createRecipe = async () => {
     setManagementStatus("Recept aanmaken…");
     try {
-      const response = await fetch("/api/recipes", {
+      const response = await calcFetch("/api/recipes", {
         method:"POST", headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(recipeDraft)
       });
@@ -1984,7 +1995,7 @@ function App() {
     if(!selectedRecipeVersionId){setManagementStatus("Kies eerst een recept.");return;}
     setManagementStatus("Receptclassificatie opslaan…");
     try{
-      const response=await fetch(`/api/recipes/${selectedRecipeVersionId}/classification`,{
+      const response=await calcFetch(`/api/recipes/${selectedRecipeVersionId}/classification`,{
         method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(recipeClassificationDraft)
       });
@@ -1998,7 +2009,7 @@ function App() {
   const changeClassificationScheme=async(scheme:ClassificationScheme)=>{
     setClassificationScheme(scheme);
     try{
-      const response=await fetch("/api/workbench/current/classification-scheme",{
+      const response=await calcFetch("/api/workbench/current/classification-scheme",{
         method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({classificationScheme:scheme})
       });
@@ -2050,7 +2061,7 @@ function App() {
       const metadata:Record<string,unknown>={...(editingLine?.metadata??{})};
       if(recipeLineDraft.componentKind)metadata.componentKind=recipeLineDraft.componentKind;else delete metadata.componentKind;
       if(recipeLineDraft.componentRef)metadata.componentRef=recipeLineDraft.componentRef;else delete metadata.componentRef;
-      const response=await fetch(
+      const response=await calcFetch(
         editingLine
           ? `/api/recipes/${selectedRecipeVersionId}/lines/${editingLine.id}`
           : `/api/recipes/${selectedRecipeVersionId}/lines`,
@@ -2093,7 +2104,7 @@ function App() {
     setManagementStatus("Regels koppelen aan deelcalculatie…");
     try{
       for(const lineId of persistedIds){
-        const response=await fetch(`/api/workbench/current/subcalculations/${subcalculationId}/lines/${lineId}`,{
+        const response=await calcFetch(`/api/workbench/current/subcalculations/${subcalculationId}/lines/${lineId}`,{
           method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
           body:JSON.stringify({included:true})
         });
@@ -2117,7 +2128,7 @@ function App() {
     setManagementStatus("Regels uit deelcalculatie verwijderen…");
     try{
       for(const lineId of persistedIds){
-        const response=await fetch(`/api/workbench/current/subcalculations/${activeSubcalculationId}/lines/${lineId}`,{
+        const response=await calcFetch(`/api/workbench/current/subcalculations/${activeSubcalculationId}/lines/${lineId}`,{
           method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
           body:JSON.stringify({included:false})
         });
@@ -2163,7 +2174,7 @@ function App() {
         building_part:"BOUWDEEL",
         position:"POS"
       }[scopeType];
-      const createResponse=await fetch("/api/workbench/current/subcalculations/scoped",{
+      const createResponse=await calcFetch("/api/workbench/current/subcalculations/scoped",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref,scopeType,scopeRef:ref})
       });
@@ -2203,7 +2214,7 @@ function App() {
     const failedRefs:string[]=[];
     for(const ref of pending){
       try{
-        const createResponse=await fetch("/api/workbench/current/subcalculations/scoped",{
+        const createResponse=await calcFetch("/api/workbench/current/subcalculations/scoped",{
           method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
           body:JSON.stringify({ref:prefix+"-"+ref,description:label+" "+ref,scopeType:activeScopeType,scopeRef:ref})
         });
@@ -2227,7 +2238,7 @@ function App() {
   const createSubcalculation = async () => {
     setManagementStatus("Deelcalculatie aanmaken…");
     try {
-      const response=await fetch("/api/workbench/current/subcalculations",{
+      const response=await calcFetch("/api/workbench/current/subcalculations",{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify(subcalcDraft)
       });
@@ -2243,7 +2254,7 @@ function App() {
     if(!subcalcScopeDraft.subcalculationId){setManagementStatus("Kies eerst een deelcalculatie.");return;}
     setManagementStatus("Scope toevoegen…");
     try {
-      const response=await fetch(`/api/workbench/current/subcalculations/${subcalcScopeDraft.subcalculationId}/scopes`,{
+      const response=await calcFetch(`/api/workbench/current/subcalculations/${subcalcScopeDraft.subcalculationId}/scopes`,{
         method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({scopeType:subcalcScopeDraft.scopeType,scopeRef:subcalcScopeDraft.scopeRef})
       });
@@ -2256,7 +2267,7 @@ function App() {
   };
 
   const loadWorkbench = async () => {
-    const response = await fetch("/api/workbench/current", { headers: { Accept: "application/json" } });
+    const response = await calcFetch("/api/workbench/current", { headers: { Accept: "application/json" } });
     if (response.status === 401) {
       setAuthorized(false);
       setStatus("Open deze calculatie vanuit BREBO Office");
@@ -2265,7 +2276,7 @@ function App() {
     if (!response.ok) throw new Error("Werkbank kon niet worden geladen.");
     const data = await response.json();
     try {
-      const aggregateResponse = await fetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
+      const aggregateResponse = await calcFetch("/api/workbench/current/aggregate", { headers: { Accept: "application/json" } });
       if (aggregateResponse.ok) {
         const nextAggregate = await aggregateResponse.json() as WorkbenchAggregate;
         setAggregate(nextAggregate);
@@ -2282,10 +2293,10 @@ function App() {
       setAggregate(null);
     }
     const [historyResponse,readinessResponse,freshnessResponse,diffResponse]=await Promise.all([
-      fetch("/api/workbench/current/versions",{headers:{Accept:"application/json"}}),
-      fetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}}),
-      fetch("/api/workbench/current/publication-freshness",{headers:{Accept:"application/json"}}),
-      fetch("/api/workbench/current/version-diff",{headers:{Accept:"application/json"}})
+      calcFetch("/api/workbench/current/versions",{headers:{Accept:"application/json"}}),
+      calcFetch("/api/workbench/current/publication-readiness",{headers:{Accept:"application/json"}}),
+      calcFetch("/api/workbench/current/publication-freshness",{headers:{Accept:"application/json"}}),
+      calcFetch("/api/workbench/current/version-diff",{headers:{Accept:"application/json"}})
     ]);
     if(historyResponse.ok){
       const historyPayload=await historyResponse.json() as {versions?:CalcVersionHistoryItem[]};
@@ -2325,7 +2336,7 @@ function App() {
   const setDocumentDecision=async(documentId:number,decision:"primary"|"supporting"|"review"|"excluded")=>{
     setDocumentTriageStatus("Documentkeuze opslaan…");
     try{
-      const response=await fetch(`/api/workbench/current/document-triage/${documentId}`,{
+      const response=await calcFetch(`/api/workbench/current/document-triage/${documentId}`,{
         method:"PUT",
         headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({decision})
@@ -2342,7 +2353,7 @@ function App() {
   const refreshDocumentCandidates=async()=>{
     setDocumentTriageStatus("Kandidaatbronnen verversen…");
     try{
-      const response=await fetch("/api/workbench/current/document-candidates/refresh",{
+      const response=await calcFetch("/api/workbench/current/document-candidates/refresh",{
         method:"POST",
         headers:{Accept:"application/json"}
       });
@@ -2358,7 +2369,7 @@ function App() {
   const resetDocumentDecision=async(documentId:number)=>{
     setDocumentTriageStatus("Automatische documentkeuze herstellen…");
     try{
-      const response=await fetch(`/api/workbench/current/document-triage/${documentId}`,{method:"DELETE",headers:{Accept:"application/json"}});
+      const response=await calcFetch(`/api/workbench/current/document-triage/${documentId}`,{method:"DELETE",headers:{Accept:"application/json"}});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(String(payload.error??"Documentkeuze kon niet worden hersteld."));
       await loadWorkbench();
@@ -2372,14 +2383,14 @@ function App() {
     const boot = async () => {
       try {
         const url = new URL(window.location.href);
-        if (url.pathname === "/launch") {
+        if (url.pathname === (calcBasePath + "/launch")) {
           const token = url.searchParams.get("token");
           // Remove the one-time token from browser history before any network
           // request or asynchronous work; never leave it in the address bar.
           window.history.replaceState({}, "", url.pathname);
           if (!token) throw new Error("Launch-token ontbreekt.");
           setStatus("Office-koppeling openen…");
-          const response = await fetch("/api/launch/consume", {
+          const response = await calcFetch("/api/launch/consume", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ token })
@@ -2388,7 +2399,7 @@ function App() {
             const error = await response.json().catch(() => ({}));
             throw new Error(String(error.error ?? "Office-link kon niet worden geopend."));
           }
-          window.history.replaceState({}, "", "/");
+          window.history.replaceState({}, "", calcBasePath + "/");
         }
         await loadWorkbench();
         await Promise.all([loadRecipeLibrary(),loadSubcalculations(),loadSubcalculationResults(),loadTailCosts()]);
@@ -2402,7 +2413,7 @@ function App() {
 
   async function persistWorkbenchDraft(linesToSave:Line[]){
     setStatus("Opslaan…");
-    const response = await fetch("/api/workbench/current", {
+    const response = await calcFetch("/api/workbench/current", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2593,7 +2604,7 @@ function App() {
       if(!paragraphLine){skipped.push(proposal.positionRef+" mist voorgestelde paragraaf");continue;}
 
       try{
-        const response=await fetch("/api/workbench/current/concept/recipe-proposals/accept",{
+        const response=await calcFetch("/api/workbench/current/concept/recipe-proposals/accept",{
           method:"POST",
           headers:{"Content-Type":"application/json",Accept:"application/json"},
           body:JSON.stringify({
@@ -2746,7 +2757,7 @@ function App() {
     }
     setRecipeActionStatus(`${proposal.label} in Calc genereren…`);
     try {
-      const response = await fetch("/api/workbench/current/concept/recipe-proposals/accept", {
+      const response = await calcFetch("/api/workbench/current/concept/recipe-proposals/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
@@ -3073,7 +3084,7 @@ function App() {
       }
       if(issue.code==="all_rejected"){
         for(const recipeRef of issue.candidateRecipeRefs){
-          const response=await fetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(issue.positionRef)}/${encodeURIComponent(recipeRef)}/decision`,{
+          const response=await calcFetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(issue.positionRef)}/${encodeURIComponent(recipeRef)}/decision`,{
             method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
             body:JSON.stringify({decision:"reset",reason:"Eerdere afwijzing heropend vanuit Nog te bepalen."})
           });
@@ -3107,7 +3118,7 @@ function App() {
         await acceptRecipeProposal(proposal);
         return;
       }
-      const response=await fetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(proposal.positionRef)}/${encodeURIComponent(proposal.recipeRef)}/decision`,{
+      const response=await calcFetch(`/api/workbench/current/concept/recipe-proposals/${encodeURIComponent(proposal.positionRef)}/${encodeURIComponent(proposal.recipeRef)}/decision`,{
         method:"PUT",headers:{"Content-Type":"application/json",Accept:"application/json"},
         body:JSON.stringify({decision:"rejected",reason:"Receptvoorstel afgewezen in Calc-review."})
       });
@@ -3448,7 +3459,7 @@ function App() {
     setArticleSearchStatus("Zoeken in Office…");
     try {
       const params = new URLSearchParams({ q: priceSearch, limit: "40" });
-      const response = await fetch(`/api/articles/search?${params.toString()}`, { headers: { Accept: "application/json" } });
+      const response = await calcFetch(`/api/articles/search?${params.toString()}`, { headers: { Accept: "application/json" } });
       if (!response.ok) throw new Error("Artikelzoekopdracht mislukt");
       const data = await response.json();
       const items = Array.isArray(data.items) ? data.items as ArticleSearchItem[] : [];
@@ -3509,7 +3520,7 @@ function App() {
     const targetLineId = selected?.id ?? null;
     setQuoteStatus(`${file.name} naar Office sturen en uitlezen…`);
     try {
-      const response = await fetch("/api/quotes/upload", {
+      const response = await calcFetch("/api/quotes/upload", {
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
@@ -3745,7 +3756,7 @@ function App() {
       }else{
         setStatus("Vastgestelde versie opnieuw publiceren naar Office…");
       }
-      const response=await fetch("/api/workbench/current/publish",{
+      const response=await calcFetch("/api/workbench/current/publish",{
         method:"POST",
         headers:{Accept:"application/json"}
       });
@@ -3772,7 +3783,7 @@ function App() {
     }
     try{
       setStatus("Nieuwe conceptversie maken…");
-      const response=await fetch("/api/workbench/current/versions",{
+      const response=await calcFetch("/api/workbench/current/versions",{
         method:"POST",
         headers:{Accept:"application/json"}
       });
