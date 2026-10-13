@@ -26,3 +26,26 @@ test("unrelated routes and deceptive prefixes are rejected", () => {
     assert.throws(() => normalizeCalcBasePath(input));
   }
 });
+
+
+test("Office /calc-werkbank prefix preserves API, assets and launch routes", () => {
+  const base = normalizeCalcBasePath("/calc-werkbank/");
+  assert.equal(base, "/calc-werkbank");
+  for (const route of ["/api/health", "/api/launch/consume", "/assets/index.js", "/"]) {
+    const external = base + (route === "/" ? "/" : route);
+    assert.equal(stripCalcBasePath(external, base), route);
+  }
+  assert.equal(stripCalcBasePath("/calc-werkbank/api/launch/consume?source=office", base), "/api/launch/consume?source=office");
+  assert.equal(calcSessionCookiePath(base), "/calc-werkbank");
+});
+
+test("Office prefix never captures login, CRM or lookalike paths", () => {
+  const base = normalizeCalcBasePath("/calc-werkbank");
+  for (const route of [
+    "/inloggen", "/uitloggen", "/crm/aanvragen",
+    "/calc-werkbank-extra", "/calc-werkbanked/api/health",
+    "/calc/start", "/api/launch/consume",
+  ]) {
+    assert.equal(stripCalcBasePath(route, base), null, route);
+  }
+});
