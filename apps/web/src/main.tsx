@@ -2374,6 +2374,9 @@ function App() {
         const url = new URL(window.location.href);
         if (url.pathname === "/launch") {
           const token = url.searchParams.get("token");
+          // Remove the one-time token from browser history before any network
+          // request or asynchronous work; never leave it in the address bar.
+          window.history.replaceState({}, "", url.pathname);
           if (!token) throw new Error("Launch-token ontbreekt.");
           setStatus("Office-koppeling openen…");
           const response = await fetch("/api/launch/consume", {
