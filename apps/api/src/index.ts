@@ -204,7 +204,7 @@ function requireSession(req: Request, res: Response): SessionPayload | null {
 
 function sessionCookie(token: string): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}${secure}`;
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=${calcBasePath || "/"}; Max-Age=${SESSION_SECONDS}${secure}`;
 }
 
 function numeric(value: unknown): number {
