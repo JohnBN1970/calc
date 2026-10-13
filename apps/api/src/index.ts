@@ -234,7 +234,8 @@ if (calcBasePath) {
       return;
     }
     // Express routing operates on the unprefixed URL internally.
-    req.url = req.url.slice(calcBasePath.length) || "/";
+    const suffix = req.url.slice(calcBasePath.length);
+    req.url = !suffix || suffix.startsWith("?") ? "/" + suffix : suffix;
     next();
   });
 }
@@ -757,7 +758,7 @@ app.get("/api/articles/search", async (req, res) => {
 
 app.post("/api/session/logout", (req, res) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=${calcBasePath || "/"}; Max-Age=0${secure}`);
   res.status(204).end();
 });
 
