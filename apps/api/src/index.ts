@@ -5,6 +5,7 @@ import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
+import { isOfficeGrantActive } from "./officeGrantClient.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
@@ -232,6 +233,34 @@ if (calcBasePath) {
       return;
     }
     req.url = stripped;
+    next();
+  });
+}
+
+// Opt-in, centralized Office authority check. This runs before all Calc API
+// routes; no legacy signed cookie can bypass the gate when enabled.
+if (process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+  app.use("/api", async (req, res, next) => {
+    if (req.path === "/health" || req.path === "/launch/consume") {
+      next();
+      return;
+    }
+    const session = sessionFromRequest(req);
+    if (!session || !session.grantRef) {
+      res.status(401).json({ error: "Open deze calculatie opnieuw vanuit BREBO Office." });
+      return;
+    }
+    const endpoint = process.env.OFFICE_CALC_GRANT_VALIDATION_URL ?? "";
+    const active = await isOfficeGrantActive({
+      reference: session.grantRef,
+      actor_id: session.actorId,
+      project_id: session.officeProjectId,
+      calculation_id: session.officeCalculationId,
+    }, endpoint);
+    if (!active) {
+      res.status(401).json({ error: "Uw Office-sessie is niet meer geldig." });
+      return;
+    }
     next();
   });
 }
