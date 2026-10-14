@@ -298,6 +298,21 @@ app.post("/api/launch/consume", async (req, res) => {
     return;
   }
 
+  // Under central enforcement, reject a missing or revoked Office grant before
+  // creating/updating any local calculation or issuing a Calc session cookie.
+  if (process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+    const active = launch.grant_ref ? await isOfficeGrantActive({
+      reference: launch.grant_ref,
+      actor_id: launch.actor_id,
+      project_id: launch.project_id,
+      calculation_id: launch.calculation_id,
+    }, process.env.OFFICE_CALC_GRANT_VALIDATION_URL ?? "") : false;
+    if (!active) {
+      res.status(401).json({ error: "Open deze calculatie opnieuw vanuit BREBO Office." });
+      return;
+    }
+  }
+
   let officeContext;
   try {
     officeContext = await fetchOfficeProjectContext(launch.project_id);
