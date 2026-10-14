@@ -33,7 +33,7 @@ check() {
   }
   case "$expected" in
     200) [ "$code" = 200 ] ;;
-    non404) [ "$code" != 404 ] && [ "$code" != 000 ] ;;
+    workbench) [ "$code" = 200 ] || [ "$code" = 302 ] || [ "$code" = 403 ] ;;
     deny) [ "$code" = 401 ] || [ "$code" = 403 ] || [ "$code" = 405 ] || [ "$code" = 503 ] ;;
   esac || {
     echo "FAIL $label: HTTP $code (expected $expected)" >&2; return 1;
@@ -42,8 +42,8 @@ check() {
 }
 echo "Office Calc read-only proxy smoke: $origin"
 check "Calc health via Office origin" "/calc-app/api/health" 200
-check "Calc UI via Office origin" "/calc-app/" non404
-check "Office Calc workbench route" "/calc-werkbank" non404
+check "Calc UI via Office origin" "/calc-app/" 200
+check "Office Calc workbench route" "/calc-werkbank" workbench
 # Signed Office validation endpoint must not accept an anonymous GET.
 check "Grant validation rejects anonymous GET" "/api/workbench/v1/calculation-grants/validate" deny
 echo "Read-only route checks passed. Manual browser login, cookies, POST handoff and revocation tests still required."
