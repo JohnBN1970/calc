@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isOfficeGrantActive } from "./officeGrantClient.js";
+process.env.MYSQL_PASSWORD ??= "test-only-not-used";
+process.env.OFFICE_API_BASE_URL ??= "https://office.example.test";
+process.env.BREBO_CALC_SHARED_SECRET ??= "test-only-0123456789abcdef0123456789abcdef";
+process.env.CALC_SESSION_SECRET ??= "test-only-0123456789abcdef0123456789abcdef";
+
+const { isOfficeGrantActive } = await import("./officeGrantClient.js");
 
 const endpoint = "https://office.example.test/api/workbench/v1/calculation-grants/validate";
 const grant = { reference: "a".repeat(64), actor_id: 2, project_id: 3, calculation_id: 4 };
