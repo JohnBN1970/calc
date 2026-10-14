@@ -254,6 +254,9 @@ app.post("/api/takeoff/preview", (req, res) => {
 });
 
 app.post("/api/launch/consume", async (req, res) => {
+  // One-time Office credentials and the resulting session must never be cached.
+  res.setHeader("Cache-Control", "no-store, private");
+  res.setHeader("Referrer-Policy", "no-referrer");
   let launch: LaunchPayload;
   try {
     launch = parseLaunchToken(String(req.body?.token ?? ""));
