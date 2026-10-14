@@ -32,17 +32,27 @@ check() {
     echo "FAIL $label: network/TLS error" >&2; return 1;
   }
   case "$expected" in
-    200) [ "$code" = 200 ] ;;
+    200|health|html) [ "$code" = 200 ] ;;
     workbench) [ "$code" = 200 ] || [ "$code" = 302 ] || [ "$code" = 403 ] ;;
     deny) [ "$code" = 401 ] || [ "$code" = 403 ] || [ "$code" = 405 ] || [ "$code" = 503 ] ;;
   esac || {
     echo "FAIL $label: HTTP $code (expected $expected)" >&2; return 1;
   }
+  case "$expected" in
+    health)
+      grep -Eq '"service"[[:space:]]*:[[:space:]]*"brebo-calc"' "$tmp" || {
+        echo "FAIL $label: expected Calc health JSON, received other content" >&2; return 1;
+      } ;;
+    html)
+      grep -Eiq '<(!doctype[[:space:]]+html|html)([[:space:]>]|$)' "$tmp" || {
+        echo "FAIL $label: expected HTML, received other content" >&2; return 1;
+      } ;;
+  esac
   echo "PASS $label: HTTP $code"
 }
 echo "Office Calc read-only proxy smoke: $origin"
-check "Calc health via Office origin" "/calc-app/api/health" 200
-check "Calc UI via Office origin" "/calc-app/" 200
+check "Calc health via Office origin" "/calc-app/api/health" health
+check "Calc UI via Office origin" "/calc-app/" html
 check "Office Calc workbench route" "/calc-werkbank" workbench
 # Signed Office validation endpoint must not accept an anonymous GET.
 check "Grant validation rejects anonymous GET" "/api/workbench/v1/calculation-grants/validate" deny
