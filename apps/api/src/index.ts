@@ -167,7 +167,12 @@ function parseCookies(req: Request): Record<string, string> {
     if (separator < 1) continue;
     const key = part.slice(0, separator).trim();
     const value = part.slice(separator + 1).trim();
-    cookies[key] = decodeURIComponent(value);
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      // A malformed cookie must not crash the authorization middleware.
+      // Leave this cookie unset so session validation fails closed.
+    }
   }
   return cookies;
 }
