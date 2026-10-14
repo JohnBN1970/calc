@@ -2384,6 +2384,12 @@ function App() {
       try {
         const url = new URL(window.location.href);
         if (url.pathname === (calcBasePath + "/launch")) {
+          // URL-carried credentials can leak into HTTP logs before client code runs.
+          // Keep legacy links unavailable unless explicitly enabled during migration.
+          if (import.meta.env.VITE_CALC_ALLOW_URL_LAUNCH !== "enabled") {
+            window.history.replaceState({}, "", calcBasePath + "/");
+            throw new Error("Deze aanmeldlink is uitgeschakeld. Open Calc vanuit BREBO Office.");
+          }
           const token = url.searchParams.get("token");
           // Remove the one-time token from browser history before any network
           // request or asynchronous work; never leave it in the address bar.
