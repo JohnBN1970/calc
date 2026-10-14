@@ -85,6 +85,7 @@ type LineInput = {
 
 type LaunchPayload = {
   v: 1;
+  grant_ref?: string;
   calculation_id: number;
   project_id: number;
   actor_id: number;
@@ -94,6 +95,7 @@ type LaunchPayload = {
 
 type SessionPayload = {
   v: 1;
+  grantRef?: string;
   calculationId: number;
   officeCalculationId: number;
   officeProjectId: number;
@@ -143,7 +145,8 @@ function parseLaunchToken(token: string): LaunchPayload {
     !Number.isInteger(payload.exp) ||
     Number(payload.exp) < now ||
     Number(payload.exp) > now + 180 ||
-    !/^[0-9a-f]{32}$/i.test(String(payload.nonce ?? ""))
+    !/^[0-9a-f]{32}$/i.test(String(payload.nonce ?? "")) ||
+    (payload.grant_ref !== undefined && !/^[a-f0-9]{64}$/.test(String(payload.grant_ref)))
   ) {
     throw new Error("Expired or malformed launch token.");
   }
@@ -186,7 +189,8 @@ function sessionFromRequest(req: Request): SessionPayload | null {
       !Number.isInteger(payload.actorId) ||
       Number(payload.actorId) <= 0 ||
       !Number.isInteger(payload.exp) ||
-      Number(payload.exp) < now
+      Number(payload.exp) < now ||
+      (payload.grantRef !== undefined && !/^[a-f0-9]{64}$/.test(String(payload.grantRef)))
     ) return null;
     return payload as SessionPayload;
   } catch {
@@ -323,6 +327,7 @@ app.post("/api/launch/consume", async (req, res) => {
       officeCalculationId: launch.calculation_id,
       officeProjectId: launch.project_id,
       actorId: launch.actor_id,
+      ...(launch.grant_ref ? { grantRef: launch.grant_ref } : {}),
       exp: now + SESSION_SECONDS
     });
     res.setHeader("Set-Cookie", sessionCookie(token));
