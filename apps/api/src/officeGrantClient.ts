@@ -5,24 +5,29 @@ const GRANT_PATH = "/api/workbench/v1/calculation-grants/validate";
 
 export type OfficeGrantCheck = {
   reference: string;
-  actor_id: number;
-  project_id: number;
+  actor_id: number | string;
+  project_id: number | null;
   calculation_id: number;
 };
 
 /**
  * Returns false on any Office denial, timeout, malformed response or network
  * failure. Never interpret an unavailable Office server as authorization.
- * Not yet wired into Calc's protected route middleware.
+ * Called by Calc's opt-in protected route middleware and launch consumer.
  */
 export async function isOfficeGrantActive(
   grant: OfficeGrantCheck,
   endpoint: string,
   timeoutMs = 2500,
 ): Promise<boolean> {
+  const validActor = typeof grant.actor_id === "string"
+    ? grant.actor_id.length > 0 && grant.actor_id.length <= 128 && grant.actor_id.trim() === grant.actor_id
+    : Number.isSafeInteger(grant.actor_id) && grant.actor_id > 0;
+  const validProject = grant.project_id === null
+    || (Number.isSafeInteger(grant.project_id) && grant.project_id > 0);
   if (!/^[a-f0-9]{64}$/.test(grant.reference)
-    || ![grant.actor_id, grant.project_id, grant.calculation_id]
-      .every((value) => Number.isSafeInteger(value) && value > 0)) {
+    || !validActor || !validProject
+    || !Number.isSafeInteger(grant.calculation_id) || grant.calculation_id <= 0) {
     return false;
   }
   let url: URL;
