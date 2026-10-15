@@ -17,6 +17,8 @@ export function signIndependentOfficeLaunch(
   secret: string,
 ): string {
   if (!secret) throw new Error("Office signing secret required.");
+  // Validate the complete payload before issuing any signed credential.
+  validateIndependentOfficeLaunch(launch, Math.floor(Date.now() / 1000));
   const encoded = encode(JSON.stringify(launch));
   const signature = createHmac("sha256", secret).update(encoded).digest("hex");
   return encoded + "." + signature;
@@ -41,8 +43,13 @@ export function parseIndependentOfficeLaunch(
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Malformed launch token.");
   const payload = raw as Partial<IndependentOfficeLaunch>;
+  validateIndependentOfficeLaunch(payload, now);
+  return payload as IndependentOfficeLaunch;
+}
+
+function validateIndependentOfficeLaunch(payload: Partial<IndependentOfficeLaunch>, now: number): void {
   if (payload.v !== 2 || typeof payload.actor_id !== "string"
-    || !/^[A-Za-z0-9_-]{1,128}$/.test(payload.actor_id)
+    || payload.actor_id.trim() !== payload.actor_id || payload.actor_id.length < 1 || payload.actor_id.length > 128
     || !Number.isSafeInteger(payload.calculation_id) || (payload.calculation_id ?? 0) <= 0
     || !(payload.project_id === null || (Number.isSafeInteger(payload.project_id) && (payload.project_id ?? 0) > 0))
     || !Number.isSafeInteger(payload.exp) || (payload.exp ?? 0) < now || (payload.exp ?? 0) > now + 180
@@ -50,5 +57,4 @@ export function parseIndependentOfficeLaunch(
     || !/^[0-9a-f]{64}$/.test(String(payload.grant_ref ?? ""))) {
     throw new Error("Expired or malformed launch token.");
   }
-  return payload as IndependentOfficeLaunch;
 }
