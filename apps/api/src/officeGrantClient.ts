@@ -13,7 +13,7 @@ export type OfficeGrantCheck = {
 /**
  * Returns false on any Office denial, timeout, malformed response or network
  * failure. Never interpret an unavailable Office server as authorization.
- * Not yet wired into Calc's protected route middleware.
+ * Called by Calc's opt-in protected route middleware and launch consumer.
  */
 export async function isOfficeGrantActive(
   grant: OfficeGrantCheck,
