@@ -20,6 +20,7 @@ export function signIndependentOfficeLaunch(
   // Validate the complete payload before issuing any signed credential.
   validateIndependentOfficeLaunch(launch, Math.floor(Date.now() / 1000));
   const encoded = encode(JSON.stringify(launch));
+  if (encoded.length > 4000) throw new Error("Launch payload too large.");
   const signature = createHmac("sha256", secret).update(encoded).digest("hex");
   return encoded + "." + signature;
 }
@@ -29,6 +30,7 @@ export function parseIndependentOfficeLaunch(
   secret: string,
   now = Math.floor(Date.now() / 1000),
 ): IndependentOfficeLaunch {
+  if (token.length > 4096) throw new Error("Invalid launch token.");
   const parts = token.split(".");
   if (!secret || parts.length !== 2 || !/^[A-Za-z0-9_-]+$/.test(parts[0] ?? "")
     || !/^[0-9a-f]{64}$/.test(parts[1] ?? "")) throw new Error("Invalid launch token.");
