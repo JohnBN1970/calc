@@ -60,8 +60,8 @@ test("Office-test /calc-app handoff, assets, and session cookie are prefix-safe"
     "/assets/index.js",
     "/",
   ]) {
-    const external = base + route;
-    assert.equal(stripCalcBasePath(external, base), route);
+    const externalPath: string = `${base}${route}`;
+    assert.equal(stripCalcBasePath(externalPath, base), route);
   }
   assert.equal(stripCalcBasePath("/calc-app/api/launch/consume?origin=office", base),
     "/api/launch/consume?origin=office");
