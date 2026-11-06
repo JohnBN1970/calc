@@ -49,3 +49,29 @@ test("Office prefix never captures login, CRM or lookalike paths", () => {
     assert.equal(stripCalcBasePath(route, base), null, route);
   }
 });
+
+test("Office-test /calc-app handoff, assets, and session cookie are prefix-safe", () => {
+  const base = normalizeCalcBasePath("/calc-app/");
+  assert.equal(base, "/calc-app");
+  for (const route of [
+    "/api/health",
+    "/api/launch/consume",
+    "/api/workbench/current",
+    "/assets/index.js",
+    "/",
+  ]) {
+    const external = base + route;
+    assert.equal(stripCalcBasePath(external, base), route);
+  }
+  assert.equal(stripCalcBasePath("/calc-app/api/launch/consume?origin=office", base),
+    "/api/launch/consume?origin=office");
+  assert.equal(calcSessionCookiePath(base), "/calc-app");
+  for (const other of [
+    "/office-test/calc/start",
+    "/office-test/projecten",
+    "/calc-app-other/api/health",
+    "/api/launch/consume",
+  ]) {
+    assert.equal(stripCalcBasePath(other, base), null, other);
+  }
+});
