@@ -27,6 +27,12 @@ test("Office-test grant endpoint is accepted without unverified root rewrite", (
     OFFICE_CALC_GRANT_VALIDATION_URL: "https://brebobv.nl/office-test/api/workbench/v1/calculation-grants/validate?skip=true"
   }), false);
 });
+test("foreign validation endpoints are rejected even with correct route", () => {
+  assert.equal(crmFirstRuntimeReady({
+    ...valid,
+    OFFICE_CALC_GRANT_VALIDATION_URL: "https://foreign.example.test/office-test/api/workbench/v1/calculation-grants/validate"
+  }), false);
+});
 test("production and restore databases can never be used for CRM-first", () => {
   for (const database of ["u213420663_calc", "u213420663_calc_restore", "u213420663_office_test"]) {
     assert.equal(crmFirstRuntimeReady({ ...valid, CALC_OFFICE_TEST_DATABASE: database, MYSQL_DATABASE: database }), false);
