@@ -244,6 +244,8 @@ function numeric(value: unknown): number {
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
+// CRM-first browser handoff uses a top-level POST form; the token is never in a URL.
+app.use(express.urlencoded({ extended: false, limit: "2kb", parameterLimit: 8 }));
 
 // An optional Office reverse-proxy prefix. The default remains root so
 // existing Hostinger deployments and API contracts are unchanged.
@@ -313,6 +315,24 @@ app.post("/api/launch/consume", async (req, res) => {
   // One-time Office credentials and the resulting session must never be cached.
   res.setHeader("Cache-Control", "no-store, private");
   res.setHeader("Referrer-Policy", "no-referrer");
+  const isBrowserForm = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase() === "application/x-www-form-urlencoded";
+  if (isBrowserForm) {
+    // Prevent login-CSRF/session swapping from an unrelated website. The POST
+    // originates from Office, never an arbitrary external page or old Calc.
+    let officeOrigin: string;
+    try {
+      officeOrigin = new URL(config.office.baseUrl).origin;
+    } catch {
+      res.status(503).json({ error: "Office-omgeving niet beschikbaar." });
+      return;
+    }
+    if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED !== "enabled"
+      || req.headers.origin !== officeOrigin
+      || process.env.CALC_OFFICE_GRANT_ENFORCEMENT !== "enabled") {
+      res.status(403).json({ error: "Open de calculatie uitsluitend vanuit BREBO Office." });
+      return;
+    }
+  }
   let launch: LaunchPayload | IndependentOfficeLaunch;
   try {
     const rawToken = String(req.body?.token ?? "");
@@ -328,6 +348,11 @@ app.post("/api/launch/consume", async (req, res) => {
     }
   } catch {
     res.status(401).json({ error: "De Calculatie-link is ongeldig of verlopen." });
+    return;
+  }
+
+  if (isBrowserForm && launch.v !== 2) {
+    res.status(403).json({ error: "Alleen CRM-concepten ondersteunen deze Office-overdracht." });
     return;
   }
 
@@ -451,6 +476,10 @@ app.post("/api/launch/consume", async (req, res) => {
           exp: now + SESSION_SECONDS
         });
     res.setHeader("Set-Cookie", sessionCookie(token));
+    if (isBrowserForm && launch.v === 2) {
+      res.redirect(303, calcBasePath + "/crm-draft");
+      return;
+    }
     res.json({
       status: "ok",
       calculationId: localCalculationId,
