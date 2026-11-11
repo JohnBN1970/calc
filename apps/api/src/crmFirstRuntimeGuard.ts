@@ -21,6 +21,7 @@ export function crmFirstRuntimeReady(env: NodeJS.ProcessEnv): boolean {
     const officeUrl = new URL(env.OFFICE_API_BASE_URL ?? "");
     const validationUrl = new URL(env.OFFICE_CALC_GRANT_VALIDATION_URL ?? "");
     if (officeUrl.protocol !== "https:" || validationUrl.protocol !== "https:"
+      || officeUrl.origin !== validationUrl.origin
       || officeUrl.username || officeUrl.password || validationUrl.username || validationUrl.password
       || validationUrl.search || validationUrl.hash
       || ![
