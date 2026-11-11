@@ -46,3 +46,21 @@ Nog te regelen in Hostinger hPanel: een afzonderlijke nieuwe testwebsite (alleen
 
 ### Gebruikerservaring
 Een nieuwe testorigin betekent nog **niet** eenzelfde adresbalk als `/office-test/calc-app`. Een Office-navigatie naar een afzonderlijke Calc-werkbank kan pas na veilige CRM-first one-time launch, revocation en E2E getest worden. Echte same-origin toegang vereist een afzonderlijk aantoonbaar ondersteunde reverse proxy of latere hostingarchitectuur. Geen onveilige iframe/cookie-omweg en geen stille aanpassing van gebruikersrechten.
+
+## CRM-first conceptwerkbank (nieuwe geïsoleerde routes)
+
+De projectloze v2 Calc-consumer ondersteunt een Office-launch zonder project-ID achter `CALC_CRM_FIRST_LAUNCH_ENABLED=enabled`. Bij een geldige, eenmaal gebruikte launch retourneert het JSON-antwoord het pad `workbenchPath` voor de aparte pagina `/crm-draft`. Deze pagina gebruikt:
+
+- `GET /api/crm-draft` — leest de eigen projectloze conceptversie en regels;
+- `POST /api/crm-draft/lines` — voegt in de eigen conceptversie een eenvoudige calculatieregel toe;
+- het bestaande `POST /api/launch/consume` — controleert HMAC, actuele Office-grant, afzonderlijke database, benodigde velden en atomic nonce-replaybeveiliging.
+
+Alle v2 schrijfoperaties vereisen een ingeschakelde CRM-first featureflag, continue externe Office-grant-validatie en een aparte database die **niet** `u213420663_calc`, `u213420663_calc_restore` of `u213420663_office_test` is. De API controleert `INFORMATION_SCHEMA` op een werkelijk nullable `office_project_id`. Projectgebonden functies zijn voor v2-sessies nog geblokkeerd (409), zodat ongeteste legacy-routes geen onjuiste projectcontext lezen.
+
+**Afbakening:** dit is een functioneel voorbereid minimalistisch conceptscherm met eenvoudige regels, geen volledige vrijgegeven calculatiestudio. Werkbegroting, prijsregels, onderbouwing, offertepublicatie, wijzigingshistorie, CRM-eigenaarschap en acceptatie blijven te integreren. Het projectloos concept is nog geen vergrendelde werkbegroting.
+
+### Kritische open contractkloof tussen repositories
+
+[Office PR #1777](https://github.com/JohnBN1970/brebo-office/pull/1777) geeft op dit moment een **opaque eenmalige referentie** uit vanuit de CRM-launch. Calc's nieuwe projectloze consumer verwacht juist een **HMAC-ondertekende v2-token**. Zonder een expliciet veilig Office-uitwisselendpoint (redeem) en aanvullende autorisatie mogen deze twee typen **niet** als compatibel worden beschouwd. De Office-PHP conceptwerkbank in dezelfde PR bewaart bovendien regels in Office-tabellen, terwijl de Calc-app voor de interactieve berekening een eigen workbench-opslag gebruikt. Bepaal en test vooraf welke gegevens in Office canoniek blijven en hoe conceptregels worden gesynchroniseerd, om dubbele waarheid te vermijden.
+
+Voor een werkende gebruikerstoets moeten de proefdatabase, aparte Hostinger Node-site en Office-redeem/launchcontract eerst geïnstalleerd en gevalideerd zijn. De daadwerkelijke productie-Calc blijft onveranderd.
