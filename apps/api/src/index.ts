@@ -6,6 +6,8 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { isOfficeGrantActive } from "./officeGrantClient.js";
+import { parseIndependentOfficeLaunch, type IndependentOfficeLaunch } from "./independentOfficeLaunch.js";
+import { parseIndependentOfficeSession, type IndependentOfficeSession } from "./independentOfficeSession.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
@@ -94,7 +96,7 @@ type LaunchPayload = {
   nonce: string;
 };
 
-type SessionPayload = {
+type LegacySessionPayload = {
   v: 1;
   grantRef?: string;
   calculationId: number;
@@ -103,6 +105,8 @@ type SessionPayload = {
   actorId: number;
   exp: number;
 };
+
+type SessionPayload = LegacySessionPayload | IndependentOfficeSession;
 
 const SESSION_COOKIE = "brebo_calc_session";
 const SESSION_SECONDS = 8 * 60 * 60;
@@ -180,6 +184,11 @@ function parseCookies(req: Request): Record<string, string> {
 function sessionFromRequest(req: Request): SessionPayload | null {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
+  if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED === "enabled"
+    && process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+    const v2 = parseIndependentOfficeSession(token, config.sessionSecret);
+    if (v2) return v2;
+  }
   const [encoded, signature, extra] = token.split(".");
   if (!encoded || !signature || extra) return null;
   const expected = sign(encoded, config.sessionSecret);
@@ -295,9 +304,19 @@ app.post("/api/launch/consume", async (req, res) => {
   // One-time Office credentials and the resulting session must never be cached.
   res.setHeader("Cache-Control", "no-store, private");
   res.setHeader("Referrer-Policy", "no-referrer");
-  let launch: LaunchPayload;
+  let launch: LaunchPayload | IndependentOfficeLaunch;
   try {
-    launch = parseLaunchToken(String(req.body?.token ?? ""));
+    const rawToken = String(req.body?.token ?? "");
+    if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED === "enabled"
+      && process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+      try {
+        launch = parseIndependentOfficeLaunch(rawToken, config.office.sharedSecret);
+      } catch {
+        launch = parseLaunchToken(rawToken);
+      }
+    } else {
+      launch = parseLaunchToken(rawToken);
+    }
   } catch {
     res.status(401).json({ error: "De Calculatie-link is ongeldig of verlopen." });
     return;
@@ -320,7 +339,15 @@ app.post("/api/launch/consume", async (req, res) => {
 
   let officeContext;
   try {
-    officeContext = await fetchOfficeProjectContext(launch.project_id);
+    officeContext = launch.project_id === null ? {
+      contract: "brebo-office-calc-context-v1" as const,
+      project: {
+        id: 0, code: "CRM", title: "CRM-calculatie " + launch.calculation_id,
+        status: "concept", client_name: "", client_organization: null,
+        project_kind: "", disciplines: [] as string[], description: "",
+        buildings: [] as Array<{ id: number; title: string }>
+      }
+    } : await fetchOfficeProjectContext(launch.project_id);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
     console.error("BREBO Calc project context fetch failed:", detail);
@@ -371,7 +398,7 @@ app.post("/api/launch/consume", async (req, res) => {
 
     const now = Math.floor(Date.now() / 1000);
     const token = createSessionToken({
-      v: 1,
+      v: launch.v,
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
       officeProjectId: launch.project_id,
