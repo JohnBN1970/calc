@@ -50,6 +50,8 @@ jobs:
           npm run typecheck
           npm run test --workspace=@brebo/calc-api
           npm run build
+          npm prune --omit=dev
+          npm ls --omit=dev
       - name: Assemble code-only staging artifact
         shell: bash
         run: |
@@ -66,6 +68,9 @@ jobs:
           fi
           mkdir -p office-test-package
           cp startup.js package.json office-test-package/
+          test -d node_modules
+          cp -a node_modules office-test-package/
+          if [ -f package-lock.json ]; then cp package-lock.json office-test-package/; fi
           mkdir -p office-test-package/apps/api office-test-package/apps/web office-test-package/scripts
           cp scripts/preflight.mjs office-test-package/scripts/
           cp apps/api/package.json office-test-package/apps/api/
@@ -82,6 +87,8 @@ jobs:
           grep -Fx './apps/api/dist/index.js' office-test-archive-manifest.txt
           grep -Fx './apps/web/dist/index.html' office-test-archive-manifest.txt
           grep -Fx './scripts/preflight.mjs' office-test-archive-manifest.txt
+          grep -Fx './node_modules/express/package.json' office-test-archive-manifest.txt
+          grep -Fx './node_modules/mysql2/package.json' office-test-archive-manifest.txt
           if grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' office-test-archive-manifest.txt; then
             echo 'Data or secret file found in archive'
             exit 1
