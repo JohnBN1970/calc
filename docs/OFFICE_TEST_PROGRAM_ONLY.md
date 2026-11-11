@@ -21,3 +21,14 @@ De optionele, read-only preflight `node scripts/office-test-program-only-preflig
 5. Test anoniem/onbevoegd/replay/logout, API/assets/refresh, geïsoleerde MySQL, rollback. Rapporteren met runlinks en feitelijke Office-testbewijzen.
 
 **Geen merge, databasewijziging, deploy, DNS-verandering of omschakeling van bestaande Calc-origin zonder separate go/no-go.**
+
+## Geverifieerde blockers uit de broncode
+- `apps/api/src/index.ts` op main verwerkt nu uitsluitend de v1-launch met een verplicht numeriek `project_id`, `calculation_id` en `actor_id`. Dit kan nog geen nieuwe verkoopkans vóór projectvorming openen.
+- `apps/api/src/officeGrantClient.ts` vereist de vaste oude `/api/workbench/v1/calculation-grants/validate`-route en positieve project-ID; de CRM-first draft-grant uit brebo-office PR #1777 is nog niet compatibel. De preflightcontrole bewijst dus alleen de configuratie-intentie, niet dat de bestaande API het CRM-first contract kan uitvoeren.
+- Calc PR #307 levert alleen de v2-tokenbasis; `/api/launch/consume` is daarin expliciet nog niet gekoppeld.
+- De UI gebruikt `import.meta.env.BASE_URL` voor de berekende API-prefix; de Node-server heeft een optionele `CALC_BASE_PATH`. De nested Office-test route is toegevoegd aan prefix-regressietests, maar nog niet live bewezen.
+- Een bestaand afzonderlijk Calc-applicatieproces onder een Hostinger-root is **geen** bewijs voor een same-origin proxy of voor `/office-test/calc-app`.
+- De nieuwe, lege opslag moet afzonderlijk worden ingericht en mag de bestaande Calc-database of de Office-test-CRM-database niet overschrijven.
+
+### Vrijgavecriteria
+**NO-GO totdat** het CRM-first launch-consume/Office-grantcontract daadwerkelijk is geïmplementeerd, de actieve Office-test router/proxy is bevestigd, een geïsoleerde lege testdatastore werkt en de volledige ingelogde gebruikersketen door echte HTTP-/databasetests is geverifieerd.
