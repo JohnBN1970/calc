@@ -146,6 +146,11 @@ jobs:
           status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data "$payload" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
           test "$status" = '503' || { echo "Unverified projectless DB must be blocked before any write: $status"; exit 1; }
           echo "CALC_CRM_FIRST_UNVERIFIED_SCHEMA=BLOCKED"
+          draft_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/crm-draft)
+          test "$draft_status" = '401' || { echo "Unauthenticated CRM draft GET must reject: $draft_status"; exit 1; }
+          append_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{"description":"test"}' http://127.0.0.1:39991/office-test/calc-app/api/crm-draft/lines)
+          test "$append_status" = '401' || { echo "Unauthenticated CRM draft write must reject: $append_status"; exit 1; }
+          echo "CALC_CRM_DRAFT_ANONYMOUS_ACCESS=DENIED"
           echo "CALC_OFFICE_TEST_PACKAGE_RUNTIME_SMOKE=PASS"
           echo "DATABASE=NOT_CONNECTED_OR_MIGRATED"
           echo "HOSTINGER=NOT_DEPLOYED"
