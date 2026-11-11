@@ -58,6 +58,7 @@ jobs:
           test -f apps/api/dist/index.js
           test -f apps/web/dist/index.html
           test -f startup.js
+          test -f scripts/preflight.mjs
           grep -Fq '/office-test/calc-app/assets/' apps/web/dist/index.html
           if grep -Eq '(src|href)="/assets/' apps/web/dist/index.html; then
             echo 'Root-relative asset path is unsafe for Office-test'
@@ -65,7 +66,8 @@ jobs:
           fi
           mkdir -p office-test-package
           cp startup.js package.json office-test-package/
-          mkdir -p office-test-package/apps/api office-test-package/apps/web
+          mkdir -p office-test-package/apps/api office-test-package/apps/web office-test-package/scripts
+          cp scripts/preflight.mjs office-test-package/scripts/
           cp apps/api/package.json office-test-package/apps/api/
           cp apps/web/package.json office-test-package/apps/web/
           cp -R apps/api/dist office-test-package/apps/api/dist
@@ -79,6 +81,7 @@ jobs:
           tar -tzf calc-office-test-program-only.tgz > office-test-archive-manifest.txt
           grep -Fx './apps/api/dist/index.js' office-test-archive-manifest.txt
           grep -Fx './apps/web/dist/index.html' office-test-archive-manifest.txt
+          grep -Fx './scripts/preflight.mjs' office-test-archive-manifest.txt
           if grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' office-test-archive-manifest.txt; then
             echo 'Data or secret file found in archive'
             exit 1
