@@ -46,7 +46,7 @@ jobs:
           cp -R apps/web/dist calc-hostinger-node/apps/web/
           cp -a node_modules calc-hostinger-node/
           if [ -f package-lock.json ]; then cp package-lock.json calc-hostinger-node/; fi
-          if find calc-hostinger-node -type f | grep -E '(\\.env($|\\.)|\\.sql$|\\.sqlite$|\\.pem$|\\.key$)' ; then
+          if find calc-hostinger-node -type f | grep -E '([.]env($|[.])|[.]sql$|[.]sqlite$|[.]pem$|[.]key$)' ; then
             echo 'Secrets or database files detected in isolated package'
             exit 1
           fi
@@ -56,7 +56,7 @@ jobs:
           grep -Fx 'apps/api/dist/index.js' calc-hostinger-node-manifest.txt
           grep -Fx 'apps/web/dist/index.html' calc-hostinger-node-manifest.txt
           grep -Fx 'node_modules/express/package.json' calc-hostinger-node-manifest.txt
-          if grep -E '(\\.env($|\\.)|\\.sql$|\\.sqlite$|\\.pem$|\\.key$)' calc-hostinger-node-manifest.txt; then
+          if grep -E '([.]env($|[.])|[.]sql$|[.]sqlite$|[.]pem$|[.]key$)' calc-hostinger-node-manifest.txt; then
             echo 'Sensitive content found in archive manifest'
             exit 1
           fi
