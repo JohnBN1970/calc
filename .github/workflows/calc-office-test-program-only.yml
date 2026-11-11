@@ -97,6 +97,36 @@ jobs:
             office-test-archive-manifest.txt
           retention-days: 7
           if-no-files-found: error
+      - name: Read-only Office-test hosting gate
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOST:-}" || -z "${PORT:-}" || -z "${USER:-}" || -z "${KEY:-}" ]]; then
+            echo "CALC_HOST_AUDIT=NOT_AVAILABLE_NO_CREDENTIALS"
+            echo "CALC_HOSTING_READY=NOT_VERIFIED"
+            exit 0
+          fi
+          [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "CALC_HOST_AUDIT=INVALID_PORT"; exit 1; }
+          install -d -m 700 ~/.ssh
+          keyfile=$(mktemp ~/.ssh/.calc_audit_XXXXXX)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i "$keyfile" -p "$PORT" "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          base="$HOME/domains/brebobv.nl"
+          if [ -f "$base/public_html/office-test/index.php" ]; then echo "OFFICE_TEST_ROUTER=FOUND"; else echo "OFFICE_TEST_ROUTER=MISSING"; fi
+          if [ -f "$base/public_html/office-test/.htaccess" ]; then echo "OFFICE_TEST_REWRITE=FOUND"; else echo "OFFICE_TEST_REWRITE=MISSING"; fi
+          if [ -d "$base/public_html/office-test/calc-app" ]; then echo "CALC_SAME_ORIGIN_RUNTIME=FOUND"; else echo "CALC_SAME_ORIGIN_RUNTIME=NOT_FOUND"; fi
+          if [ -f "$base/public_html/office-test/index.php" ] && grep -Fq '/calc-app' "$base/public_html/office-test/index.php"; then echo "CALC_ROUTER_REFERENCE=FOUND"; else echo "CALC_ROUTER_REFERENCE=NOT_FOUND"; fi
+          echo "HOST_AUDIT=READ_ONLY_COMPLETE"
+          REMOTE
+          echo "CALC_HOSTING_READY=NOT_VERIFIED_BY_INVENTORY_ALONE"
       - name: Scope statement
         run: |
           echo "PROGRAM_ONLY=YES"
