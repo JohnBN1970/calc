@@ -455,7 +455,8 @@ app.post("/api/launch/consume", async (req, res) => {
       status: "ok",
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
-      project: officeContext.project
+      project: officeContext.project,
+      workbenchPath: calcBasePath + (launch.v === 2 ? "/crm-draft" : "/")
     });
   } catch (error) {
     await connection.rollback();
