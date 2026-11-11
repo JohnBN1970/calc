@@ -150,6 +150,14 @@ jobs:
           payload=$(printf '{"token":"%s"}' "$token")
           status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data "$payload" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
           test "$status" = '503' || { echo "Unverified projectless DB must be blocked before any write: $status"; exit 1; }
+          form_data="token=$token"
+          foreign_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Origin: https://malicious.invalid' -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$foreign_status" = '403' || { echo "Foreign-origin browser launch must be forbidden: $foreign_status"; exit 1; }
+          missing_origin_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$missing_origin_status" = '403' || { echo "Origin-less browser launch must be forbidden: $missing_origin_status"; exit 1; }
+          valid_origin_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Origin: https://brebobv.nl' -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$valid_origin_status" = '503' || { echo "Isolated DB not verified, browser launch must fail closed: $valid_origin_status"; exit 1; }
+          echo "CALC_CRM_BROWSER_ORIGIN_ENFORCEMENT=PASS"
           echo "CALC_CRM_FIRST_UNVERIFIED_SCHEMA=BLOCKED"
           draft_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/crm-draft)
           test "$draft_status" = '401' || { echo "Unauthenticated CRM draft GET must reject: $draft_status"; exit 1; }
