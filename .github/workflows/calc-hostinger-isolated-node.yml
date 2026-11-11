@@ -1,0 +1,115 @@
+name: Calc Hostinger isolated Node website build
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/calc-hostinger-isolated-node.yml'
+      - 'apps/api/src/**'
+      - 'apps/web/src/**'
+      - 'apps/web/vite.config.ts'
+      - 'startup.js'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-isolated-website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build for separate Hostinger Node website without historical data
+        env:
+          VITE_CALC_BASE_PATH: /
+        run: |
+          set -euo pipefail
+          npm install
+          npm run typecheck
+          npm run test --workspace=@brebo/calc-api
+          npm run build
+          grep -Fq '/assets/' apps/web/dist/index.html
+          npm prune --omit=dev
+          npm ls --omit=dev
+      - name: Assemble deployment files for a new empty website only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p calc-hostinger-node/apps/api calc-hostinger-node/apps/web calc-hostinger-node/scripts
+          cp startup.js package.json calc-hostinger-node/
+          test -f apps/api/dist/startup.js
+          test -f apps/api/dist/index.js
+          cp apps/api/package.json calc-hostinger-node/apps/api/
+          cp apps/web/package.json calc-hostinger-node/apps/web/
+          cp scripts/preflight.mjs calc-hostinger-node/scripts/
+          cp -R apps/api/dist calc-hostinger-node/apps/api/
+          cp -R apps/web/dist calc-hostinger-node/apps/web/
+          cp -a node_modules calc-hostinger-node/
+          if [ -f package-lock.json ]; then cp package-lock.json calc-hostinger-node/; fi
+          if find calc-hostinger-node -type f | grep -E '(\\.env($|\\.)|\\.sql$|\\.sqlite$|\\.pem$|\\.key$)' ; then
+            echo 'Secrets or database files detected in isolated package'
+            exit 1
+          fi
+          (cd calc-hostinger-node && find . -type f -print0 | sort -z | xargs -0 sha256sum) > calc-hostinger-node.sha256
+          (cd calc-hostinger-node && zip -qr ../calc-hostinger-node-program-only.zip .)
+          unzip -Z1 calc-hostinger-node-program-only.zip > calc-hostinger-node-manifest.txt
+          grep -Fx 'apps/api/dist/index.js' calc-hostinger-node-manifest.txt
+          grep -Fx 'apps/web/dist/index.html' calc-hostinger-node-manifest.txt
+          grep -Fx 'node_modules/express/package.json' calc-hostinger-node-manifest.txt
+          if grep -E '(\\.env($|\\.)|\\.sql$|\\.sqlite$|\\.pem$|\\.key$)' calc-hostinger-node-manifest.txt; then
+            echo 'Sensitive content found in archive manifest'
+            exit 1
+          fi
+      - name: Test isolated Node root (no DB, no deployment)
+        shell: bash
+        env:
+          NODE_ENV: production
+          PORT: '39992'
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '1'
+          MYSQL_DATABASE: isolated_calc_ci_no_connection
+          MYSQL_USER: ci_no_db_user
+          MYSQL_PASSWORD: ci-only-placeholder-000000000000000000
+          OFFICE_API_BASE_URL: https://brebobv.nl/office-test
+          BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
+          CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
+          CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/api/workbench/v1/calculation-grants/validate
+        run: |
+          set -euo pipefail
+          node calc-hostinger-node/apps/api/dist/index.js > /tmp/calc-hostinger-node-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 1 http://127.0.0.1:39992/ >/tmp/calc-hostinger-shell.html; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat /tmp/calc-hostinger-node-smoke.log
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          grep -Fq '/assets/' /tmp/calc-hostinger-shell.html
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"widthMm":100,"heightMm":100}' http://127.0.0.1:39992/api/takeoff/preview)
+          test "$status" = 401 || { echo "Unauthorized API unexpectedly returned $status"; exit 1; }
+          echo "CALC_ISOLATED_NODE_WEBSITE_PACKAGE=PASS"
+          echo "EXISTING_CALCULATIONS=NOT_COPIED"
+          echo "HOSTINGER_DEPLOYMENT=NOT_PERFORMED"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calc-hostinger-isolated-node-program-only
+          path: |
+            calc-hostinger-node-program-only.zip
+            calc-hostinger-node.sha256
+            calc-hostinger-node-manifest.txt
+          retention-days: 7
+          if-no-files-found: error
+      - name: Release boundary
+        run: |
+          echo 'Node website zip is for creating a NEW, ISOLATED Hostinger website.'
+          echo 'Do not overwrite the existing brebobv.nl PHP website or historical Calc origin.'
+          echo 'No CRM-first endpoint, database, credentials, or production enablement are included.'
