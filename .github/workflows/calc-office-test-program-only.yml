@@ -45,6 +45,7 @@ jobs:
           cp startup.js package.json office-test-package/
           mkdir -p office-test-package/apps/api office-test-package/apps/web
           cp apps/api/package.json office-test-package/apps/api/
+          cp apps/web/package.json office-test-package/apps/web/
           cp -R apps/api/dist office-test-package/apps/api/dist
           cp -R apps/web/dist office-test-package/apps/web/dist
           if find office-test-package -type f | grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' ; then
