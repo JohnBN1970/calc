@@ -1,0 +1,33 @@
+name: Calc Office-test program-only guard
+on:
+  pull_request:
+    paths:
+      - 'scripts/office-test-program-only-preflight*'
+      - '.github/workflows/calc-office-test-program-only.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test fail-closed Office-test configuration
+        run: node --test scripts/office-test-program-only-preflight.test.mjs
+      - name: Reject unsafe default invocation
+        shell: bash
+        run: |
+          if node scripts/office-test-program-only-preflight.mjs; then
+            echo "Unsafe default launch was not blocked"
+            exit 1
+          fi
+          echo "Office-test guard rejects missing explicit configuration"
+      - name: Scope statement
+        run: |
+          echo "PROGRAM_ONLY=YES"
+          echo "EXISTING_CALCULATIONS_NOT_IMPORTED=YES"
+          echo "NO_DATABASE_MIGRATION_OR_DEPLOYMENT=YES"
