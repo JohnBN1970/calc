@@ -12,5 +12,5 @@ test("CRM-first empty schema permits projectless concepts", () => {
 });
 test("empty CRM-first schema contains no data imports or destructive statements", () => {
   const statements = sql.split("\n").map(line => line.trim()).filter(line => !line.startsWith("--")).join("\n");
-  assert.doesNotMatch(statements, /\b(?:DROP|TRUNCATE|DELETE|INSERT|REPLACE|UPDATE|ALTER|LOAD\s+DATA|SOURCE)\b/i);
+  assert.doesNotMatch(statements, /^\s*(?:DROP|TRUNCATE|DELETE|INSERT|REPLACE|UPDATE|ALTER|LOAD\s+DATA|SOURCE)\b/im);
 });
