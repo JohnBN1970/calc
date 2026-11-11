@@ -32,3 +32,17 @@ De optionele, read-only preflight `node scripts/office-test-program-only-preflig
 
 ### Vrijgavecriteria
 **NO-GO totdat** het CRM-first launch-consume/Office-grantcontract daadwerkelijk is geïmplementeerd, de actieve Office-test router/proxy is bevestigd, een geïsoleerde lege testdatastore werkt en de volledige ingelogde gebruikersketen door echte HTTP-/databasetests is geverifieerd.
+
+## Hostinger hosting-besluit na serveraudit (11 november 2026)
+
+De productie-Office-test PHP-router op `brebobv.nl` bestaat en `/office-test/calc-app/` retourneert 404. Node.js 22 is beschikbaar als binaire runtime maar er is **geen bestaande Calc-appmount** of ProxyPass/Passenger-verwijzing in de gecontroleerde Office-rewritebestanden. Bewijs: [BREBO Office run 42981004440](https://github.com/JohnBN1970/brebo-office/actions/runs/42981004440).
+
+Hostingers actuele documentatie schrijft voor dat Node-webapps op Business/Cloud als **afzonderlijke website** worden ingericht, en dat een PHP-website niet in-place naar Node wordt omgezet. Een subdomein moet een aparte website zijn, geen subfolder. Daarom kan de aanwezige Node-binary **niet** als bewijs worden beschouwd dat de PHP-Office-origin een veilige werkende Node-mount ondersteunt. Zie https://www.hostinger.com/support/how-to-deploy-a-nodejs-website-in-hostinger/
+
+### Tweede, onafhankelijke kandidaat
+`.github/workflows/calc-hostinger-isolated-node.yml` bouwt een afzonderlijk, reviewbaar ZIP voor een **nieuwe** Hostinger-Node-testwebsite, op rootprefix `/` en met de bestaande Calc-appcode. Dit verschilt van het Office-prefix-pakket; het creëert **geen** website, database, autorisatie, nieuwe DNS of Hostinger-deployment. Het ZIP bevat geen historische calculaties.
+
+Nog te regelen in Hostinger hPanel: een afzonderlijke nieuwe testwebsite (alleen als een beschikbare websiteplek/plan dit toestaat), bijbehorende testorigin en strikt geïsoleerde omgevingsinstellingen. Gebruik nooit `brebobv.nl` als Node-websitebestemming: dat zou de bestaande PHP Office-site vervangen. Hergebruik ook niet de bestaande oude Calc-origin als testdoel.
+
+### Gebruikerservaring
+Een nieuwe testorigin betekent nog **niet** eenzelfde adresbalk als `/office-test/calc-app`. Een Office-navigatie naar een afzonderlijke Calc-werkbank kan pas na veilige CRM-first one-time launch, revocation en E2E getest worden. Echte same-origin toegang vereist een afzonderlijk aantoonbaar ondersteunde reverse proxy of latere hostingarchitectuur. Geen onveilige iframe/cookie-omweg en geen stille aanpassing van gebruikersrechten.
