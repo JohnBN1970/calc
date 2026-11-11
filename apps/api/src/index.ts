@@ -328,6 +328,14 @@ app.post("/api/launch/consume", async (req, res) => {
     return;
   }
 
+  // A projectless draft requires the isolated Calc schema to support nullable
+  // office_project_id and the CRM-owned calculation binding. Do not attempt a
+  // write with unverified schema, even when the v2 signature is valid.
+  if (launch.v === 2 && process.env.CALC_CRM_FIRST_SCHEMA_VERIFIED !== "enabled") {
+    res.status(503).json({ error: "De CRM-calculatiedatabase is nog niet gevalideerd." });
+    return;
+  }
+
   // Under central enforcement, reject a missing or revoked Office grant before
   // creating/updating any local calculation or issuing a Calc session cookie.
   if (process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
