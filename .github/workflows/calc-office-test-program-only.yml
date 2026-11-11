@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'scripts/office-test-program-only-preflight*'
+      - 'scripts/office-test-crm-schema.test.mjs'
+      - 'database/office_test_crm_first_empty_schema.sql'
+      - 'apps/api/src/crmDraftLine*'
+      - 'apps/api/src/crmFirst*'
+      - 'apps/web/src/crmDraft.tsx'
       - 'apps/api/src/calcBasePath.test.ts'
       - '.github/workflows/calc-office-test-program-only.yml'
   workflow_dispatch:
@@ -18,7 +23,7 @@ jobs:
         with:
           node-version: '22'
       - name: Test fail-closed Office-test configuration
-        run: node --test scripts/office-test-program-only-preflight.test.mjs
+        run: node --test scripts/office-test-program-only-preflight.test.mjs scripts/office-test-crm-schema.test.mjs
       - name: Reject unsafe default invocation
         shell: bash
         run: |
