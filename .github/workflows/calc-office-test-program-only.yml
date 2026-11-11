@@ -107,8 +107,16 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${HOST:-}" || -z "${PORT:-}" || -z "${USER:-}" || -z "${KEY:-}" ]]; then
+            echo "::warning title=Office-test hosting not verified::SSH deployment credentials are not available in this repository. The build is green but no Hostinger check was performed."
             echo "CALC_HOST_AUDIT=NOT_AVAILABLE_NO_CREDENTIALS"
             echo "CALC_HOSTING_READY=NOT_VERIFIED"
+            {
+              echo "## Office-test Calc release readiness"
+              echo "- Application tests and package: verified in this job"
+              echo "- Hostinger router/runtime: **NOT VERIFIED (missing SSH credentials)**"
+              echo "- CRM-first launch: **NOT VERIFIED**"
+              echo "- Deployment and data migration: **NOT PERFORMED**"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "CALC_HOST_AUDIT=INVALID_PORT"; exit 1; }
@@ -127,6 +135,12 @@ jobs:
           echo "HOST_AUDIT=READ_ONLY_COMPLETE"
           REMOTE
           echo "CALC_HOSTING_READY=NOT_VERIFIED_BY_INVENTORY_ALONE"
+          {
+            echo "## Office-test Calc release readiness"
+            echo "- Hostinger inventory: checked, but proxy and runtime operation remain **unverified**"
+            echo "- CRM-first authorization and full E2E: **NOT VERIFIED**"
+            echo "- Deployment and data migration: **NOT PERFORMED**"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Scope statement
         run: |
           echo "PROGRAM_ONLY=YES"
