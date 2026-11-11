@@ -6,6 +6,7 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { isOfficeGrantActive } from "./officeGrantClient.js";
+import { crmFirstRuntimeReady } from "./crmFirstRuntimeGuard.js";
 import { parseIndependentOfficeLaunch, type IndependentOfficeLaunch } from "./independentOfficeLaunch.js";
 import { parseIndependentOfficeSession, type IndependentOfficeSession } from "./independentOfficeSession.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
@@ -331,8 +332,8 @@ app.post("/api/launch/consume", async (req, res) => {
   // A projectless draft requires the isolated Calc schema to support nullable
   // office_project_id and the CRM-owned calculation binding. Do not attempt a
   // write with unverified schema, even when the v2 signature is valid.
-  if (launch.v === 2 && process.env.CALC_CRM_FIRST_SCHEMA_VERIFIED !== "enabled") {
-    res.status(503).json({ error: "De CRM-calculatiedatabase is nog niet gevalideerd." });
+  if (launch.v === 2 && !crmFirstRuntimeReady(process.env)) {
+    res.status(503).json({ error: "De geïsoleerde CRM-calculatieomgeving is nog niet veilig geconfigureerd." });
     return;
   }
 
