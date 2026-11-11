@@ -213,10 +213,16 @@ function sessionFromRequest(req: Request): SessionPayload | null {
   }
 }
 
-function requireSession(req: Request, res: Response): SessionPayload | null {
+function requireSession(req: Request, res: Response): LegacySessionPayload | null {
   const session = sessionFromRequest(req);
   if (!session) {
     res.status(401).json({ error: "Open deze calculatie vanuit BREBO Office." });
+    return null;
+  }
+  // Project-bound workbench APIs have not yet been verified for projectless
+  // drafts. Refuse rather than silently invoking legacy project-only services.
+  if (session.v === 2) {
+    res.status(409).json({ error: "De CRM-calculatiewerkbank is nog niet volledig geactiveerd." });
     return null;
   }
   return session;
@@ -397,15 +403,25 @@ app.post("/api/launch/consume", async (req, res) => {
     await connection.commit();
 
     const now = Math.floor(Date.now() / 1000);
-    const token = createSessionToken({
-      v: launch.v,
-      calculationId: localCalculationId,
-      officeCalculationId: launch.calculation_id,
-      officeProjectId: launch.project_id,
-      actorId: launch.actor_id,
-      ...(launch.grant_ref ? { grantRef: launch.grant_ref } : {}),
-      exp: now + SESSION_SECONDS
-    });
+    const token = launch.v === 2
+      ? createSessionToken({
+          v: 2,
+          calculationId: localCalculationId,
+          officeCalculationId: launch.calculation_id,
+          officeProjectId: launch.project_id,
+          actorId: launch.actor_id,
+          grantRef: launch.grant_ref,
+          exp: now + SESSION_SECONDS
+        })
+      : createSessionToken({
+          v: 1,
+          calculationId: localCalculationId,
+          officeCalculationId: launch.calculation_id,
+          officeProjectId: launch.project_id,
+          actorId: launch.actor_id,
+          ...(launch.grant_ref ? { grantRef: launch.grant_ref } : {}),
+          exp: now + SESSION_SECONDS
+        });
     res.setHeader("Set-Cookie", sessionCookie(token));
     res.json({
       status: "ok",
