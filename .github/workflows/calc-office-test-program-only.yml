@@ -27,6 +27,21 @@ jobs:
             exit 1
           fi
           echo "Office-test guard rejects missing explicit configuration"
+      - name: Verify isolated test configuration without connecting to host
+        env:
+          CALC_DEPLOY_SCOPE: office-test-program-only
+          CALC_BASE_PATH: /office-test/calc-app
+          VITE_CALC_BASE_PATH: /office-test/calc-app
+          CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          NODE_ENV: production
+          CALC_OFFICE_TEST_DATABASE: isolated_calc_ci_no_connection
+          MYSQL_DATABASE: isolated_calc_ci_no_connection
+          OFFICE_API_BASE_URL: https://brebobv.nl/office-test
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/office-test/calc/grants/validate
+          MYSQL_PASSWORD: ci-only-placeholder-000000000000000000
+          BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
+          CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
+        run: node scripts/office-test-program-only-preflight.mjs
       - name: Combined Calc application regression and build
         run: |
           npm install
@@ -52,13 +67,22 @@ jobs:
             echo 'Unexpected sensitive or data file in staging package'
             exit 1
           fi
+          (cd office-test-package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > office-test-package.sha256
           tar -czf calc-office-test-program-only.tgz -C office-test-package .
+          tar -tzf calc-office-test-program-only.tgz | grep -q './apps/api/dist/index.js'
+          tar -tzf calc-office-test-program-only.tgz | grep -q './apps/web/dist/index.html'
+          if tar -tzf calc-office-test-program-only.tgz | grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)'; then
+            echo 'Data or secret file found in archive'
+            exit 1
+          fi
           echo 'Staging artifact assembled: code/build only; no deployment or data'
       - name: Upload reviewable staging artifact
         uses: actions/upload-artifact@v4
         with:
           name: calc-office-test-program-only
-          path: calc-office-test-program-only.tgz
+          path: |
+            calc-office-test-program-only.tgz
+            office-test-package.sha256
           retention-days: 7
           if-no-files-found: error
       - name: Scope statement
