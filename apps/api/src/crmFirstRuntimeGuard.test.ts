@@ -17,6 +17,16 @@ const valid = {
 test("isolated CRM-first launch runtime configuration can pass", () => {
   assert.equal(crmFirstRuntimeReady(valid), true);
 });
+test("Office-test grant endpoint is accepted without unverified root rewrite", () => {
+  assert.equal(crmFirstRuntimeReady({
+    ...valid,
+    OFFICE_CALC_GRANT_VALIDATION_URL: "https://brebobv.nl/office-test/api/workbench/v1/calculation-grants/validate"
+  }), true);
+  assert.equal(crmFirstRuntimeReady({
+    ...valid,
+    OFFICE_CALC_GRANT_VALIDATION_URL: "https://brebobv.nl/office-test/api/workbench/v1/calculation-grants/validate?skip=true"
+  }), false);
+});
 test("production and restore databases can never be used for CRM-first", () => {
   for (const database of ["u213420663_calc", "u213420663_calc_restore", "u213420663_office_test"]) {
     assert.equal(crmFirstRuntimeReady({ ...valid, CALC_OFFICE_TEST_DATABASE: database, MYSQL_DATABASE: database }), false);
