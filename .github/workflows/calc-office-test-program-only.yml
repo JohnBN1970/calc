@@ -94,6 +94,49 @@ jobs:
             exit 1
           fi
           echo 'Staging artifact assembled: code/build only; no deployment or data'
+      - name: Smoke-test packaged Node runtime without database connection
+        shell: bash
+        env:
+          NODE_ENV: production
+          PORT: '39991'
+          CALC_BASE_PATH: /office-test/calc-app
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '1'
+          MYSQL_DATABASE: isolated_calc_ci_no_connection
+          MYSQL_USER: ci_no_db_user
+          MYSQL_PASSWORD: ci-only-placeholder-000000000000000000
+          OFFICE_API_BASE_URL: https://brebobv.nl/office-test
+          BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
+          CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
+          CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/api/workbench/v1/calculation-grants/validate
+        run: |
+          set -euo pipefail
+          node office-test-package/apps/api/dist/index.js > /tmp/calc-package-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 1 http://127.0.0.1:39991/office-test/calc-app/ > /tmp/calc-office-test-shell.html; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'Calc Node process stopped before serving Office-test'
+              cat /tmp/calc-package-smoke.log
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          grep -Fq '/office-test/calc-app/assets/' /tmp/calc-office-test-shell.html
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{"widthMm":100,"heightMm":100}' http://127.0.0.1:39991/office-test/calc-app/api/takeoff/preview)
+          test "$status" = '401' || { echo "Unauthenticated API must reject: $status"; exit 1; }
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/not-a-route)
+          test "$status" = '401' || { echo "Unknown API routes must not bypass Office grant checks: $status"; exit 1; }
+          echo "CALC_OFFICE_TEST_PACKAGE_RUNTIME_SMOKE=PASS"
+          echo "DATABASE=NOT_CONNECTED_OR_MIGRATED"
+          echo "HOSTINGER=NOT_DEPLOYED"
       - name: Upload reviewable staging artifact
         uses: actions/upload-artifact@v4
         with:
