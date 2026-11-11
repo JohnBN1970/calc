@@ -43,6 +43,8 @@ jobs:
           CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
         run: node scripts/office-test-program-only-preflight.mjs
       - name: Combined Calc application regression and build
+        env:
+          VITE_CALC_BASE_PATH: /office-test/calc-app
         run: |
           npm install
           npm run typecheck
@@ -56,6 +58,11 @@ jobs:
           test -f apps/api/dist/index.js
           test -f apps/web/dist/index.html
           test -f startup.js
+          grep -Fq '/office-test/calc-app/assets/' apps/web/dist/index.html
+          if grep -Eq '(src|href)="/assets/' apps/web/dist/index.html; then
+            echo 'Root-relative asset path is unsafe for Office-test'
+            exit 1
+          fi
           mkdir -p office-test-package
           cp startup.js package.json office-test-package/
           mkdir -p office-test-package/apps/api office-test-package/apps/web
