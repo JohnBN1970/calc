@@ -37,7 +37,8 @@ export async function isOfficeGrantActive(
     return false;
   }
   if (url.protocol !== "https:" || url.username || url.password
-    || url.search || url.hash || url.pathname !== GRANT_PATH) {
+    || url.search || url.hash
+    || ![GRANT_PATH, "/office-test" + GRANT_PATH].includes(url.pathname)) {
     return false;
   }
   const body = JSON.stringify(grant);
