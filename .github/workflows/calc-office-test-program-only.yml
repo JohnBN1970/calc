@@ -109,6 +109,7 @@ jobs:
           BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
           CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
           CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          CALC_CRM_FIRST_LAUNCH_ENABLED: enabled
           OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/api/workbench/v1/calculation-grants/validate
         run: |
           set -euo pipefail
@@ -134,6 +135,17 @@ jobs:
           test "$status" = '401' || { echo "Unauthenticated API must reject: $status"; exit 1; }
           status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/not-a-route)
           test "$status" = '401' || { echo "Unknown API routes must not bypass Office grant checks: $status"; exit 1; }
+          token=$(node --input-type=module -e '
+            import { createHmac, randomBytes } from "node:crypto";
+            const payload={v:2,grant_ref:"a".repeat(64),calculation_id:42,project_id:null,actor_id:"office-test-user",exp:Math.floor(Date.now()/1000)+60,nonce:randomBytes(16).toString("hex")};
+            const encoded=Buffer.from(JSON.stringify(payload)).toString("base64url");
+            const signature=createHmac("sha256",process.env.BREBO_CALC_SHARED_SECRET).update(encoded).digest("hex");
+            process.stdout.write(encoded+"."+signature);
+          ')
+          payload=$(printf '{"token":"%s"}' "$token")
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data "$payload" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$status" = '503' || { echo "Unverified projectless DB must be blocked before any write: $status"; exit 1; }
+          echo "CALC_CRM_FIRST_UNVERIFIED_SCHEMA=BLOCKED"
           echo "CALC_OFFICE_TEST_PACKAGE_RUNTIME_SMOKE=PASS"
           echo "DATABASE=NOT_CONNECTED_OR_MIGRATED"
           echo "HOSTINGER=NOT_DEPLOYED"
