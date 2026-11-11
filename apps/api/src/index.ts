@@ -2984,6 +2984,12 @@ app.use((error: unknown, _req: Request, res: Response, _next: express.NextFuncti
   res.status(500).json({ error: "Interne fout in BREBO Calc." });
 });
 
-app.listen(config.port, () => {
+// CALC_BIND_HOST=127.0.0.1 is intended for isolated Hostinger loopback
+// verification only. Normal Node websites retain their default listener.
+const bindHost = process.env.CALC_BIND_HOST;
+if (bindHost && bindHost !== "127.0.0.1" && bindHost !== "::1") {
+  throw new Error("Unsupported CALC_BIND_HOST override");
+}
+app.listen(config.port, bindHost ?? "0.0.0.0", () => {
   console.log(`BREBO Calc API listening on port ${config.port}`);
 });
