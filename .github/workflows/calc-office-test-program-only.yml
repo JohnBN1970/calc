@@ -47,7 +47,7 @@ jobs:
           cp apps/api/package.json office-test-package/apps/api/
           cp -R apps/api/dist office-test-package/apps/api/dist
           cp -R apps/web/dist office-test-package/apps/web/dist
-          if find office-test-package -type f \\( -name '.env' -o -name '*.sql' -o -name '*.sqlite' -o -name '*.pem' -o -name '*.key' \\) | grep -q .; then
+          if find office-test-package -type f | grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' ; then
             echo 'Unexpected sensitive or data file in staging package'
             exit 1
           fi
