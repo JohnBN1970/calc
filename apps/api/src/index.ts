@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { isOfficeGrantActive } from "./officeGrantClient.js";
 import { crmFirstRuntimeReady } from "./crmFirstRuntimeGuard.js";
 import { crmFirstColumnsReady, type CrmSchemaColumn } from "./crmFirstSchemaGuard.js";
+import { parseCrmDraftLine } from "./crmDraftLine.js";
 import { parseIndependentOfficeLaunch, type IndependentOfficeLaunch } from "./independentOfficeLaunch.js";
 import { parseIndependentOfficeSession, type IndependentOfficeSession } from "./independentOfficeSession.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
@@ -459,6 +460,125 @@ app.post("/api/launch/consume", async (req, res) => {
   } catch (error) {
     await connection.rollback();
     throw error;
+  } finally {
+    connection.release();
+  }
+});
+
+type CrmDraftBinding = RowDataPacket & { version_id: number; version_no: number; calculation_id: number; title: string };
+type CrmDraftLineRow = RowDataPacket & {
+  id: number; sort_order: number; description: string; unit: string;
+  quantity: number; material_unit_cost: number; labour_unit_cost: number;
+};
+
+function requireCrmDraftSession(req: Request, res: Response): IndependentOfficeSession | null {
+  if (!crmFirstRuntimeReady(process.env)) {
+    res.status(503).json({ error: "De CRM-calculatiewerkbank is nog niet geactiveerd." });
+    return null;
+  }
+  const session = sessionFromRequest(req);
+  if (!session || session.v !== 2 || session.officeProjectId !== null) {
+    res.status(401).json({ error: "Open een nieuwe calculatie vanuit een bevoegde CRM-verkoopkans." });
+    return null;
+  }
+  return session;
+}
+
+async function crmDraftBinding(executor: { execute: typeof db.execute }, session: IndependentOfficeSession): Promise<CrmDraftBinding | null> {
+  const [rows] = await executor.execute<CrmDraftBinding[]>(
+    `SELECT c.id AS calculation_id, c.title, v.id AS version_id, v.version_no
+      FROM calculations AS c JOIN calculation_versions AS v ON v.calculation_id=c.id
+      WHERE c.id=? AND c.office_calculation_id=? AND c.office_project_id IS NULL
+        AND c.status='draft' AND v.status='draft'
+      ORDER BY v.version_no DESC LIMIT 1`,
+    [session.calculationId, session.officeCalculationId]
+  );
+  return rows[0] ?? null;
+}
+
+app.get("/api/crm-draft", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, private");
+  const session = requireCrmDraftSession(req, res);
+  if (!session) return;
+  try {
+    const bound = await crmDraftBinding(db, session);
+    if (!bound) {
+      res.status(409).json({ error: "Deze CRM-conceptcalculatie is niet meer beschikbaar." });
+      return;
+    }
+    const [lines] = await db.execute<CrmDraftLineRow[]>(
+      `SELECT id, sort_order, description, unit, quantity, material_unit_cost, labour_unit_cost
+        FROM calculation_lines WHERE version_id=? ORDER BY sort_order, id`,
+      [bound.version_id]
+    );
+    res.json({
+      contract: "brebo-calc-crm-draft-v1",
+      calculationId: session.officeCalculationId,
+      title: bound.title,
+      version: bound.version_no,
+      lines
+    });
+  } catch {
+    res.status(503).json({ error: "De CRM-conceptcalculatie kon niet worden opgehaald." });
+  }
+});
+
+app.post("/api/crm-draft/lines", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, private");
+  const session = requireCrmDraftSession(req, res);
+  if (!session) return;
+  const fetchSite = req.headers["sec-fetch-site"];
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+    res.status(403).json({ error: "Ongeautoriseerde aanvraagbron." });
+    return;
+  }
+  if (req.headers.origin && req.headers.origin !== "https://" + req.headers.host) {
+    res.status(403).json({ error: "Ongeautoriseerde aanvraagbron." });
+    return;
+  }
+  const line = parseCrmDraftLine(req.body);
+  if (!line) {
+    res.status(400).json({ error: "De calculatieregel bevat ongeldige gegevens." });
+    return;
+  }
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [versions] = await connection.execute<CrmDraftBinding[]>(
+      `SELECT c.id AS calculation_id, c.title, v.id AS version_id, v.version_no
+        FROM calculations AS c JOIN calculation_versions AS v ON v.calculation_id=c.id
+        WHERE c.id=? AND c.office_calculation_id=? AND c.office_project_id IS NULL
+          AND c.status='draft' AND v.status='draft'
+        ORDER BY v.version_no DESC LIMIT 1 FOR UPDATE`,
+      [session.calculationId, session.officeCalculationId]
+    );
+    const bound = versions[0];
+    if (!bound) {
+      await connection.rollback();
+      res.status(409).json({ error: "Deze CRM-conceptcalculatie is niet meer beschikbaar." });
+      return;
+    }
+    const [orderRows] = await connection.execute<RowDataPacket[]>(
+      "SELECT COALESCE(MAX(sort_order),0)+1 AS next_sort FROM calculation_lines WHERE version_id=?",
+      [bound.version_id]
+    );
+    const nextSort = Number(orderRows[0]?.next_sort ?? 1);
+    const [result] = await connection.execute<ResultSetHeader>(
+      `INSERT INTO calculation_lines
+        (version_id, parent_id, sort_order, line_type, description, unit, quantity, material_unit_cost, labour_unit_cost)
+       VALUES (?, NULL, ?, 'item', ?, ?, ?, ?, ?)`,
+      [bound.version_id, nextSort, line.description, line.unit, line.quantity, line.materialUnitCost, line.labourUnitCost]
+    );
+    await connection.commit();
+    res.status(201).json({
+      contract: "brebo-calc-crm-draft-line-v1",
+      id: result.insertId,
+      sort_order: nextSort,
+      ...line
+    });
+  } catch {
+    await connection.rollback();
+    res.status(503).json({ error: "De CRM-calculatieregel kon niet worden opgeslagen." });
   } finally {
     connection.release();
   }
