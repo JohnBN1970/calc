@@ -23,7 +23,10 @@ export function crmFirstRuntimeReady(env: NodeJS.ProcessEnv): boolean {
     if (officeUrl.protocol !== "https:" || validationUrl.protocol !== "https:"
       || officeUrl.username || officeUrl.password || validationUrl.username || validationUrl.password
       || validationUrl.search || validationUrl.hash
-      || validationUrl.pathname !== "/api/workbench/v1/calculation-grants/validate") return false;
+      || ![
+        "/api/workbench/v1/calculation-grants/validate",
+        "/office-test/api/workbench/v1/calculation-grants/validate"
+      ].includes(validationUrl.pathname)) return false;
   } catch {
     return false;
   }
