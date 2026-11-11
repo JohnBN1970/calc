@@ -69,9 +69,10 @@ jobs:
           fi
           (cd office-test-package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > office-test-package.sha256
           tar -czf calc-office-test-program-only.tgz -C office-test-package .
-          tar -tzf calc-office-test-program-only.tgz | grep -q './apps/api/dist/index.js'
-          tar -tzf calc-office-test-program-only.tgz | grep -q './apps/web/dist/index.html'
-          if tar -tzf calc-office-test-program-only.tgz | grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)'; then
+          tar -tzf calc-office-test-program-only.tgz > office-test-archive-manifest.txt
+          grep -Fx './apps/api/dist/index.js' office-test-archive-manifest.txt
+          grep -Fx './apps/web/dist/index.html' office-test-archive-manifest.txt
+          if grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' office-test-archive-manifest.txt; then
             echo 'Data or secret file found in archive'
             exit 1
           fi
@@ -83,6 +84,7 @@ jobs:
           path: |
             calc-office-test-program-only.tgz
             office-test-package.sha256
+            office-test-archive-manifest.txt
           retention-days: 7
           if-no-files-found: error
       - name: Scope statement
