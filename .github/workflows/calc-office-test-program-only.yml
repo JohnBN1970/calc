@@ -115,7 +115,7 @@ jobs:
           CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
           CALC_OFFICE_GRANT_ENFORCEMENT: enabled
           CALC_CRM_FIRST_LAUNCH_ENABLED: enabled
-          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/api/workbench/v1/calculation-grants/validate
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/office-test/api/workbench/v1/calculation-grants/validate
         run: |
           set -euo pipefail
           node office-test-package/apps/api/dist/index.js > /tmp/calc-package-smoke.log 2>&1 &
