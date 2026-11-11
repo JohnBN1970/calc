@@ -7,6 +7,7 @@ import { db } from "./db.js";
 import { config } from "./config.js";
 import { isOfficeGrantActive } from "./officeGrantClient.js";
 import { crmFirstRuntimeReady } from "./crmFirstRuntimeGuard.js";
+import { crmFirstColumnsReady, type CrmSchemaColumn } from "./crmFirstSchemaGuard.js";
 import { parseIndependentOfficeLaunch, type IndependentOfficeLaunch } from "./independentOfficeLaunch.js";
 import { parseIndependentOfficeSession, type IndependentOfficeSession } from "./independentOfficeSession.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
@@ -348,6 +349,23 @@ app.post("/api/launch/consume", async (req, res) => {
     }, process.env.OFFICE_CALC_GRANT_VALIDATION_URL ?? "") : false;
     if (!active) {
       res.status(401).json({ error: "Open deze calculatie opnieuw vanuit BREBO Office." });
+      return;
+    }
+  }
+
+  if (launch.v === 2) {
+    try {
+      const [columns] = await db.query<CrmSchemaColumn[]>(
+        `SELECT COLUMN_NAME, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'calculations'
+           AND COLUMN_NAME IN ('id', 'office_calculation_id', 'office_project_id')`
+      );
+      if (!crmFirstColumnsReady(columns)) {
+        res.status(503).json({ error: "De CRM-calculatietabel ondersteunt nog geen projectloze concepten." });
+        return;
+      }
+    } catch {
+      res.status(503).json({ error: "De CRM-calculatietabel kon niet worden gevalideerd." });
       return;
     }
   }
