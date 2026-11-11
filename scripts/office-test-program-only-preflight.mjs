@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 /**
  * Explicit, read-only guard before building Calc for the Office-test route.
  * This does not install, migrate, import, or contact a database.
@@ -21,7 +23,7 @@ export function validateOfficeTestProgramOnly(env) {
   return errors;
 }
 
-if (process.argv[1] && import.meta.url === new URL("file://" + process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const errors = validateOfficeTestProgramOnly(process.env);
   if (errors.length) {
     for (const error of errors) console.error("OFFICE_TEST_CALC_BLOCKED: " + error);
