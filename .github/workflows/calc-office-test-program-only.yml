@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'scripts/office-test-program-only-preflight*'
+      - 'apps/api/src/calcBasePath.test.ts'
       - '.github/workflows/calc-office-test-program-only.yml'
   workflow_dispatch:
 permissions:
@@ -26,6 +27,12 @@ jobs:
             exit 1
           fi
           echo "Office-test guard rejects missing explicit configuration"
+      - name: Combined Calc application regression and build
+        run: |
+          npm install
+          npm run typecheck
+          npm run test --workspace=@brebo/calc-api
+          npm run build
       - name: Scope statement
         run: |
           echo "PROGRAM_ONLY=YES"
