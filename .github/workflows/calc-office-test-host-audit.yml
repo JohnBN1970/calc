@@ -1,0 +1,61 @@
+name: Office-test Calc host read-only compatibility audit
+on:
+  push:
+    branches: [feat/office-test-program-only-preflight-20261111]
+    paths:
+      - '.github/workflows/calc-office-test-host-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify deployment SSH inputs
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          for key in HOST PORT USER KEY; do test -n "${!key}" || { echo "OFFICE_TEST_AUDIT_BLOCKED=missing_${key}"; exit 1; }; done
+          [[ "$PORT" =~ ^[0-9]+$ ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/calc_host_audit
+          chmod 600 ~/.ssh/calc_host_audit
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i ~/.ssh/calc_host_audit -p "$PORT" "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          base="$HOME/domains/brebobv.nl"
+          test -d "$base/office_calc_test" || { echo "OFFICE_TEST_AUDIT_BLOCKED=no_test_root"; exit 1; }
+          echo "OFFICE_TEST_ROOT=present"
+          if [ -f "$base/public_html/office-test/index.php" ]; then echo "OFFICE_TEST_ROUTER=present"; else echo "OFFICE_TEST_ROUTER=missing"; fi
+          if [ -f "$base/public_html/office-test/.htaccess" ]; then echo "OFFICE_TEST_REWRITE=present"; else echo "OFFICE_TEST_REWRITE=missing"; fi
+          if [ -f "$base/public_html/.htaccess" ]; then echo "ROOT_REWRITE=present"; else echo "ROOT_REWRITE=missing"; fi
+          if [ -f "$base/public_html/office-test/index.php" ]; then
+            if grep -Fq '/calc-app' "$base/public_html/office-test/index.php"; then echo "CALC_ROUTER_REFERENCE=present"; else echo "CALC_ROUTER_REFERENCE=missing"; fi
+          fi
+          if [ -f "$base/public_html/office-test/.htaccess" ]; then
+            if grep -Eq '(ProxyPass|RewriteRule.*calc-app)' "$base/public_html/office-test/.htaccess"; then echo "CALC_PROXY_RULE_REFERENCE=present"; else echo "CALC_PROXY_RULE_REFERENCE=missing"; fi
+          fi
+          for dir in "$base/public_html/office-test/calc-app" "$base/public_html/calc-app" "$base/office_calc_test/calc-app"; do
+            if [ -d "$dir" ]; then
+              echo "CALC_RUNTIME_DIR=present"
+              if [ -f "$dir/startup.js" ]; then echo "CALC_RUNTIME_STARTUP=present"; fi
+              if [ -f "$dir/package.json" ]; then echo "CALC_RUNTIME_PACKAGE=present"; fi
+            fi
+          done
+          for release in "$base"/office_calc_test/release-*/private; do
+            test -d "$release" || continue
+            if [ -f "$release/public/office-calc-crm-draft-launch.php" ]; then echo "CRM_FIRST_LAUNCH_FILE=present"; fi
+          done
+          echo "CALC_OFFICE_TEST_READ_ONLY_AUDIT=COMPLETE"
+          REMOTE
+          rm -f ~/.ssh/calc_host_audit
+      - name: State non-deployment
+        run: |
+          echo "OFFICE_TEST_HOST_AUDIT_ONLY=YES"
+          echo "CALC_INSTALL=NOT_PERFORMED"
+          echo "EXISTING_CALCULATIONS=UNTOUCHED"
