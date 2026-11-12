@@ -3868,6 +3868,7 @@ function App() {
         {versionStatus==="established"
           ? <>
               {publicationFreshness&&publicationFreshness.status!=="current"&&publicationFreshness.status!=="office_changed"&&<button className="command commandSave" type="button" onClick={()=>void publish()} title="De vastgestelde Calc-versie opnieuw naar Office publiceren"><Icon name="office" /><span>Publiceren</span></button>}
+              <button className="command commandSave" type="button" disabled title="Offerte genereren wordt beschikbaar zodra de beveiligde Office-koppeling en versiecontrole zijn aangesloten"><Icon name="office" /><span>Offerte genereren</span></button>
               <button className="command commandSave" type="button" onClick={startNewVersion} title="Nieuwe conceptversie starten vanuit de vastgestelde snapshot"><Icon name="save" /><span>Nieuwe versie</span></button>
             </>
           : <>
