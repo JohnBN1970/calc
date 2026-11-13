@@ -9,10 +9,10 @@ import {buildGuidedProposal,guidanceQuestions} from '../apps/api/dist/guidedCalc
 const output=await mkdtemp(path.join(tmpdir(),'brebo-guided-ui-'));
 let browser;
 try{
- await build({configFile:false,root:process.cwd(),build:{outDir:output,emptyOutDir:true,lib:{entry:path.resolve('tests/guided-calculation.fixture.tsx'),name:'GuidedQA',formats:['iife'],fileName:()=> 'guided.js'}}});
+ await build({configFile:false,root:process.cwd(),define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:output,emptyOutDir:true,lib:{entry:path.resolve('tests/guided-calculation.fixture.tsx'),name:'GuidedQA',formats:['iife'],fileName:()=> 'guided.js'}}});
  browser=await chromium.launch({headless:true,...(process.env.CALC_TEST_CHROMIUM?{executablePath:process.env.CALC_TEST_CHROMIUM}:{}),args:['--no-sandbox']});
  const page=await browser.newPage({viewport:{width:1440,height:1100}});
- const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER_ERROR:',e.message);});
  const saved=[];
  await page.exposeFunction('guidanceApi',(url,body)=>url.endsWith('/preview')?buildGuidedProposal(body.answers,body.lines,17):{questions:guidanceQuestions});
  await page.exposeFunction('savedGuidance',lines=>{saved.push(lines);});

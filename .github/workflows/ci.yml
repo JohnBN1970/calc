@@ -39,6 +39,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:guided-ui
       - run: npm run test:change-history-db
+        if: ${{ !cancelled() }}
         env:
           CALC_TEST_DB_NAME: calc_change_history_test
           CALC_TEST_DB_PASSWORD: calc-test-only
