@@ -81,7 +81,7 @@ export function GuidedCalculation({request,versionNo,locked,lines,paragraphs,vat
           <label>Eenheid<input value={a.unit} maxLength={16} onChange={event=>patch(q.id,{unit:event.target.value})}/></label>
           <label>Prijs per eenheid (€)<input type="number" min="0.000001" max="1000000000" step="any" value={a.unitPrice??""} onChange={event=>patch(q.id,{unitPrice:event.target.value===""?null:Number(event.target.value)})}/></label>
           <label>Kostendrager<select value={a.carrier} onChange={event=>patch(q.id,{carrier:event.target.value as Answer["carrier"]})}><option value="equipment">Materieel</option><option value="subcontracting">Onderaanneming</option><option value="other">Overig</option></select></label>
-          <label>Btw<select value={a.vatRegimeId??""} onChange={event=>patch(q.id,{vatRegimeId:event.target.value?Number(event.target.value):null})}><option value="">Kies btw…</option>{vatRegimes.filter(r=>r.active).map(r=><option value={r.id} key={r.id}>{r.label}</option>)}</select></label>
+          <label>Btw<select aria-label="Btw" value={a.vatRegimeId??""} onChange={event=>patch(q.id,{vatRegimeId:event.target.value?Number(event.target.value):null})}><option value="">Kies btw…</option>{vatRegimes.filter(r=>r.active).map(r=><option value={r.id} key={r.id}>{r.label}</option>)}</select></label>
         </div>}
         {a.decision!=="pending"&&<label className="guidedExplanation">{a.decision==="yes"?"Prijsbron en uitgangspunten (inclusief aan-/afvoer en huurduur)":a.decision==="no"?"Waarom niet nodig, of waar al opgenomen?":"Toelichting / gecontroleerde bronnen"}<textarea maxLength={1500} rows={2} value={a.explanation} onChange={event=>patch(q.id,{explanation:event.target.value})}/></label>}
       </div>;
