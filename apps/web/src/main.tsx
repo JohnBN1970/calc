@@ -3,10 +3,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import "./styles.css";
+import { CalculationHistory } from "./CalculationHistory";
+import { GuidedCalculation, type GuidedBasisLine } from "./GuidedCalculation";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 // Vite's base URL is set at build time. Office must proxy the matching path
 // and configure CALC_BASE_PATH on the Node server to the same value.
+class WorkbenchConflictError extends Error {}
 const calcBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 function calcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (typeof input === "string" && input.startsWith("/api/")) {
@@ -1116,6 +1119,13 @@ function App() {
   const [classificationScheme,setClassificationScheme]=useState<ClassificationScheme>("nl_sfb");
   const [versionStatus,setVersionStatus]=useState<"draft"|"established">("draft");
   const [versionNo,setVersionNo]=useState(1);
+  const editRevisionRef=useRef(0);
+  const [editRevision,setEditRevision]=useState(0);
+  const [changeReason,setChangeReason]=useState("");
+  const [revisionReason,setRevisionReason]=useState("");
+  const [revisionDialogOpen,setRevisionDialogOpen]=useState(false);
+  const [revisionStarting,setRevisionStarting]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
   const [versionHistory,setVersionHistory]=useState<CalcVersionHistoryItem[]>([]);
   const [publicationReadiness,setPublicationReadiness]=useState<PublicationReadiness|null>(null);
   const [publicationFreshness,setPublicationFreshness]=useState<PublicationFreshness|null>(null);
@@ -1124,6 +1134,7 @@ function App() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [nextId, setNextId] = useState(-1);
   const [priceWorkspaceOpen, setPriceWorkspaceOpen] = useState(false);
+  const [guidanceOpen,setGuidanceOpen]=useState(false);
   const [recipeWorkspaceOpen, setRecipeWorkspaceOpen] = useState(false);
   const [recipeLibraryOpen, setRecipeLibraryOpen] = useState(false);
   const [recipeTreeCollapsed,setRecipeTreeCollapsed]=useState(false);
@@ -2318,6 +2329,8 @@ function App() {
     const loadedClassification=String(data.calculation?.classification_scheme??"nl_sfb");
     const loadedScheme:ClassificationScheme=loadedClassification==="stabu"?"stabu":loadedClassification==="custom"?"custom":"nl_sfb";
     const loadedLines=Array.isArray(data.lines) ? data.lines.map((line: Record<string, unknown>) => mapServerLine(line)) : [];
+    editRevisionRef.current=Number(data.version?.edit_revision??0);
+    setEditRevision(editRevisionRef.current);
     setLines(normalizeLoadedClassificationParents(loadedLines,loadedScheme));
     setSelectedLineIds([]);
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
@@ -2424,6 +2437,9 @@ function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         allocations,
+        expectedVersionNo:versionNo,
+        expectedEditRevision:editRevisionRef.current,
+        changeReason:changeReason.trim()||"Calculatie opgeslagen",
         lines: linesToSave.map((line, index) => ({
           id: line.id,
           parentId: line.parentId,
@@ -2461,8 +2477,9 @@ function App() {
         }))
       })
     });
-    const payload = await response.json().catch(() => ({})) as {directCost?:number;publication?:{status?:"draft_only"};error?:string};
-    if (!response.ok) throw new Error(String(payload.error??"Opslaan mislukt"));
+    const payload = await response.json().catch(() => ({})) as {editRevision?:number;directCost?:number;publication?:{status?:"draft_only"};error?:string};
+    if (!response.ok) throw response.status===409?new WorkbenchConflictError(String(payload.error??"Versieconflict")):new Error(String(payload.error??"Opslaan mislukt"));
+    setChangeReason("");
     setStatus("Concept opgeslagen in Calc");
     await loadWorkbench();
     await Promise.all([loadTailCosts(payload.directCost),loadSubcalculationResults()]);
@@ -3756,25 +3773,28 @@ function App() {
     setPublishing(true);
     setPublicationFeedback({kind:"pending",message:"Publicatie naar Office wordt uitgevoerd…"});
     try{
+      let expectedEditRevision=editRevisionRef.current;
       if(versionStatus==="draft"){
-        await persistWorkbenchDraft(lines);
+        const saved=await persistWorkbenchDraft(lines);
+        expectedEditRevision=saved.editRevision!;
         setStatus("Vaststellen en publiceren naar Office…");
       }else{
         setStatus("Vastgestelde versie opnieuw publiceren naar Office…");
       }
       const response=await calcFetch("/api/workbench/current/publish",{
         method:"POST",
-        headers:{Accept:"application/json"}
+        headers:{Accept:"application/json","Content-Type":"application/json"},
+        body:JSON.stringify({expectedEditRevision,expectedVersionNo:versionNo})
       });
       const payload=await response.json().catch(()=>({})) as {status?:string;contentHash?:string;error?:string};
-      if(!response.ok)throw new Error(String(payload.error??"Publiceren mislukt"));
+      if(!response.ok)throw response.status===409?new WorkbenchConflictError(String(payload.error??"Versieconflict")):new Error(String(payload.error??"Publiceren mislukt"));
       setVersionStatus("established");
       await loadWorkbench();
       setStatus("Vastgesteld · gepubliceerd naar Office");
       setPublicationFeedback({kind:"success",message:"Publicatie naar Office bevestigd."});
     }catch(error){
       const message=error instanceof Error?error.message:"Publiceren mislukt";
-      try{await loadWorkbench();}catch{}
+      if(!(error instanceof WorkbenchConflictError)){try{await loadWorkbench();}catch{}}
       setStatus(message);
       setPublicationFeedback({kind:"error",message});
     }finally{
@@ -3783,24 +3803,29 @@ function App() {
   };
 
   const startNewVersion = async () => {
+    if(revisionStarting)return;
+    if(!revisionReason.trim()){setRevisionDialogOpen(true);return;}
     if(versionStatus!=="established"){
       setStatus("Maak eerst de huidige versie definitief.");
       return;
     }
     try{
+      setRevisionStarting(true);
       setStatus("Nieuwe conceptversie maken…");
       const response=await calcFetch("/api/workbench/current/versions",{
         method:"POST",
-        headers:{Accept:"application/json"}
+        headers:{Accept:"application/json","Content-Type":"application/json"},
+        body:JSON.stringify({reason:revisionReason.trim(),sourceVersionNo:versionNo})
       });
       const payload=await response.json().catch(()=>({})) as {versionNo?:number;error?:string};
       if(!response.ok)throw new Error(String(payload.error??"Nieuwe versie kon niet worden gestart."));
       await loadWorkbench();
       await Promise.all([loadSubcalculations(),loadSubcalculationResults(),loadTailCosts()]);
       setStatus(`Nieuwe conceptversie v${payload.versionNo??""} gestart`);
+      setRevisionDialogOpen(false);setRevisionReason("");
     }catch(error){
       setStatus(error instanceof Error?error.message:"Nieuwe versie kon niet worden gestart.");
-    }
+    }finally{setRevisionStarting(false);}
   };
 
   if (authorized === false) {
@@ -3842,6 +3867,8 @@ function App() {
           <Icon name="line" /><span>Regel</span>
         </button>
         <div className="commandDivider" />
+        <button className={"command commandSecondary"+(historyOpen?" commandActive":"")} type="button" onClick={()=>setHistoryOpen(open=>!open)}><span>Wijzigingshistorie</span></button>
+        <button className={"command commandSecondary"+(guidanceOpen?" commandActive":"")} type="button" onClick={()=>setGuidanceOpen(open=>!open)} title="Voorzieningen, scope en prijzen controleren"><span>Vraaggestuurd</span></button>
         <button className={"command commandBuilder" + (recipeWorkspaceOpen ? " commandActive" : "")} type="button" title="Builder: projectbronnen controleren en calculatieconcept opbouwen" onClick={()=>setRecipeWorkspaceOpen(true)}><Icon name="builder" /><span>Builder</span></button>
         <div className="commandDivider" />
         <button className={"command commandSecondary" + (subcalculationOpen ? " commandActive" : "")} type="button" disabled={versionStatus==="established"} title={versionStatus==="established"?"Start een nieuwe versie om deelcalculaties te wijzigen":"Deelcalculaties beheren in Calc"} onClick={() => setSubcalculationOpen(open => !open)}><Icon name="subcalc" /><span>Deelcalc</span></button>
@@ -4075,6 +4102,43 @@ function App() {
         </div>
       </div>}
 
+      {revisionDialogOpen&&<section className="revisionForm" role="region" aria-label="Nieuwe revisie"><h2>Nieuwe revisie vanuit v{versionNo}</h2><p>De vastgestelde bronversie blijft behouden.</p><label>Reden revisie<input autoFocus maxLength={1000} value={revisionReason} onChange={event=>setRevisionReason(event.target.value)} placeholder="Bijvoorbeeld: gewijzigde tekening of leveranciersprijs"/></label><button type="button" disabled={!revisionReason.trim()||revisionStarting} onClick={()=>void startNewVersion()}>{revisionStarting?"Aanmaken…":"Revisie aanmaken"}</button><button type="button" disabled={revisionStarting} onClick={()=>{setRevisionDialogOpen(false);setRevisionReason("");}}>Annuleren</button></section>}
+      {versionStatus==="draft"&&<label className="calculationChangeReason">Wijzigingsreden <input maxLength={1000} value={changeReason} onChange={event=>setChangeReason(event.target.value)} placeholder="Toelichting voor de wijzigingshistorie"/><small>v{versionNo} · opslagnummer {editRevision}</small></label>}
+      {historyOpen&&<CalculationHistory request={calcFetch} refreshKey={versionNo+":"+editRevision+":"+versionStatus} onClose={()=>setHistoryOpen(false)}/>}
+      {guidanceOpen&&<GuidedCalculation
+        request={calcFetch} versionNo={versionNo} locked={versionStatus==="established"}
+        lines={lines.map(line=>({
+          ...line,labourUnitCost:line.labour,materialUnitCost:line.material,equipmentUnitCost:line.equipment,
+          subcontractingUnitCost:line.subcontracting,otherUnitCost:line.other
+        }))}
+        paragraphs={lines.filter(line=>line.lineType==="paragraph"&&!lines.some(child=>child.parentId===line.id&&child.lineType==="paragraph")).map(line=>({id:line.id,label:[line.code,line.description].filter(Boolean).join(" · ")}))}
+        vatRegimes={vatRegimes} onClose={()=>setGuidanceOpen(false)}
+        onApply={async(proposals:GuidedBasisLine[],parentId:number)=>{
+          const managed=lines.filter(line=>line.structureKey?.startsWith("guided:"));
+          const managedIds=new Set(managed.map(line=>line.id));
+          if(allocations.some(a=>managedIds.has(a.sourceLineId)||managedIds.has(a.targetLineId)))throw new Error("Verwijder eerst de kostenverdelingen op vraaggestuurde regels voordat de antwoorden worden verwerkt.");
+          const existing=new Map(managed.map(line=>[line.structureKey,line]));
+          let nextId=Math.min(0,...lines.map(line=>line.id))-1;
+          const newLines:Line[]=proposals.map(proposal=>({
+            id:existing.get(proposal.structureKey)?.id??nextId--,parentId,structureKey:proposal.structureKey,
+            lineType:proposal.lineType as LineType,code:proposal.code??"",description:proposal.description??"",
+            unit:proposal.unit??"",quantity:proposal.quantity??0,labourNorm:null,labourTotalHours:null,labourHoursInputMode:null,
+            labour:proposal.labourUnitCost??0,material:proposal.materialUnitCost??0,equipment:proposal.equipmentUnitCost??0,
+            subcontracting:proposal.subcontractingUnitCost??0,other:proposal.otherUnitCost??0,vatRegimeId:proposal.vatRegimeId,
+            priceSourceType:"manual",officeSourceId:null,sourceReference:proposal.sourceReference??null,sourceSupplier:null,
+            sourceUnitPrice:null,sourcePriceDate:null,sourceDocumentId:null,sourceDetails:proposal.sourceDetails??null,
+            sourceVisualPage:null,sourcePositionBounds:null,sourceVisualCrop:null,sourceVisualSearchRegion:null,sourceTextRegions:null,sourceOfferSummary:null
+          }));
+          const next=lines.filter(line=>!line.structureKey?.startsWith("guided:"));
+          const parentIndex=next.findIndex(line=>line.id===parentId);
+          if(parentIndex<0)throw new Error("De gekozen eindparagraaf bestaat niet meer.");
+          let insertIndex=parentIndex+1;
+          while(insertIndex<next.length&&next[insertIndex].lineType!=="chapter"&&next[insertIndex].lineType!=="paragraph")insertIndex++;
+          next.splice(insertIndex,0,...newLines);
+          setLines(next);setNextId(nextId);
+          await persistWorkbenchDraft(next);
+        }}/>}
+
       <div className={"calcWorkspaceShell"+(recipeTreeCollapsed?" recipeTreeCollapsed":"")}>
         <DockableWindow id="recipe-tree" label="Recepten" collapsible>
           <aside className="recipeTreeSidebar isDockableRecipeTree" aria-label="Recepten en vensters">
@@ -4151,7 +4215,7 @@ function App() {
             <section className="conceptBuilder">
               <div className="conceptBuilderIntro">
                 <div><span className="eyebrow">PROJECTBRONNEN UIT OFFICE</span><h3>Calculatie bouwen vanuit Office</h3><p>Builder begint met de documenten die Office al aan dit project heeft gekoppeld. Calc bewaart geen tweede documentwaarheid.</p></div>
-                <div className="conceptBuilderActions"><button type="button" onClick={()=>void refreshDocumentCandidates()}>Office-bronnen vernieuwen</button><button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button></div>
+                <div className="conceptBuilderActions"><button type="button" onClick={()=>setGuidanceOpen(true)}>Voorzieningen en vragen nalopen</button><button type="button" onClick={()=>void refreshDocumentCandidates()}>Office-bronnen vernieuwen</button><button className="conceptBuilderPrimary" type="button" disabled={!aggregate.editable || aggregate.autoBuildEligibility.eligiblePositionRefs.length===0} onClick={()=>void generateUnambiguousRecipes()}>Concept opbouwen</button></div>
               </div>
               <div className="conceptBuilderSteps">
                 <div className={aggregate.documentTriage.some(item=>item.status==="primary")?"is-ready":"is-review"}><b>1</b><span>Bronnen<strong>{aggregate.documentTriage.filter(item=>item.status==="primary").length} primair · {aggregate.documentTriage.filter(item=>item.status==="review").length} review</strong></span></div>

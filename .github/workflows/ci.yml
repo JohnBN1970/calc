@@ -15,3 +15,30 @@ jobs:
       - run: npm run typecheck
       - run: npm run test --workspace=@brebo/calc-api
       - run: npm run build
+
+  guided-workbench:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: calc-test-only
+          MYSQL_DATABASE: calc_change_history_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pcalc-test-only"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:guided-ui
+      - run: npm run test:change-history-db
+        env:
+          CALC_TEST_DB_NAME: calc_change_history_test
+          CALC_TEST_DB_PASSWORD: calc-test-only
