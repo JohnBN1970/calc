@@ -75,3 +75,29 @@ test("Office-test /calc-app handoff, assets, and session cookie are prefix-safe"
     assert.equal(stripCalcBasePath(other, base), null, other);
   }
 });
+
+test("Office-test calc-app prefix keeps API, assets and all browser paths isolated", () => {
+  const base = normalizeCalcBasePath("/office-test/calc-app");
+  assert.equal(base, "/office-test/calc-app");
+  assert.equal(calcSessionCookiePath(base), "/office-test/calc-app");
+  for (const route of [
+    "/",
+    "/api/health",
+    "/api/launch/consume",
+    "/api/workbench/current",
+    "/assets/index.js",
+    "/nested/refresh",
+  ]) {
+    assert.equal(stripCalcBasePath(base + route, base), route);
+  }
+  assert.equal(stripCalcBasePath(base + "/api/health?probe=1", base), "/api/health?probe=1");
+  for (const path of [
+    "/office-test/inloggen",
+    "/office-test/crm/verkoopkansen",
+    "/office-test/calc/start",
+    "/office-test/calc-app-other/api/health",
+    "/calc-app/api/health",
+  ]) {
+    assert.equal(stripCalcBasePath(path, base), null);
+  }
+});

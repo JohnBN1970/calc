@@ -1,0 +1,228 @@
+name: Calc Office-test program-only guard
+on:
+  pull_request:
+    paths:
+      - 'scripts/office-test-program-only-preflight*'
+      - 'scripts/office-test-crm-schema.test.mjs'
+      - 'database/office_test_crm_first_empty_schema.sql'
+      - 'apps/api/src/crmDraftLine*'
+      - 'apps/api/src/crmFirst*'
+      - 'apps/web/src/crmDraft.tsx'
+      - 'apps/api/src/calcBasePath.test.ts'
+      - '.github/workflows/calc-office-test-program-only.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test fail-closed Office-test configuration
+        run: node --test scripts/office-test-program-only-preflight.test.mjs scripts/office-test-crm-schema.test.mjs
+      - name: Reject unsafe default invocation
+        shell: bash
+        run: |
+          if node scripts/office-test-program-only-preflight.mjs; then
+            echo "Unsafe default launch was not blocked"
+            exit 1
+          fi
+          echo "Office-test guard rejects missing explicit configuration"
+      - name: Verify isolated test configuration without connecting to host
+        env:
+          CALC_DEPLOY_SCOPE: office-test-program-only
+          CALC_BASE_PATH: /office-test/calc-app
+          VITE_CALC_BASE_PATH: /office-test/calc-app
+          CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          NODE_ENV: production
+          CALC_OFFICE_TEST_DATABASE: isolated_calc_ci_no_connection
+          MYSQL_DATABASE: isolated_calc_ci_no_connection
+          OFFICE_API_BASE_URL: https://brebobv.nl/office-test
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/office-test/calc/grants/validate
+          MYSQL_PASSWORD: ci-only-placeholder-000000000000000000
+          BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
+          CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
+        run: node scripts/office-test-program-only-preflight.mjs
+      - name: Combined Calc application regression and build
+        env:
+          VITE_CALC_BASE_PATH: /office-test/calc-app
+        run: |
+          npm install
+          npm run typecheck
+          npm run test --workspace=@brebo/calc-api
+          npm run build
+          npm prune --omit=dev
+          npm ls --omit=dev
+      - name: Assemble code-only staging artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f apps/api/dist/startup.js
+          test -f apps/api/dist/index.js
+          test -f apps/web/dist/index.html
+          test -f startup.js
+          test -f scripts/preflight.mjs
+          grep -Fq '/office-test/calc-app/assets/' apps/web/dist/index.html
+          if grep -Eq '(src|href)="/assets/' apps/web/dist/index.html; then
+            echo 'Root-relative asset path is unsafe for Office-test'
+            exit 1
+          fi
+          mkdir -p office-test-package
+          cp startup.js package.json office-test-package/
+          test -d node_modules
+          cp -a node_modules office-test-package/
+          if [ -f package-lock.json ]; then cp package-lock.json office-test-package/; fi
+          mkdir -p office-test-package/apps/api office-test-package/apps/web office-test-package/scripts
+          cp scripts/preflight.mjs office-test-package/scripts/
+          cp apps/api/package.json office-test-package/apps/api/
+          cp apps/web/package.json office-test-package/apps/web/
+          cp -R apps/api/dist office-test-package/apps/api/dist
+          cp -R apps/web/dist office-test-package/apps/web/dist
+          if find office-test-package -type f | grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' ; then
+            echo 'Unexpected sensitive or data file in staging package'
+            exit 1
+          fi
+          (cd office-test-package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > office-test-package.sha256
+          tar -czf calc-office-test-program-only.tgz -C office-test-package .
+          tar -tzf calc-office-test-program-only.tgz > office-test-archive-manifest.txt
+          grep -Fx './apps/api/dist/index.js' office-test-archive-manifest.txt
+          grep -Fx './apps/web/dist/index.html' office-test-archive-manifest.txt
+          grep -Fx './scripts/preflight.mjs' office-test-archive-manifest.txt
+          grep -Fx './node_modules/express/package.json' office-test-archive-manifest.txt
+          grep -Fx './node_modules/mysql2/package.json' office-test-archive-manifest.txt
+          if grep -E '(\.env($|\.)|\.sql$|\.sqlite$|\.pem$|\.key$)' office-test-archive-manifest.txt; then
+            echo 'Data or secret file found in archive'
+            exit 1
+          fi
+          echo 'Staging artifact assembled: code/build only; no deployment or data'
+      - name: Smoke-test packaged Node runtime without database connection
+        shell: bash
+        env:
+          NODE_ENV: production
+          PORT: '39991'
+          CALC_BASE_PATH: /office-test/calc-app
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '1'
+          MYSQL_DATABASE: isolated_calc_ci_no_connection
+          MYSQL_USER: ci_no_db_user
+          MYSQL_PASSWORD: ci-only-placeholder-000000000000000000
+          OFFICE_API_BASE_URL: https://brebobv.nl/office-test
+          BREBO_CALC_SHARED_SECRET: ci-launch-placeholder-00000000000000000
+          CALC_SESSION_SECRET: ci-session-placeholder-000000000000000
+          CALC_OFFICE_GRANT_ENFORCEMENT: enabled
+          CALC_CRM_FIRST_LAUNCH_ENABLED: enabled
+          OFFICE_CALC_GRANT_VALIDATION_URL: https://brebobv.nl/office-test/api/workbench/v1/calculation-grants/validate
+        run: |
+          set -euo pipefail
+          node office-test-package/apps/api/dist/index.js > /tmp/calc-package-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 1 http://127.0.0.1:39991/office-test/calc-app/ > /tmp/calc-office-test-shell.html; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'Calc Node process stopped before serving Office-test'
+              cat /tmp/calc-package-smoke.log
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          grep -Fq '/office-test/calc-app/assets/' /tmp/calc-office-test-shell.html
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{"widthMm":100,"heightMm":100}' http://127.0.0.1:39991/office-test/calc-app/api/takeoff/preview)
+          test "$status" = '401' || { echo "Unauthenticated API must reject: $status"; exit 1; }
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/not-a-route)
+          test "$status" = '401' || { echo "Unknown API routes must not bypass Office grant checks: $status"; exit 1; }
+          token=$(node --input-type=module -e '
+            import { createHmac, randomBytes } from "node:crypto";
+            const payload={v:2,grant_ref:"a".repeat(64),calculation_id:42,project_id:null,actor_id:"office-test-user",exp:Math.floor(Date.now()/1000)+60,nonce:randomBytes(16).toString("hex")};
+            const encoded=Buffer.from(JSON.stringify(payload)).toString("base64url");
+            const signature=createHmac("sha256",process.env.BREBO_CALC_SHARED_SECRET).update(encoded).digest("hex");
+            process.stdout.write(encoded+"."+signature);
+          ')
+          payload=$(printf '{"token":"%s"}' "$token")
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data "$payload" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$status" = '503' || { echo "Unverified projectless DB must be blocked before any write: $status"; exit 1; }
+          form_data="token=$token"
+          foreign_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Origin: https://malicious.invalid' -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$foreign_status" = '403' || { echo "Foreign-origin browser launch must be forbidden: $foreign_status"; exit 1; }
+          missing_origin_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$missing_origin_status" = '403' || { echo "Origin-less browser launch must be forbidden: $missing_origin_status"; exit 1; }
+          valid_origin_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Origin: https://brebobv.nl' -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "token=$token" http://127.0.0.1:39991/office-test/calc-app/api/launch/consume)
+          test "$valid_origin_status" = '503' || { echo "Isolated DB not verified, browser launch must fail closed: $valid_origin_status"; exit 1; }
+          echo "CALC_CRM_BROWSER_ORIGIN_ENFORCEMENT=PASS"
+          echo "CALC_CRM_FIRST_UNVERIFIED_SCHEMA=BLOCKED"
+          draft_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:39991/office-test/calc-app/api/crm-draft)
+          test "$draft_status" = '401' || { echo "Unauthenticated CRM draft GET must reject: $draft_status"; exit 1; }
+          append_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{"description":"test"}' http://127.0.0.1:39991/office-test/calc-app/api/crm-draft/lines)
+          test "$append_status" = '401' || { echo "Unauthenticated CRM draft write must reject: $append_status"; exit 1; }
+          echo "CALC_CRM_DRAFT_ANONYMOUS_ACCESS=DENIED"
+          echo "CALC_OFFICE_TEST_PACKAGE_RUNTIME_SMOKE=PASS"
+          echo "DATABASE=NOT_CONNECTED_OR_MIGRATED"
+          echo "HOSTINGER=NOT_DEPLOYED"
+      - name: Upload reviewable staging artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calc-office-test-program-only
+          path: |
+            calc-office-test-program-only.tgz
+            office-test-package.sha256
+            office-test-archive-manifest.txt
+          retention-days: 7
+          if-no-files-found: error
+      - name: Read-only Office-test hosting gate
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOST:-}" || -z "${PORT:-}" || -z "${USER:-}" || -z "${KEY:-}" ]]; then
+            echo "::warning title=Office-test hosting not verified::SSH deployment credentials are not available in this repository. The build is green but no Hostinger check was performed."
+            echo "CALC_HOST_AUDIT=NOT_AVAILABLE_NO_CREDENTIALS"
+            echo "CALC_HOSTING_READY=NOT_VERIFIED"
+            {
+              echo "## Office-test Calc release readiness"
+              echo "- Application tests and package: verified in this job"
+              echo "- Hostinger router/runtime: **NOT VERIFIED (missing SSH credentials)**"
+              echo "- CRM-first launch: **NOT VERIFIED**"
+              echo "- Deployment and data migration: **NOT PERFORMED**"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "CALC_HOST_AUDIT=INVALID_PORT"; exit 1; }
+          install -d -m 700 ~/.ssh
+          keyfile=$(mktemp ~/.ssh/.calc_audit_XXXXXX)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i "$keyfile" -p "$PORT" "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          base="$HOME/domains/brebobv.nl"
+          if [ -f "$base/public_html/office-test/index.php" ]; then echo "OFFICE_TEST_ROUTER=FOUND"; else echo "OFFICE_TEST_ROUTER=MISSING"; fi
+          if [ -f "$base/public_html/office-test/.htaccess" ]; then echo "OFFICE_TEST_REWRITE=FOUND"; else echo "OFFICE_TEST_REWRITE=MISSING"; fi
+          if [ -d "$base/public_html/office-test/calc-app" ]; then echo "CALC_SAME_ORIGIN_RUNTIME=FOUND"; else echo "CALC_SAME_ORIGIN_RUNTIME=NOT_FOUND"; fi
+          if [ -f "$base/public_html/office-test/index.php" ] && grep -Fq '/calc-app' "$base/public_html/office-test/index.php"; then echo "CALC_ROUTER_REFERENCE=FOUND"; else echo "CALC_ROUTER_REFERENCE=NOT_FOUND"; fi
+          echo "HOST_AUDIT=READ_ONLY_COMPLETE"
+          REMOTE
+          echo "CALC_HOSTING_READY=NOT_VERIFIED_BY_INVENTORY_ALONE"
+          {
+            echo "## Office-test Calc release readiness"
+            echo "- Hostinger inventory: checked, but proxy and runtime operation remain **unverified**"
+            echo "- CRM-first authorization and full E2E: **NOT VERIFIED**"
+            echo "- Deployment and data migration: **NOT PERFORMED**"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Scope statement
+        run: |
+          echo "PROGRAM_ONLY=YES"
+          echo "EXISTING_CALCULATIONS_NOT_IMPORTED=YES"
+          echo "NO_DATABASE_MIGRATION_OR_DEPLOYMENT=YES"

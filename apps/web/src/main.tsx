@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import "./styles.css";
+import { CrmDraftWorkbench } from "./crmDraft.js";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 // Vite's base URL is set at build time. Office must proxy the matching path
@@ -4689,4 +4690,9 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById("root")!).render(<React.StrictMode><App /></React.StrictMode>);
+const crmDraftRoute = window.location.pathname === calcBasePath + "/crm-draft";
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>{crmDraftRoute
+    ? <CrmDraftWorkbench basePath={calcBasePath} />
+    : <App />}</React.StrictMode>
+);

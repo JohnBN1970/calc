@@ -6,6 +6,11 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { isOfficeGrantActive } from "./officeGrantClient.js";
+import { crmFirstRuntimeReady } from "./crmFirstRuntimeGuard.js";
+import { crmFirstColumnsReady, type CrmSchemaColumn } from "./crmFirstSchemaGuard.js";
+import { parseCrmDraftLine } from "./crmDraftLine.js";
+import { parseIndependentOfficeLaunch, type IndependentOfficeLaunch } from "./independentOfficeLaunch.js";
+import { parseIndependentOfficeSession, type IndependentOfficeSession } from "./independentOfficeSession.js";
 import { normalizeCalcBasePath, stripCalcBasePath, calcSessionCookiePath } from "./calcBasePath.js";
 import { calculateTakeoff } from "./takeoff.js";
 import { buildConceptFromOfficeContext } from "./calculationConcept.js";
@@ -94,7 +99,7 @@ type LaunchPayload = {
   nonce: string;
 };
 
-type SessionPayload = {
+type LegacySessionPayload = {
   v: 1;
   grantRef?: string;
   calculationId: number;
@@ -103,6 +108,8 @@ type SessionPayload = {
   actorId: number;
   exp: number;
 };
+
+type SessionPayload = LegacySessionPayload | IndependentOfficeSession;
 
 const SESSION_COOKIE = "brebo_calc_session";
 const SESSION_SECONDS = 8 * 60 * 60;
@@ -180,6 +187,11 @@ function parseCookies(req: Request): Record<string, string> {
 function sessionFromRequest(req: Request): SessionPayload | null {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
+  if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED === "enabled"
+    && process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+    const v2 = parseIndependentOfficeSession(token, config.sessionSecret);
+    if (v2) return v2;
+  }
   const [encoded, signature, extra] = token.split(".");
   if (!encoded || !signature || extra) return null;
   const expected = sign(encoded, config.sessionSecret);
@@ -204,10 +216,16 @@ function sessionFromRequest(req: Request): SessionPayload | null {
   }
 }
 
-function requireSession(req: Request, res: Response): SessionPayload | null {
+function requireSession(req: Request, res: Response): LegacySessionPayload | null {
   const session = sessionFromRequest(req);
   if (!session) {
     res.status(401).json({ error: "Open deze calculatie vanuit BREBO Office." });
+    return null;
+  }
+  // Project-bound workbench APIs have not yet been verified for projectless
+  // drafts. Refuse rather than silently invoking legacy project-only services.
+  if (session.v === 2) {
+    res.status(409).json({ error: "De CRM-calculatiewerkbank is nog niet volledig geactiveerd." });
     return null;
   }
   return session;
@@ -226,6 +244,8 @@ function numeric(value: unknown): number {
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
+// CRM-first browser handoff uses a top-level POST form; the token is never in a URL.
+app.use(express.urlencoded({ extended: false, limit: "2kb", parameterLimit: 8 }));
 
 // An optional Office reverse-proxy prefix. The default remains root so
 // existing Hostinger deployments and API contracts are unchanged.
@@ -295,11 +315,52 @@ app.post("/api/launch/consume", async (req, res) => {
   // One-time Office credentials and the resulting session must never be cached.
   res.setHeader("Cache-Control", "no-store, private");
   res.setHeader("Referrer-Policy", "no-referrer");
-  let launch: LaunchPayload;
+  const isBrowserForm = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase() === "application/x-www-form-urlencoded";
+  if (isBrowserForm) {
+    // Prevent login-CSRF/session swapping from an unrelated website. The POST
+    // originates from Office, never an arbitrary external page or old Calc.
+    let officeOrigin: string;
+    try {
+      officeOrigin = new URL(config.office.baseUrl).origin;
+    } catch {
+      res.status(503).json({ error: "Office-omgeving niet beschikbaar." });
+      return;
+    }
+    if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED !== "enabled"
+      || req.headers.origin !== officeOrigin
+      || process.env.CALC_OFFICE_GRANT_ENFORCEMENT !== "enabled") {
+      res.status(403).json({ error: "Open de calculatie uitsluitend vanuit BREBO Office." });
+      return;
+    }
+  }
+  let launch: LaunchPayload | IndependentOfficeLaunch;
   try {
-    launch = parseLaunchToken(String(req.body?.token ?? ""));
+    const rawToken = String(req.body?.token ?? "");
+    if (process.env.CALC_CRM_FIRST_LAUNCH_ENABLED === "enabled"
+      && process.env.CALC_OFFICE_GRANT_ENFORCEMENT === "enabled") {
+      try {
+        launch = parseIndependentOfficeLaunch(rawToken, config.office.sharedSecret);
+      } catch {
+        launch = parseLaunchToken(rawToken);
+      }
+    } else {
+      launch = parseLaunchToken(rawToken);
+    }
   } catch {
     res.status(401).json({ error: "De Calculatie-link is ongeldig of verlopen." });
+    return;
+  }
+
+  if (isBrowserForm && launch.v !== 2) {
+    res.status(403).json({ error: "Alleen CRM-concepten ondersteunen deze Office-overdracht." });
+    return;
+  }
+
+  // A projectless draft requires the isolated Calc schema to support nullable
+  // office_project_id and the CRM-owned calculation binding. Do not attempt a
+  // write with unverified schema, even when the v2 signature is valid.
+  if (launch.v === 2 && !crmFirstRuntimeReady(process.env)) {
+    res.status(503).json({ error: "De geïsoleerde CRM-calculatieomgeving is nog niet veilig geconfigureerd." });
     return;
   }
 
@@ -318,9 +379,34 @@ app.post("/api/launch/consume", async (req, res) => {
     }
   }
 
+  if (launch.v === 2) {
+    try {
+      const [columns] = await db.query<CrmSchemaColumn[]>(
+        `SELECT COLUMN_NAME, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'calculations'
+           AND COLUMN_NAME IN ('id', 'office_calculation_id', 'office_project_id')`
+      );
+      if (!crmFirstColumnsReady(columns)) {
+        res.status(503).json({ error: "De CRM-calculatietabel ondersteunt nog geen projectloze concepten." });
+        return;
+      }
+    } catch {
+      res.status(503).json({ error: "De CRM-calculatietabel kon niet worden gevalideerd." });
+      return;
+    }
+  }
+
   let officeContext;
   try {
-    officeContext = await fetchOfficeProjectContext(launch.project_id);
+    officeContext = launch.project_id === null ? {
+      contract: "brebo-office-calc-context-v1" as const,
+      project: {
+        id: 0, code: "CRM", title: "CRM-calculatie " + launch.calculation_id,
+        status: "concept", client_name: "", client_organization: null,
+        project_kind: "", disciplines: [] as string[], description: "",
+        buildings: [] as Array<{ id: number; title: string }>
+      }
+    } : await fetchOfficeProjectContext(launch.project_id);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Onbekende Office-fout";
     console.error("BREBO Calc project context fetch failed:", detail);
@@ -370,25 +456,159 @@ app.post("/api/launch/consume", async (req, res) => {
     await connection.commit();
 
     const now = Math.floor(Date.now() / 1000);
-    const token = createSessionToken({
-      v: 1,
-      calculationId: localCalculationId,
-      officeCalculationId: launch.calculation_id,
-      officeProjectId: launch.project_id,
-      actorId: launch.actor_id,
-      ...(launch.grant_ref ? { grantRef: launch.grant_ref } : {}),
-      exp: now + SESSION_SECONDS
-    });
+    const token = launch.v === 2
+      ? createSessionToken({
+          v: 2,
+          calculationId: localCalculationId,
+          officeCalculationId: launch.calculation_id,
+          officeProjectId: launch.project_id,
+          actorId: launch.actor_id,
+          grantRef: launch.grant_ref,
+          exp: now + SESSION_SECONDS
+        })
+      : createSessionToken({
+          v: 1,
+          calculationId: localCalculationId,
+          officeCalculationId: launch.calculation_id,
+          officeProjectId: launch.project_id,
+          actorId: launch.actor_id,
+          ...(launch.grant_ref ? { grantRef: launch.grant_ref } : {}),
+          exp: now + SESSION_SECONDS
+        });
     res.setHeader("Set-Cookie", sessionCookie(token));
+    if (isBrowserForm && launch.v === 2) {
+      res.redirect(303, calcBasePath + "/crm-draft");
+      return;
+    }
     res.json({
       status: "ok",
       calculationId: localCalculationId,
       officeCalculationId: launch.calculation_id,
-      project: officeContext.project
+      project: officeContext.project,
+      workbenchPath: calcBasePath + (launch.v === 2 ? "/crm-draft" : "/")
     });
   } catch (error) {
     await connection.rollback();
     throw error;
+  } finally {
+    connection.release();
+  }
+});
+
+type CrmDraftBinding = RowDataPacket & { version_id: number; version_no: number; calculation_id: number; title: string };
+type CrmDraftLineRow = RowDataPacket & {
+  id: number; sort_order: number; description: string; unit: string;
+  quantity: number; material_unit_cost: number; labour_unit_cost: number;
+};
+
+function requireCrmDraftSession(req: Request, res: Response): IndependentOfficeSession | null {
+  if (!crmFirstRuntimeReady(process.env)) {
+    res.status(503).json({ error: "De CRM-calculatiewerkbank is nog niet geactiveerd." });
+    return null;
+  }
+  const session = sessionFromRequest(req);
+  if (!session || session.v !== 2 || session.officeProjectId !== null) {
+    res.status(401).json({ error: "Open een nieuwe calculatie vanuit een bevoegde CRM-verkoopkans." });
+    return null;
+  }
+  return session;
+}
+
+async function crmDraftBinding(executor: { execute: typeof db.execute }, session: IndependentOfficeSession): Promise<CrmDraftBinding | null> {
+  const [rows] = await executor.execute<CrmDraftBinding[]>(
+    `SELECT c.id AS calculation_id, c.title, v.id AS version_id, v.version_no
+      FROM calculations AS c JOIN calculation_versions AS v ON v.calculation_id=c.id
+      WHERE c.id=? AND c.office_calculation_id=? AND c.office_project_id IS NULL
+        AND c.status='draft' AND v.status='draft'
+      ORDER BY v.version_no DESC LIMIT 1`,
+    [session.calculationId, session.officeCalculationId]
+  );
+  return rows[0] ?? null;
+}
+
+app.get("/api/crm-draft", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, private");
+  const session = requireCrmDraftSession(req, res);
+  if (!session) return;
+  try {
+    const bound = await crmDraftBinding(db, session);
+    if (!bound) {
+      res.status(409).json({ error: "Deze CRM-conceptcalculatie is niet meer beschikbaar." });
+      return;
+    }
+    const [lines] = await db.execute<CrmDraftLineRow[]>(
+      `SELECT id, sort_order, description, unit, quantity, material_unit_cost, labour_unit_cost
+        FROM calculation_lines WHERE version_id=? ORDER BY sort_order, id`,
+      [bound.version_id]
+    );
+    res.json({
+      contract: "brebo-calc-crm-draft-v1",
+      calculationId: session.officeCalculationId,
+      title: bound.title,
+      version: bound.version_no,
+      lines
+    });
+  } catch {
+    res.status(503).json({ error: "De CRM-conceptcalculatie kon niet worden opgehaald." });
+  }
+});
+
+app.post("/api/crm-draft/lines", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, private");
+  const session = requireCrmDraftSession(req, res);
+  if (!session) return;
+  const fetchSite = req.headers["sec-fetch-site"];
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+    res.status(403).json({ error: "Ongeautoriseerde aanvraagbron." });
+    return;
+  }
+  if (req.headers.origin && req.headers.origin !== "https://" + req.headers.host) {
+    res.status(403).json({ error: "Ongeautoriseerde aanvraagbron." });
+    return;
+  }
+  const line = parseCrmDraftLine(req.body);
+  if (!line) {
+    res.status(400).json({ error: "De calculatieregel bevat ongeldige gegevens." });
+    return;
+  }
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [versions] = await connection.execute<CrmDraftBinding[]>(
+      `SELECT c.id AS calculation_id, c.title, v.id AS version_id, v.version_no
+        FROM calculations AS c JOIN calculation_versions AS v ON v.calculation_id=c.id
+        WHERE c.id=? AND c.office_calculation_id=? AND c.office_project_id IS NULL
+          AND c.status='draft' AND v.status='draft'
+        ORDER BY v.version_no DESC LIMIT 1 FOR UPDATE`,
+      [session.calculationId, session.officeCalculationId]
+    );
+    const bound = versions[0];
+    if (!bound) {
+      await connection.rollback();
+      res.status(409).json({ error: "Deze CRM-conceptcalculatie is niet meer beschikbaar." });
+      return;
+    }
+    const [orderRows] = await connection.execute<RowDataPacket[]>(
+      "SELECT COALESCE(MAX(sort_order),0)+1 AS next_sort FROM calculation_lines WHERE version_id=?",
+      [bound.version_id]
+    );
+    const nextSort = Number(orderRows[0]?.next_sort ?? 1);
+    const [result] = await connection.execute<ResultSetHeader>(
+      `INSERT INTO calculation_lines
+        (version_id, parent_id, sort_order, line_type, description, unit, quantity, material_unit_cost, labour_unit_cost)
+       VALUES (?, NULL, ?, 'item', ?, ?, ?, ?, ?)`,
+      [bound.version_id, nextSort, line.description, line.unit, line.quantity, line.materialUnitCost, line.labourUnitCost]
+    );
+    await connection.commit();
+    res.status(201).json({
+      contract: "brebo-calc-crm-draft-line-v1",
+      id: result.insertId,
+      sort_order: nextSort,
+      ...line
+    });
+  } catch {
+    await connection.rollback();
+    res.status(503).json({ error: "De CRM-calculatieregel kon niet worden opgeslagen." });
   } finally {
     connection.release();
   }
@@ -2764,6 +2984,12 @@ app.use((error: unknown, _req: Request, res: Response, _next: express.NextFuncti
   res.status(500).json({ error: "Interne fout in BREBO Calc." });
 });
 
-app.listen(config.port, () => {
+// CALC_BIND_HOST=127.0.0.1 is intended for isolated Hostinger loopback
+// verification only. Normal Node websites retain their default listener.
+const bindHost = process.env.CALC_BIND_HOST;
+if (bindHost && bindHost !== "127.0.0.1" && bindHost !== "::1") {
+  throw new Error("Unsupported CALC_BIND_HOST override");
+}
+app.listen(config.port, bindHost ?? "0.0.0.0", () => {
   console.log(`BREBO Calc API listening on port ${config.port}`);
 });
