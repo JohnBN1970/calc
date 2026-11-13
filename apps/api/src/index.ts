@@ -41,6 +41,8 @@ import { detectSourceFactConflicts } from "./sourceFactConflict.js";
 import { clearDocumentTriageOverride, listDocumentTriageOverrides, setDocumentTriageOverride, type DocumentTriageDecision } from "./documentTriageDecisionRepository.js";
 import { findIncompleteLabourLines } from "./workbenchLineValidation.js";
 import { listRecipeProposalDecisions, setRecipeProposalDecision, type RecipeProposalDecision } from "./recipeProposalDecisionRepository.js";
+import { appendCalculationChange, auditLinesFromDatabase, calculationLineChanges, revisionReason, assertEditRevision } from "./calculationChangeHistory.js";
+import { guidanceQuestions, buildGuidedProposal, guidedPublicationReasons, guidedLineFromDatabase, type GuidedLine } from "./guidedCalculation.js";
 import { normalizeNlSfbParents } from "./classificationHierarchy.js";
 
 type LineType = "chapter" | "paragraph" | "item" | "allowance" | "adjustable" | "option" | "note";
@@ -1063,9 +1065,9 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       return;
     }
     const [lineRows]=await db.execute<RowDataPacket[]>(
-      `SELECT id,line_type,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
+      `SELECT id,structure_key,line_type,code,description,unit,quantity,labour_total_hours,labour_unit_cost,material_unit_cost,
               equipment_unit_cost,subcontracting_unit_cost,other_unit_cost,vat_regime_id,
-              price_source_type,source_details
+              price_source_type,source_reference,source_details
          FROM calculation_lines
         WHERE version_id=?`,
       [version.id]
@@ -1136,7 +1138,7 @@ app.get("/api/workbench/current/publication-readiness", async (req,res)=>{
       storedSalesPrice:Number(version.sales_price??0),
       vatTaxableBase
     });
-    const sourceReasons:string[]=[];
+    const sourceReasons:string[]=guidedPublicationReasons(lineRows.map(guidedLineFromDatabase));
     if(incompleteLabourRows.length){
       sourceReasons.push(`${incompleteLabourRows.length} arbeidsregel(s) hebben een uurprijs maar geen norm/totaaluren.`);
     }
@@ -1620,7 +1622,7 @@ app.get("/api/workbench/current", async (req, res) => {
   }
 
   const [versions] = await db.execute<RowDataPacket[]>(
-    "SELECT id, version_no, status, direct_cost, markup_amount, sales_price FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
+    "SELECT id, version_no, status, edit_revision, direct_cost, markup_amount, sales_price FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1",
     [session.calculationId]
   );
   const version = versions[0];
@@ -1679,6 +1681,51 @@ app.get("/api/workbench/current", async (req, res) => {
     lines:lines.map(row=>({...row,manual_scopes:manualScopesByLine.get(Number(row.id))??[]})),
     allocations
   });
+});
+
+// Preview only: normal draft persistence owns lines, version locks and snapshots.
+app.get("/api/workbench/current/change-history", async(req,res)=>{
+  const session=requireSession(req,res);if(!session)return;
+  const before=req.query.before==null?null:Number(req.query.before);
+  if(before!==null&&(!Number.isSafeInteger(before)||before<=0)){res.status(400).json({error:"Ongeldige historiecursor."});return;}
+  const [rows]=await db.execute<RowDataPacket[]>(
+    `SELECT e.id,e.actor_id,e.event_kind,e.edit_revision,e.reason,e.changes_json,e.created_at,v.version_no
+       FROM calculation_change_events e JOIN calculation_versions v ON v.id=e.version_id
+      WHERE e.calculation_id=? ${before===null?"":"AND e.id<?"} ORDER BY e.id DESC LIMIT 51`,
+    before===null?[session.calculationId]:[session.calculationId,before]
+  );
+  res.setHeader("Cache-Control","no-store, private");
+  res.json({events:rows.slice(0,50).map(row=>({
+    id:Number(row.id),actorId:Number(row.actor_id),actorLabel:"Office-gebruiker #"+row.actor_id,
+    kind:String(row.event_kind),versionNo:Number(row.version_no),editRevision:Number(row.edit_revision),reason:String(row.reason),
+    createdAt:row.created_at instanceof Date?row.created_at.toISOString():String(row.created_at),
+    changes:typeof row.changes_json==="string"?JSON.parse(row.changes_json):row.changes_json
+  })),nextCursor:rows.length>50?Number(rows[49].id):null});
+});
+
+app.get("/api/workbench/current/guidance", (req,res)=>{
+  if(!requireSession(req,res))return;
+  res.setHeader("Cache-Control","no-store, private");
+  res.json({questions:guidanceQuestions});
+});
+
+app.post("/api/workbench/current/guidance/preview", async (req,res)=>{
+  const session=requireSession(req,res); if(!session)return;
+  try{
+    const [versions]=await db.execute<RowDataPacket[]>(
+      "SELECT version_no,status FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+      [session.calculationId]
+    );
+    if(!versions[0] || versions[0].status!=="draft" || Number(versions[0].version_no)!==req.body?.versionNo){
+      res.status(409).json({error:"De calculatieversie is gewijzigd of vastgesteld. Laad de werkbank opnieuw."});return;
+    }
+    if(!Array.isArray(req.body?.lines)||req.body.lines.length>5000)throw new Error("Calculatieregels ontbreken.");
+    const proposal=buildGuidedProposal(req.body.answers,req.body.lines as GuidedLine[],session.actorId);
+    const activeVat=new Set((await listVatRegimes()).map(regime=>regime.id));
+    if(proposal.lines.some(line=>line.lineType==="item"&&!activeVat.has(Number(line.vatRegimeId))))throw new Error("Kies een actieve btw-regeling voor de voorzieningen.");
+    res.setHeader("Cache-Control","no-store, private");
+    res.json(proposal);
+  }catch(error){res.status(422).json({error:error instanceof Error?error.message:"Vraagcontrole mislukt."});}
 });
 
 app.put("/api/workbench/current/classification-scheme", async (req,res)=>{
@@ -1761,7 +1808,7 @@ app.put("/api/workbench/current", async (req, res) => {
   try {
     await connection.beginTransaction();
     const [versions] = await connection.execute<RowDataPacket[]>(
-      "SELECT id, status FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1 FOR UPDATE",
+      "SELECT id, status,version_no,edit_revision FROM calculation_versions WHERE calculation_id = ? ORDER BY version_no DESC LIMIT 1 FOR UPDATE",
       [session.calculationId]
     );
     const version = versions[0];
@@ -1775,6 +1822,14 @@ app.put("/api/workbench/current", async (req, res) => {
       res.status(409).json({ error: "Alleen een conceptversie kan worden gewijzigd." });
       return;
     }
+
+    try{
+      assertEditRevision(req.body?.expectedEditRevision,version.edit_revision);
+      if(req.body?.expectedVersionNo!==Number(version.version_no))throw new Error("De calculatieversie is gewijzigd. Laad de werkbank opnieuw.");
+    }catch(error){await connection.rollback();res.status(409).json({error:error instanceof Error?error.message:"Versieconflict."});return;}
+    const changeReason=revisionReason(req.body?.changeReason);
+    const [beforeRows]=await connection.execute<RowDataPacket[]>("SELECT * FROM calculation_lines WHERE version_id=? ORDER BY sort_order,id",[version.id]);
+    lines=lines.map(line=>({...line,structureKey:line.structureKey?String(line.structureKey).slice(0,36):randomUUID()}));
 
     const [preservedMemberships] = await connection.execute<RowDataPacket[]>(`
       SELECT m.subcalculation_id,m.calculation_line_id,m.membership_source
@@ -1956,7 +2011,7 @@ app.put("/api/workbench/current", async (req, res) => {
     const salesPrice = tailHierarchy.salesPrice;
     await connection.execute(
       `UPDATE calculation_versions
-          SET direct_cost=?,markup_amount=?,sales_price=?,
+          SET edit_revision=edit_revision+1,direct_cost=?,markup_amount=?,sales_price=?,
               source_office_version=?,source_selection_version=?,
               source_bound_at=?
         WHERE id=?`,
@@ -1972,6 +2027,12 @@ app.put("/api/workbench/current", async (req, res) => {
       "UPDATE calculations SET updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?",
       [session.calculationId]
     );
+    const [afterRows]=await connection.execute<RowDataPacket[]>("SELECT * FROM calculation_lines WHERE version_id=? ORDER BY sort_order,id",[version.id]);
+    await appendCalculationChange(connection,{
+      calculationId:session.calculationId,versionId:Number(version.id),actorId:session.actorId,
+      kind:"draft_saved",editRevision:Number(version.edit_revision)+1,reason:changeReason,
+      changes:{lines:calculationLineChanges(auditLinesFromDatabase(beforeRows),auditLinesFromDatabase(afterRows)),allocations:allocations.map(item=>({...item,sourceStructureKey:lines.find(line=>line.id===item.sourceLineId)?.structureKey,targetStructureKey:lines.find(line=>line.id===item.targetLineId)?.structureKey}))}
+    });
     await connection.commit();
 
     const finalVatRegimes=await listVatRegimes(true);
@@ -1999,6 +2060,7 @@ app.put("/api/workbench/current", async (req, res) => {
       })):undefined
     });
     res.json({
+      editRevision:Number(version.edit_revision)+1,
       directCost, markupAmount, salesPrice,
       margin:summary.margin, marginPct:summary.marginPct,
       vat:summary.vat, vatRate:summary.vatRate,
@@ -2022,7 +2084,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
   try{
     await connection.beginTransaction();
     const [versions]=await connection.execute<RowDataPacket[]>(
-      `SELECT id,version_no,status,direct_cost,markup_amount,sales_price,
+      `SELECT id,version_no,status,edit_revision,direct_cost,markup_amount,sales_price,
               source_office_version,source_selection_version
          FROM calculation_versions
         WHERE calculation_id=?
@@ -2044,6 +2106,14 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
       return;
     }
 
+    if(versionStatus==="draft"){
+      try{
+        assertEditRevision(req.body?.expectedEditRevision,version.edit_revision);
+        if(req.body?.expectedVersionNo!==Number(version.version_no))throw new Error("De calculatieversie is gewijzigd. Laad de werkbank opnieuw.");
+      }
+      catch(error){await connection.rollback();res.status(409).json({error:error instanceof Error?error.message:"Versieconflict."});return;}
+    }
+
     const [lineRows]=await connection.execute<RowDataPacket[]>(
       `SELECT id,parent_id,structure_key,sort_order,line_type,code,description,unit,quantity,
               labour_norm,labour_total_hours,labour_hours_input_mode,
@@ -2057,6 +2127,10 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         FOR UPDATE`,
       [version.id]
     );
+    if(versionStatus==="draft"){
+      const guidedReasons=guidedPublicationReasons(lineRows.map(guidedLineFromDatabase));
+      if(guidedReasons.length)throw new Error("Vraaggestuurde controle niet afgerond: "+guidedReasons.join(" "));
+    }
     const costRows=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type)));
     if(!costRows.length)throw new Error("Een lege calculatie kan niet worden gepubliceerd.");
     const incompleteLabourRows=findIncompleteLabourLines(costRows.map(row=>({
@@ -2361,6 +2435,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         "UPDATE calculations SET status='established',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",
         [session.calculationId]
       );
+      await appendCalculationChange(connection,{calculationId:session.calculationId,versionId:Number(version.id),actorId:session.actorId,kind:"version_established",editRevision:Number(version.edit_revision),reason:"Calculatie vastgesteld",changes:{contentHash}});
     }else{
       const [storedSnapshots]=await connection.execute<RowDataPacket[]>(
         "SELECT snapshot_contract,content_hash FROM calculation_version_snapshots WHERE version_id=? LIMIT 1",
@@ -2436,6 +2511,11 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
       await connection.rollback();
       res.status(409).json({error:"Een nieuwe versie kan alleen vanuit een vastgestelde versie worden gestart."});
       return;
+    }
+
+    const reason=revisionReason(req.body?.reason,true);
+    if(req.body?.sourceVersionNo!==Number(current.version_no)){
+      await connection.rollback();res.status(409).json({error:"De bronversie is gewijzigd. Laad de werkbank opnieuw."});return;
     }
 
     const [snapshots]=await connection.execute<RowDataPacket[]>(
@@ -2589,6 +2669,7 @@ app.post("/api/workbench/current/versions", async (req,res)=>{
       "UPDATE calculations SET status='draft',updated_at=CURRENT_TIMESTAMP(6) WHERE id=?",
       [session.calculationId]
     );
+    await appendCalculationChange(connection,{calculationId:session.calculationId,versionId:nextVersionId,actorId:session.actorId,kind:"version_started",editRevision:0,reason,changes:{sourceVersionNo:Number(current.version_no),sourceContentHash:String(stored.content_hash)}});
     await connection.commit();
     res.status(201).json({
       status:"draft",

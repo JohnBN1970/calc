@@ -37,3 +37,6 @@ tmp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Local TypeScript incremental build cache
+*.tsbuildinfo

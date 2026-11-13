@@ -13,9 +13,14 @@
     "migrate": "npm run migrate --workspace=@brebo/calc-api",
     "preflight": "node scripts/preflight.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "verify-build": "node scripts/verify-build.mjs"
+    "verify-build": "node scripts/verify-build.mjs",
+    "test:guided-ui": "node scripts/test-guided-ui.mjs",
+    "test:change-history-db": "node scripts/test-change-history-db.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

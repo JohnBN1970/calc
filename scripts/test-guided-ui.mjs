@@ -1,0 +1,62 @@
+// Fixture test: no production Office session, documents or prices are used.
+import {build} from 'vite';
+import {chromium} from 'playwright';
+import {readFile,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {buildGuidedProposal,guidanceQuestions} from '../apps/api/dist/guidedCalculation.js';
+const output=await mkdtemp(path.join(tmpdir(),'brebo-guided-ui-'));
+let browser;
+try{
+ await build({configFile:false,root:process.cwd(),define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:output,emptyOutDir:true,lib:{entry:path.resolve('tests/guided-calculation.fixture.tsx'),name:'GuidedQA',formats:['iife'],fileName:()=> 'guided.js'}}});
+ browser=await chromium.launch({headless:true,...(process.env.CALC_TEST_CHROMIUM?{executablePath:process.env.CALC_TEST_CHROMIUM}:{}),args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1440,height:1100}});
+ const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER_ERROR:',e.message);});
+ const saved=[];
+ await page.exposeFunction('guidanceApi',(url,body)=>url.endsWith('/preview')?buildGuidedProposal(body.answers,body.lines,17):{questions:guidanceQuestions});
+ await page.exposeFunction('savedGuidance',lines=>{saved.push(lines);});
+ await page.setContent('<!doctype html><html lang="nl"><body style="margin:20px;background:#f4f6f8;font-family:Arial"><div id="root"></div></body></html>');
+ await page.addStyleTag({content:await readFile('apps/web/src/styles.css','utf8')});
+ await page.addScriptTag({path:path.join(output,'guided.js')});
+ await page.getByText('0 / 12 beantwoord',{exact:true}).waitFor();
+ const rows=page.locator('.guidedQuestion');
+ await rows.nth(0).locator('select').first().selectOption('yes');
+ await rows.nth(0).getByLabel('Aantal / duur').fill('6');
+ await rows.nth(0).getByLabel('Prijs per eenheid (€)').fill('125');
+ await rows.nth(0).getByLabel('Btw',{exact:true}).selectOption('1');
+ await rows.nth(0).locator('textarea').fill('Kraanofferte K-123 inclusief aan- en afvoer.');
+ for(let i=1;i<8;i++){
+  await rows.nth(i).locator('select').first().selectOption('no');
+  await rows.nth(i).locator('textarea').fill('Niet nodig volgens het gecontroleerde werkplan.');
+ }
+ for(let i=8;i<12;i++)await rows.nth(i).locator('select').first().selectOption('confirmed');
+ await page.getByRole('button',{name:'Antwoorden en kostenregels opslaan'}).click();
+ await page.getByText('Antwoorden gecontroleerd en kostenregels opgeslagen.',{exact:false}).waitFor();
+ assert.equal(saved.length,1);assert.equal(saved[0].filter(line=>line.lineType==='item').length,1);
+ assert.equal(saved[0][1].equipmentUnitCost,125);assert.equal(saved[0][1].quantity,6);
+ await page.getByRole('button',{name:'Antwoorden en kostenregels opslaan'}).click();
+ await page.waitForFunction(()=>document.querySelector('[aria-busy]')?.getAttribute('aria-busy')==='false');
+ assert.equal(saved.length,2);assert.equal(saved[1].length,2);
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+ assert.deepEqual(errors,[]);
+ const lockedPage=await browser.newPage();
+ await lockedPage.exposeFunction('guidanceApi',()=>({questions:guidanceQuestions}));
+ await lockedPage.setContent('<div id="root"></div>');
+ await lockedPage.evaluate(()=>{window.qaLocked=true;});
+ await lockedPage.addScriptTag({path:path.join(output,'guided.js')});
+ await lockedPage.getByText('Vastgestelde versie: antwoorden zijn alleen leesbaar.').waitFor();
+ assert.equal(await lockedPage.getByRole('button',{name:'Antwoorden en kostenregels opslaan'}).count(),0);
+ assert.ok(await lockedPage.locator('fieldset').evaluateAll(items=>items.every(item=>item.disabled)));
+ const historyPage=await browser.newPage();
+ await historyPage.exposeFunction('guidanceApi',()=>({events:[{id:1,actorId:23,actorLabel:'Office-gebruiker #23',kind:'draft_saved',versionNo:2,editRevision:3,reason:'Gewijzigde hoeveelheid',createdAt:'2026-11-13T18:00:00Z',changes:{lines:[{structureKey:'line-1',description:'Kozijn',kind:'changed',fields:[{field:'quantity',before:2,after:3}]}]}}],nextCursor:null}));
+ await historyPage.setContent('<div id="root"></div>');
+ await historyPage.evaluate(()=>{window.qaHistory=true;});
+ await historyPage.addScriptTag({path:path.join(output,'guided.js')});
+ await historyPage.getByText('Office-gebruiker #23',{exact:true}).waitFor();
+ await historyPage.locator('summary').click();
+ assert.equal(await historyPage.getByRole('cell',{name:'2',exact:true}).count(),1);
+ assert.equal(await historyPage.getByRole('cell',{name:'3',exact:true}).count(),1);
+ console.log('UI PASS: 12 questions, crane cost inputs, review, replacement without duplicate rows, mobile fit, no browser errors.');
+}finally{await browser?.close();await rm(output,{recursive:true,force:true});}
