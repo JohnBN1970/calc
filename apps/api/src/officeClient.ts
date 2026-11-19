@@ -1,6 +1,24 @@
 import { config } from "./config.js";
 import { signedOfficeHeaders } from "./officeTransport.js";
 
+export type OfficeHousingQuantityLine = {
+  code: string;
+  description: string;
+  unit: string;
+  quantity_per_dwelling: string;
+};
+
+export type OfficeHousingQuantityScope = {
+  scope_id: number;
+  building_id: number;
+  housing_type_id: number;
+  housing_code: string;
+  housing_name: string;
+  dwelling_count: number;
+  calculation_id: number | null;
+  lines: OfficeHousingQuantityLine[];
+};
+
 export type OfficeProjectContext = {
   contract: "brebo-office-calc-context-v1";
   project: {
@@ -14,6 +32,7 @@ export type OfficeProjectContext = {
     disciplines: string[];
     description: string;
     buildings: Array<{ id: number; title: string }>;
+    housing_quantities?: OfficeHousingQuantityScope[];
   };
 };
 
