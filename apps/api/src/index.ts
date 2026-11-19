@@ -1606,6 +1606,42 @@ app.get("/api/workbench/current/aggregate", async (req, res) => {
   }
 });
 
+// Read-only review status for the active Office-launched calculation.
+// Reviewer identity and authority must be validated against Office before write actions are exposed.
+app.get("/api/workbench/current/line-reviews", async (req,res)=>{
+  const session=requireSession(req,res);
+  if(!session)return;
+  const [versions]=await db.execute<RowDataPacket[]>(
+    "SELECT id,version_no,status FROM calculation_versions WHERE calculation_id=? ORDER BY version_no DESC LIMIT 1",
+    [session.calculationId]
+  );
+  const version=versions[0];
+  if(!version){res.status(404).json({error:"Calculatieversie niet gevonden."});return;}
+  const [reviews]=await db.execute<RowDataPacket[]>(
+    `SELECT r.line_id,r.author_actor_id,r.reviewer_actor_id,r.decision,r.comment,r.reviewed_at
+       FROM calculation_line_reviews r
+       INNER JOIN calculation_lines l ON l.id=r.line_id AND l.version_id=r.version_id
+      WHERE r.calculation_id=? AND r.version_id=?
+      ORDER BY l.sort_order,l.id`,
+    [session.calculationId,version.id]
+  );
+  res.setHeader("Cache-Control","no-store, private");
+  res.json({
+    contract:"brebo-calc-line-reviews-v1",
+    versionId:Number(version.id),
+    versionNo:Number(version.version_no),
+    versionStatus:String(version.status),
+    reviews:reviews.map(row=>({
+      lineId:Number(row.line_id),
+      authorActorId:Number(row.author_actor_id),
+      reviewerActorId:Number(row.reviewer_actor_id),
+      decision:String(row.decision),
+      comment:String(row.comment),
+      reviewedAt:row.reviewed_at
+    }))
+  });
+});
+
 app.get("/api/workbench/current", async (req, res) => {
   const session = requireSession(req, res);
   if (!session) return;
