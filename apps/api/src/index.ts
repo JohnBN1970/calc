@@ -2096,7 +2096,7 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
     // Opt-in only until Office role verification and review-write API are live.
     // When enabled, release fails closed unless every cost line has a distinct
     // second-person approval. Rejected, missing and duplicate reviews block.
-    if(process.env.CALC_FOUR_EYES_PUBLISH_REQUIRED==="1" && versionStatus==="draft"){
+    if(process.env.CALC_FOUR_EYES_PUBLISH_REQUIRED==="1"){
       const [reviewRows]=await connection.execute<RowDataPacket[]>(
         `SELECT line_id,author_actor_id,reviewer_actor_id,decision
            FROM calculation_line_reviews
