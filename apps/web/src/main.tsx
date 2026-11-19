@@ -202,6 +202,7 @@ type ProjectContext = {
   disciplines: string[];
   description: string;
   buildings: Array<{ id: number; title: string }>;
+  housing_quantities?: Array<{scope_id:number; housing_code:string; housing_name:string; dwelling_count:number; calculation_id:number|null; lines:Array<{code:string; description:string; unit:string; quantity_per_dwelling:string}>}>;
 };
 
 type CalcVersionHistoryItem={
@@ -3879,6 +3880,16 @@ function App() {
       <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
 
     <main>
+      {project?.housing_quantities && project.housing_quantities.length>0 && <details className="housingQuantityPreview">
+        <summary>Gebouwinventarisatie · {project.housing_quantities.length} woningtype{project.housing_quantities.length===1?"":"n"} (alleen lezen)</summary>
+        <p>Hoeveelheden per woning vanuit BREBO Office. Overnemen in calculatieregels vereist afzonderlijke bevestiging; bestaande prijzen blijven ongewijzigd.</p>
+        {project.housing_quantities.map(scope=><section key={scope.scope_id}>
+          <h3>{scope.housing_name} ({scope.housing_code}) · {scope.dwelling_count} woningen</h3>
+          {scope.lines.length===0?<p>Geen onderdelenregels beschikbaar.</p>:<div style={{overflowX:"auto"}}><table><thead><tr><th>Code</th><th>Onderdeel</th><th>Eenheid</th><th>Per woning</th></tr></thead><tbody>
+            {scope.lines.map((line,index)=><tr key={index}><td>{line.code}</td><td>{line.description}</td><td>{line.unit}</td><td>{line.quantity_per_dwelling}</td></tr>)}
+          </tbody></table></div>}
+        </section>)}
+      </details>}
       <div className="calcCompactHeader">
         <div className="calcCompactIdentity">
           <strong>{calculationTitle}</strong>
