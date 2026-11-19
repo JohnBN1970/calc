@@ -1,3 +1,4 @@
+import { evaluatePublicationReviewGate, type LineReview } from "./lineReviewPolicy.js";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -2104,21 +2105,17 @@ app.post("/api/workbench/current/publish", async (req,res)=>{
         [session.calculationId,version.id]
       );
       const requiredIds=lineRows.filter(row=>lineContributesToCalculationTotals(String(row.line_type))).map(row=>Number(row.id));
-      const approvals=new Map<number,RowDataPacket>();
-      let invalid=false;
-      for(const row of reviewRows){
-        const id=Number(row.line_id);
-        if(approvals.has(id))invalid=true;
-        approvals.set(id,row);
-      }
-      if(invalid || requiredIds.length===0 || requiredIds.some(id=>{
-        const review=approvals.get(id);
-        return !review || String(review.decision)!=="approved"
-          || Number(review.author_actor_id)===Number(review.reviewer_actor_id)
-          || Number(review.author_actor_id)<=0 || Number(review.reviewer_actor_id)<=0;
-      })){
+      const reviews:LineReview[]=reviewRows.map(row=>({
+        lineId:Number(row.line_id),
+        authorActorId:Number(row.author_actor_id),
+        reviewerActorId:Number(row.reviewer_actor_id),
+        decision:String(row.decision) as LineReview["decision"],
+        comment:""
+      }));
+      const reviewGate=evaluatePublicationReviewGate(requiredIds,reviews,true);
+      if(!reviewGate.allowed){
         await connection.rollback();
-        res.status(409).json({error:"Publiceren geblokkeerd: niet alle calculatieregels zijn onafhankelijk goedgekeurd."});
+        res.status(409).json({error:reviewGate.reason});
         return;
       }
     }
