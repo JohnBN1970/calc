@@ -24,8 +24,12 @@ export function validateLineReview(review: LineReview, role: ReviewerRole): stri
 
 export function canReleaseReviewedLines(lineIds: number[], reviews: LineReview[]): boolean {
   if (lineIds.length === 0 || new Set(lineIds).size !== lineIds.length) return false;
+  if (reviews.length !== lineIds.length) return false;
+  const required = new Set(lineIds);
   const decisions = new Map<number, LineReview>();
   for (const review of reviews) {
+    if (!required.has(review.lineId) || !Number.isSafeInteger(review.authorActorId) || review.authorActorId <= 0
+      || !Number.isSafeInteger(review.reviewerActorId) || review.reviewerActorId <= 0) return false;
     if (decisions.has(review.lineId)) return false;
     decisions.set(review.lineId, review);
   }
