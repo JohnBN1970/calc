@@ -3161,6 +3161,38 @@ function App() {
   };
   const clearAllocation=(sourceLineId:number)=>{setAllocations(current=>current.filter(item=>item.sourceLineId!==sourceLineId));setStatus("Kostenverdeling opgeheven — nog opslaan");};
 
+  const proposeHousingQuantityLines = (scope: NonNullable<ProjectContext["housing_quantities"]>[number]) => {
+    if (versionStatus === "established" || scope.lines.length === 0) return;
+    if (!window.confirm(`Onderdelen van ${scope.housing_name} toevoegen als nieuwe conceptregels? Bestaande regels en prijzen blijven behouden. Controleer de hoeveelheden vóór opslaan.`)) return;
+    const sourcePrefix = `office-housing-scope:${scope.scope_id}:`;
+    const existing = new Set(lines.map(line => line.sourceReference).filter((value): value is string => Boolean(value)));
+    const proposals = scope.lines.flatMap((item, index): Line[] => {
+      const reference = sourcePrefix + index;
+      if (existing.has(reference)) return [];
+      const perDwelling = Number(item.quantity_per_dwelling);
+      if (!Number.isFinite(perDwelling) || perDwelling < 0 || !Number.isSafeInteger(scope.dwelling_count) || scope.dwelling_count < 1) return [];
+      const quantity = perDwelling * scope.dwelling_count;
+      if (!Number.isFinite(quantity) || quantity < 0) return [];
+      return [{
+        id: nextId - index, parentId: null, lineType: "item",
+        code: item.code, description: item.description, unit: item.unit, quantity,
+        labourNorm: null, labourTotalHours: null, labourHoursInputMode: null,
+        labour: 0, material: 0, equipment: 0, subcontracting: 0, other: 0,
+        priceSourceType: "manual", officeSourceId: null, sourceReference: reference,
+        sourceSupplier: null, sourceUnitPrice: null, sourcePriceDate: null,
+        sourceDocumentId: null, sourceDetails: JSON.stringify({housing_type_id:scope.housing_type_id,quantity_per_dwelling:item.quantity_per_dwelling,dwelling_count:scope.dwelling_count}),
+        sourceVisualPage: null, sourcePositionBounds: null, sourceVisualCrop: null,
+        sourceVisualSearchRegion: null, sourceTextRegions: null, sourceOfferSummary: null,
+        manualScopes: [{scopeType:"dwelling_type",scopeRef:String(scope.housing_type_id)}]
+      }];
+    });
+    if (proposals.length === 0) { setStatus("Geen nieuwe geldige woningtyperegels om over te nemen"); return; }
+    // IDs are local negative draft identifiers, never overwrite persisted lines.
+    setLines(current => [...current, ...proposals.map((line,index) => ({...line,id:nextId-index}))]);
+    setNextId(nextId - proposals.length);
+    setStatus(`${proposals.length} woningtyperegels toegevoegd · concept niet opgeslagen`);
+  };
+
   const addLine = (lineType: LineType, initialScope?:{scopeType:ScopeFilterType;scopeRef:string}) => {
     if(versionStatus==="established")return;
     const latestChapter = [...lines].reverse().find(line => line.lineType === "chapter");
@@ -3885,6 +3917,7 @@ function App() {
         <p>Hoeveelheden per woning vanuit BREBO Office. Overnemen in calculatieregels vereist afzonderlijke bevestiging; bestaande prijzen blijven ongewijzigd.</p>
         {project.housing_quantities.map(scope=><section key={scope.scope_id}>
           <h3>{scope.housing_name} ({scope.housing_code}) · {scope.dwelling_count} woningen</h3>
+          {versionStatus==="draft" && scope.lines.length>0 && <button type="button" onClick={()=>proposeHousingQuantityLines(scope)}>Overnemen als conceptregels</button>}
           {scope.lines.length===0?<p>Geen onderdelenregels beschikbaar.</p>:<div style={{overflowX:"auto"}}><table><thead><tr><th>Code</th><th>Onderdeel</th><th>Eenheid</th><th>Per woning</th></tr></thead><tbody>
             {scope.lines.map((line,index)=><tr key={index}><td>{line.code}</td><td>{line.description}</td><td>{line.unit}</td><td>{line.quantity_per_dwelling}</td></tr>)}
           </tbody></table></div>}
