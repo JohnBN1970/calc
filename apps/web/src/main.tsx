@@ -1113,6 +1113,7 @@ function DockableWindow({id,label,children,collapsible=false,defaultFloating=fal
 function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [project, setProject] = useState<ProjectContext | null>(null);
+  const [lineReviewSummary, setLineReviewSummary] = useState<{approved:number;rejected:number;pending:number}|null>(null);
   const [calculationTitle, setCalculationTitle] = useState("BREBO Calculatie");
   const [classificationScheme,setClassificationScheme]=useState<ClassificationScheme>("nl_sfb");
   const [versionStatus,setVersionStatus]=useState<"draft"|"established">("draft");
@@ -2324,6 +2325,19 @@ function App() {
     setAllocations(Array.isArray(data.allocations) ? data.allocations.map((row: Record<string,unknown>) => ({
       sourceLineId:Number(row.source_line_id), targetLineId:Number(row.target_line_id), method:String(row.allocation_method) as LineAllocation["method"], share:Number(row.share ?? 0), amount:Number(row.amount ?? 0)
     })) : []);
+    // Review status is read-only; never imply approval when the endpoint is unavailable.
+    setLineReviewSummary(null);
+    try {
+      const reviewResponse=await calcFetch("/api/workbench/current/line-reviews",{headers:{Accept:"application/json"}});
+      if(reviewResponse.ok){
+        const reviewData=await reviewResponse.json() as {reviews?:Array<{lineId:number;decision:string}>};
+        const reviews=Array.isArray(reviewData.reviews)?reviewData.reviews:[];
+        const approved=reviews.filter(row=>row.decision==="approved").length;
+        const rejected=reviews.filter(row=>row.decision==="rejected").length;
+        const reviewed=new Set(reviews.map(row=>row.lineId));
+        setLineReviewSummary({approved,rejected,pending:loadedLines.filter((line:Line)=>line.lineType==="item"&&!reviewed.has(line.id)).length});
+      }
+    }catch{setLineReviewSummary(null);}
     setProject(data.project as ProjectContext);
     setCalculationTitle(String(data.calculation?.title ?? "BREBO Calculatie"));
     setClassificationScheme(loadedScheme);
@@ -3912,6 +3926,10 @@ function App() {
       <input ref={quoteFileRef} className="hiddenFile" type="file" accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={event => void uploadQuote(event.target.files?.[0])} />
 
     <main>
+      <details className="lineReviewSummary">
+        <summary>Vierogencontrole · {lineReviewSummary===null?"status niet beschikbaar":`${lineReviewSummary.approved} akkoord · ${lineReviewSummary.rejected} afgekeurd · ${lineReviewSummary.pending} nog te beoordelen`}</summary>
+        <p>Beoordelingen worden alleen getoond. Vrijgave vereist onafhankelijke controle door Hoofd Sales of hoger; dit overzicht verleent geen goedkeuring.</p>
+      </details>
       {project?.housing_quantities && project.housing_quantities.length>0 && <details className="housingQuantityPreview">
         <summary>Gebouwinventarisatie · {project.housing_quantities.length} woningtype{project.housing_quantities.length===1?"":"n"} (alleen lezen)</summary>
         <p>Hoeveelheden per woning vanuit BREBO Office. Overnemen in calculatieregels vereist afzonderlijke bevestiging; bestaande prijzen blijven ongewijzigd.</p>
