@@ -35,3 +35,16 @@ export function canReleaseReviewedLines(lineIds: number[], reviews: LineReview[]
       && review.authorActorId !== review.reviewerActorId;
   });
 }
+
+/** Publication gate must fail closed when the feature is enabled. */
+export function evaluatePublicationReviewGate(
+  requiredLineIds: number[],
+  reviews: LineReview[],
+  enabled: boolean
+): {allowed:boolean;reason:string|null} {
+  if (!enabled) return {allowed:true,reason:null};
+  if (!canReleaseReviewedLines(requiredLineIds,reviews)) {
+    return {allowed:false,reason:"Publiceren geblokkeerd: niet alle calculatieregels zijn onafhankelijk goedgekeurd."};
+  }
+  return {allowed:true,reason:null};
+}

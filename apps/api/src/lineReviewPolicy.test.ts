@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canReleaseReviewedLines, validateLineReview } from "./lineReviewPolicy.js";
+import { canReleaseReviewedLines, evaluatePublicationReviewGate, validateLineReview } from "./lineReviewPolicy.js";
 
 const approved = { lineId: 1, authorActorId: 10, reviewerActorId: 20, decision: "approved" as const, comment: "" };
 test("second head sales reviewer can approve", () => assert.equal(validateLineReview(approved, "head_sales"), null));
@@ -13,4 +13,12 @@ test("release requires all distinct approved lines", () => {
  assert.equal(canReleaseReviewedLines([1,1],[approved]),false);
  assert.equal(canReleaseReviewedLines([1],[{...approved,decision:"rejected"}]),false);
  assert.equal(canReleaseReviewedLines([1],[{...approved,reviewerActorId:10}]),false);
+});
+
+test("publication review gate is opt-in and fails closed when enabled", () => {
+  assert.equal(evaluatePublicationReviewGate([1], [], false).allowed,true);
+  assert.equal(evaluatePublicationReviewGate([1], [], true).allowed,false);
+  assert.equal(evaluatePublicationReviewGate([1], [approved], true).allowed,true);
+  assert.equal(evaluatePublicationReviewGate([1,2], [approved], true).allowed,false);
+  assert.equal(evaluatePublicationReviewGate([1], [{...approved,reviewerActorId:10}], true).allowed,false);
 });
