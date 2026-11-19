@@ -22,3 +22,11 @@ test("publication review gate is opt-in and fails closed when enabled", () => {
   assert.equal(evaluatePublicationReviewGate([1,2], [approved], true).allowed,false);
   assert.equal(evaluatePublicationReviewGate([1], [{...approved,reviewerActorId:10}], true).allowed,false);
 });
+
+test("release rejects foreign, duplicate and invalid actor review records", () => {
+  assert.equal(canReleaseReviewedLines([1],[approved,{...approved,lineId:999}]),false);
+  assert.equal(canReleaseReviewedLines([1],[{...approved,authorActorId:0}]),false);
+  assert.equal(canReleaseReviewedLines([1],[{...approved,reviewerActorId:-1}]),false);
+  assert.equal(canReleaseReviewedLines([1],[{...approved,reviewerActorId:NaN}]),false);
+  assert.equal(canReleaseReviewedLines([1,2],[approved,{...approved,lineId:1}]),false);
+});
