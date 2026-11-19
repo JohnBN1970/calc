@@ -30,3 +30,7 @@ test("release rejects foreign, duplicate and invalid actor review records", () =
   assert.equal(canReleaseReviewedLines([1],[{...approved,reviewerActorId:NaN}]),false);
   assert.equal(canReleaseReviewedLines([1,2],[approved,{...approved,lineId:1}]),false);
 });
+
+test("release rejects unknown review decision from persisted data", () => {
+  assert.equal(canReleaseReviewedLines([1],[{...approved,decision:"unknown" as "approved"}]),false);
+});
