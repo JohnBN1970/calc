@@ -202,7 +202,7 @@ type ProjectContext = {
   disciplines: string[];
   description: string;
   buildings: Array<{ id: number; title: string }>;
-  housing_quantities?: Array<{scope_id:number; housing_code:string; housing_name:string; dwelling_count:number; calculation_id:number|null; lines:Array<{code:string; description:string; unit:string; quantity_per_dwelling:string}>}>;
+  housing_quantities?: Array<{scope_id:number; housing_type_id:number; housing_code:string; housing_name:string; dwelling_count:number; calculation_id:number|null; lines:Array<{code:string; description:string; unit:string; quantity_per_dwelling:string}>}>;
 };
 
 type CalcVersionHistoryItem={
